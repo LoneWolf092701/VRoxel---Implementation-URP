@@ -10,6 +10,7 @@ namespace WFC.MarchingCubes
         // Configuration
         private float surfaceLevel = 0.5f;
         private float smoothingFactor = 1.0f;
+        private int chunkSize = 8;
 
         // Default density range for cells without states
         private float defaultEmptyDensity = 0.1f;  // For empty/air (below surface)
@@ -34,10 +35,13 @@ namespace WFC.MarchingCubes
             stateDensityValues.Add(5, 0.68f);   // Sand (moderately solid)
             stateDensityValues.Add(6, 0.78f);  // Tree (solid)
             stateDensityValues.Add(7, 0.8f);   // Forest (solid)
+
+            chunkSize = 8;
         }
 
         public float[,,] GenerateDensityField(Chunk chunk)
         {
+            chunkSize = chunk.Size;
             // Exit condition for recursion - if we're already processing this chunk
             if (processingChunks.Contains(chunk.Position))
             {
@@ -128,6 +132,12 @@ namespace WFC.MarchingCubes
                     Debug.Log($"Forcing empty cells in top half of chunk {chunk.Position}");
                 }
             }
+            PreProcessDensityField(densityField, chunk);
+
+            if(!hasSolidCells || !hasEmptyCells)
+            {
+                Debug.LogWarning($"Chunk {chunk.Position} lacks a proper surface: hasSolid={hasSolidCells}, hasEmpty={hasEmptyCells}");
+            }
 
             // Handle boundaries to ensure seamless meshes - but only AFTER we've
             // calculated the main density field to avoid infinite recursion
@@ -140,6 +150,83 @@ namespace WFC.MarchingCubes
             processingChunks.Remove(chunk.Position);
 
             return densityField;
+        }
+
+        // Add this after the GenerateDensityField method
+        private void PreProcessDensityField(float[,,] densityField, Chunk chunk)
+        {
+            int size = chunk.Size;
+            Vector3Int chunkPos = chunk.Position;
+
+            for (int x = 0; x <= size; x++)
+            {
+                for (int y = 0; y <= size; y++)
+                {
+                    for (int z = 0; z <= size; z++)
+                    {
+                        // First apply height variation to ensure consistent base terrain
+                        densityField[x, y, z] = ApplyHeightVariation(
+                            densityField[x, y, z], x, y, z, chunkPos, size);
+
+                        // Then apply additional terrain features
+                        densityField[x, y, z] = ApplyTerrainFeatures(
+                            densityField[x, y, z], x, y, z, chunkPos, size);
+                    }
+                }
+            }
+        }
+
+        private float ApplyHeightVariation(float baseDensity, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
+        {
+            // Use global coordinates to ensure consistent heights across chunks
+            float globalX = chunkPos.x * chunkSize + x;
+            float globalZ = chunkPos.z * chunkSize + z;
+
+            // Create a consistent height map across all chunks
+            // Lower frequency noise creates smoother, more gradual height changes
+            float heightMap = Mathf.PerlinNoise(globalX * 0.03f, globalZ * 0.03f);
+
+            // Apply vertical gradient (things get less solid as we go up)
+            // This creates a consistent height basis across all chunks
+            float baseHeight = 3.0f + heightMap * 4.0f; // Base height between 3-7 units
+            float heightInfluence = Mathf.Clamp01((baseHeight - y) * 0.2f);
+
+            // Blend the original density with the height influence
+            return Mathf.Lerp(baseDensity, baseDensity * heightInfluence + 0.5f, 0.7f);
+        }
+
+        private float ApplyTerrainFeatures(float density, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
+        {
+            // Again, use global coordinates for consistency across chunks
+            float globalX = chunkPos.x * chunkSize + x;
+            float globalY = chunkPos.y * chunkSize + y;
+            float globalZ = chunkPos.z * chunkSize + z;
+
+            // Create caves where noise is high but only in solid areas
+            if (density > 0.6f)
+            {
+                // Use 3D Perlin noise for caves (would use SimplexNoise in a real implementation)
+                float noise1 = Mathf.PerlinNoise(globalX * 0.1f, globalY * 0.1f);
+                float noise2 = Mathf.PerlinNoise(globalY * 0.1f, globalZ * 0.1f);
+                float caveNoise = (noise1 + noise2) * 0.5f;
+
+                if (caveNoise > 0.7f)
+                {
+                    density *= 0.4f; // Reduce density to create caves
+                }
+            }
+
+            // Create occasional overhangs and cliff features
+            if (y > 3 && density < 0.7f)
+            {
+                float cliffNoise = Mathf.PerlinNoise(globalX * 0.15f, globalZ * 0.15f);
+                if (cliffNoise > 0.7f)
+                {
+                    density += 0.2f; // Increase density to create overhangs
+                }
+            }
+
+            return density;
         }
 
         private float CalculateDensity(Chunk chunk, int x, int y, int z)
@@ -369,7 +456,7 @@ namespace WFC.MarchingCubes
 
             return field;
         }
-
+       
         // Call this before generating a new batch of density fields to clear the cache
         public void ClearCache()
         {
