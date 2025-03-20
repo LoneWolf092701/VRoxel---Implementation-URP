@@ -196,6 +196,7 @@ namespace WFC.MarchingCubes
                             float avgDensity = 0.0f;
                             foreach (int state in cell.PossibleStates)
                             {
+                                // Git testing commit
                                 if (stateDensityValues.TryGetValue(state, out float stateDensity))
                                 {
                                     avgDensity += stateDensity;
