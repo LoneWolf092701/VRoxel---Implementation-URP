@@ -24,6 +24,8 @@ namespace WFC.Generation
         private Dictionary<Vector3Int, Chunk> chunks = new Dictionary<Vector3Int, Chunk>();
         private PriorityQueue<PropagationEvent, float> propagationQueue = new PriorityQueue<PropagationEvent, float>();
         private bool[,,] adjacencyRules;
+
+        private HierarchicalConstraintSystem hierarchicalConstraints;
         public Dictionary<Vector3Int, Chunk> GetChunks()
         {
             return chunks;
@@ -81,6 +83,23 @@ namespace WFC.Generation
             // Create boundary manager
             //boundaryManager = new
             //BoundaryBufferManager(this);
+
+            InitializeHierarchicalConstraints();
+        }
+
+        private void InitializeHierarchicalConstraints()
+        {
+            // Create the hierarchical constraint system
+            hierarchicalConstraints = new HierarchicalConstraintSystem(chunkSize);
+
+            // Generate default constraints based on world size
+            hierarchicalConstraints.GenerateDefaultConstraints(worldSize);
+
+            // Precompute constraints for each chunk
+            foreach (var chunk in chunks.Values)
+            {
+                hierarchicalConstraints.PrecomputeChunkConstraints(chunk, maxCellStates);
+            }
         }
 
         private void SetupAdjacencyRules()
@@ -272,5 +291,148 @@ namespace WFC.Generation
 
         // Other methods for WFC generation will go here
         // Such as Collapse(), PropagateConstraints(), etc.
+
+        private bool FindCellToCollapse()
+        {
+            // Find the cell with lowest entropy
+            Cell cellToCollapse = null;
+            Chunk chunkWithCell = null;
+            int lowestEntropy = int.MaxValue;
+
+            foreach (var chunkEntry in chunks)
+            {
+                var chunk = chunkEntry.Value;
+
+                for (int x = 0; x < chunk.Size; x++)
+                {
+                    for (int y = 0; y < chunk.Size; y++)
+                    {
+                        for (int z = 0; z < chunk.Size; z++)
+                        {
+                            Cell cell = chunk.GetCell(x, y, z);
+
+                            // Skip already collapsed cells
+                            if (cell.CollapsedState.HasValue)
+                                continue;
+
+                            // Skip cells with only one state (will be collapsed in propagation)
+                            if (cell.Entropy == 1)
+                                continue;
+
+                            // Apply hierarchical constraints to cell's entropy calculation
+                            Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(cell, chunk, maxCellStates);
+
+                            // Calculate effective entropy based on biases
+                            int effectiveEntropy = cell.Entropy;
+
+                            // If we have strong biases, reduce effective entropy
+                            if (biases.Count > 0)
+                            {
+                                float maxBias = biases.Values.Max(Mathf.Abs);
+
+                                // Strong bias reduces effective entropy
+                                if (maxBias > 0.5f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.7f);
+                                else if (maxBias > 0.3f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.85f);
+                            }
+
+                            // Check if this cell has lower effective entropy
+                            if (effectiveEntropy < lowestEntropy)
+                            {
+                                lowestEntropy = effectiveEntropy;
+                                cellToCollapse = cell;
+                                chunkWithCell = chunk;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If found a cell, collapse it
+            if (cellToCollapse != null && chunkWithCell != null)
+            {
+                // Get constraint biases
+                Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
+                    cellToCollapse, chunkWithCell, maxCellStates);
+
+                // Choose a state based on biases
+                int[] possibleStates = cellToCollapse.PossibleStates.ToArray();
+                int chosenState;
+
+                if (biases.Count > 0 && possibleStates.Length > 1)
+                {
+                    // Create weighted selection based on biases
+                    float[] weights = new float[possibleStates.Length];
+                    float totalWeight = 0;
+
+                    for (int i = 0; i < possibleStates.Length; i++)
+                    {
+                        int state = possibleStates[i];
+                        weights[i] = 1.0f; // Base weight
+
+                        // Apply bias if available
+                        if (biases.TryGetValue(state, out float bias))
+                        {
+                            // Convert bias (-1 to 1) to weight multiplier (0.25 to 4)
+                            float multiplier = Mathf.Pow(2, bias * 2);
+                            weights[i] *= multiplier;
+                        }
+
+                        // Ensure weight is positive
+                        weights[i] = Mathf.Max(0.1f, weights[i]);
+                        totalWeight += weights[i];
+                    }
+
+                    // Random selection based on weights
+                    float randomValue = UnityEngine.Random.Range(0, totalWeight);
+                    float cumulativeWeight = 0;
+
+                    chosenState = possibleStates[0]; // Default to first state
+
+                    for (int i = 0; i < possibleStates.Length; i++)
+                    {
+                        cumulativeWeight += weights[i];
+                        if (randomValue <= cumulativeWeight)
+                        {
+                            chosenState = possibleStates[i];
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    // No significant biases, use standard random selection
+                    chosenState = possibleStates[UnityEngine.Random.Range(0, possibleStates.Length)];
+                }
+
+                // Collapse to chosen state
+                cellToCollapse.Collapse(chosenState);
+                PropagationEvent evt = new PropagationEvent(
+                cellToCollapse,
+                chunkWithCell,
+                new HashSet<int>(cellToCollapse.PossibleStates),
+                new HashSet<int> { chosenState },
+                cellToCollapse.IsBoundary
+                );
+
+                // Add to queue
+                AddPropagationEvent(evt);
+                return true;
+            }
+
+            return false;
+        }
+
+        // Add this method to apply constraints to a cell
+        private void ApplyHierarchicalConstraints(Cell cell, Chunk chunk)
+        {
+            hierarchicalConstraints.ApplyConstraintsToCell(cell, chunk, maxCellStates);
+        }
+
+        public HierarchicalConstraintSystem GetHierarchicalConstraintSystem()
+        {
+            return hierarchicalConstraints;
+        }
     }
 }

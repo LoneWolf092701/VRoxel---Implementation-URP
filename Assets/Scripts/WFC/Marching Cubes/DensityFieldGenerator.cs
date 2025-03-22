@@ -143,6 +143,8 @@ namespace WFC.MarchingCubes
             // calculated the main density field to avoid infinite recursion
             SmoothBoundaries(densityField, chunk);
 
+            SmoothCorners(densityField, chunk);
+
             // Store in cache for future requests
             densityFieldCache[chunk.Position] = densityField;
 
@@ -197,37 +199,122 @@ namespace WFC.MarchingCubes
 
         private float ApplyTerrainFeatures(float density, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
         {
-            // Again, use global coordinates for consistency across chunks
+            // Use global coordinates for consistency across chunks
             float globalX = chunkPos.x * chunkSize + x;
             float globalY = chunkPos.y * chunkSize + y;
             float globalZ = chunkPos.z * chunkSize + z;
 
-            // Create caves where noise is high but only in solid areas
+            // Create large-scale features that cross chunk boundaries
+
+            // 1. Cross-chunk cave system
             if (density > 0.6f)
             {
-                // Use 3D Perlin noise for caves (would use SimplexNoise in a real implementation)
-                float noise1 = Mathf.PerlinNoise(globalX * 0.1f, globalY * 0.1f);
-                float noise2 = Mathf.PerlinNoise(globalY * 0.1f, globalZ * 0.1f);
-                float caveNoise = (noise1 + noise2) * 0.5f;
+                // Use 3D Perlin noise for caves with a scale that ensures they cross chunks
+                float caveNoiseX = Mathf.PerlinNoise(globalX * 0.05f, globalY * 0.05f);
+                float caveNoiseZ = Mathf.PerlinNoise(globalY * 0.05f, globalZ * 0.05f);
+                float caveNoise = (caveNoiseX + caveNoiseZ) * 0.5f;
 
-                if (caveNoise > 0.7f)
+                // Make caves follow a specific pattern that will visibly cross boundaries
+                float caveTunnel = Mathf.Sin(globalX * 0.1f) * Mathf.Sin(globalZ * 0.1f);
+                caveTunnel = Mathf.Abs(caveTunnel);
+
+                if (caveNoise > 0.6f && caveTunnel < 0.3f)
                 {
-                    density *= 0.4f; // Reduce density to create caves
+                    density *= 0.3f; // Create more pronounced caves
                 }
             }
 
-            // Create occasional overhangs and cliff features
-            if (y > 3 && density < 0.7f)
+            // 2. Cross-chunk mountain range
+            float mountainRange = Mathf.PerlinNoise(globalX * 0.02f, globalZ * 0.02f);
+            // Create ridge lines that will definitely cross chunk boundaries
+            float ridgeLine = Mathf.Abs(Mathf.Sin(globalX * 0.05f + globalZ * 0.05f));
+
+            if (mountainRange > 0.6f && ridgeLine < 0.2f && y > 3)
             {
-                float cliffNoise = Mathf.PerlinNoise(globalX * 0.15f, globalZ * 0.15f);
-                if (cliffNoise > 0.7f)
-                {
-                    density += 0.2f; // Increase density to create overhangs
-                }
+                density += 0.3f; // Create more pronounced mountain ridges
+            }
+
+            // 3. Cross-chunk river system
+            float riverNoise = Mathf.PerlinNoise(globalX * 0.03f, globalZ * 0.03f);
+            float riverChannel = Mathf.Abs(Mathf.Sin(globalX * 0.02f + globalZ * 0.04f));
+
+            if (riverNoise > 0.5f && riverChannel < 0.1f && y < chunkSize / 2)
+            {
+                density -= 0.3f; // Create river channels
             }
 
             return density;
         }
+        private void SmoothCorners(float[,,] densityField, Chunk chunk)
+        {
+            int size = chunk.Size;
+
+            // Get all diagonal neighbors (corner neighbors)
+            for (int dx = -1; dx <= 1; dx += 2)
+            {
+                for (int dy = -1; dy <= 1; dy += 2)
+                {
+                    for (int dz = -1; dz <= 1; dz += 2)
+                    {
+                        Vector3Int diagonalOffset = new Vector3Int(dx, dy, dz);
+                        Vector3Int neighborPos = chunk.Position + diagonalOffset;
+
+                        // Check if this diagonal neighbor exists
+                        if (!densityFieldCache.TryGetValue(neighborPos, out float[,,] cornerNeighborField))
+                            continue;
+
+                        // Determine which corner to smooth
+                        int cornerX = dx > 0 ? size : 0;
+                        int cornerY = dy > 0 ? size : 0;
+                        int cornerZ = dz > 0 ? size : 0;
+
+                        // Get the opposite corner in the neighbor
+                        int neighborX = dx > 0 ? 0 : size;
+                        int neighborY = dy > 0 ? 0 : size;
+                        int neighborZ = dz > 0 ? 0 : size;
+
+                        // Average the corners
+                        float cornerAverage = (densityField[cornerX, cornerY, cornerZ] +
+                                             cornerNeighborField[neighborX, neighborY, neighborZ]) / 2.0f;
+
+                        // Apply with a wider influence radius for smoother transition
+                        int blendRadius = 2; // How far from corner to blend
+                        for (int x = 0; x <= blendRadius; x++)
+                        {
+                            for (int y = 0; y <= blendRadius; y++)
+                            {
+                                for (int z = 0; z <= blendRadius; z++)
+                                {
+                                    // Skip if out of bounds
+                                    if (cornerX - dx * x < 0 || cornerX - dx * x > size ||
+                                        cornerY - dy * y < 0 || cornerY - dy * y > size ||
+                                        cornerZ - dz * z < 0 || cornerZ - dz * z > size)
+                                        continue;
+
+                                    // Calculate blend factor based on distance from corner
+                                    float distance = Mathf.Sqrt(x * x + y * y + z * z);
+                                    if (distance > blendRadius) continue;
+
+                                    float blendFactor = 1.0f - (distance / blendRadius);
+
+                                    // Apply blended value
+                                    int blendX = cornerX - dx * x;
+                                    int blendY = cornerY - dy * y;
+                                    int blendZ = cornerZ - dz * z;
+
+                                    densityField[blendX, blendY, blendZ] = Mathf.Lerp(
+                                        densityField[blendX, blendY, blendZ],
+                                        cornerAverage,
+                                        blendFactor * 0.7f // Reduce influence for subtlety
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
 
         private float CalculateDensity(Chunk chunk, int x, int y, int z)
         {

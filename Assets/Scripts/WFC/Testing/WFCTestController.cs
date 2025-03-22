@@ -12,6 +12,8 @@ namespace WFC.Testing
 {
     public class WFCTestController : MonoBehaviour, WFC.Boundary.IWFCAlgorithm
     {
+        private HierarchicalConstraintSystem hierarchicalConstraints;
+
         [Header("Test Configuration")]
         [SerializeField] private int worldSizeX = 2;
         [SerializeField] private int worldSizeY = 2;
@@ -31,6 +33,10 @@ namespace WFC.Testing
         [SerializeField] private bool autoRun = false;
         [SerializeField] private float stepDelay = 0.1f;
         [SerializeField] private int stepsPerUpdate = 1;
+
+        [Header("Testing Controls")]
+        [SerializeField] private int randomSeed = 0;
+        [SerializeField] private bool useRandomSeed = true;
 
         // Define state names for better understanding
         private enum TileState
@@ -54,6 +60,22 @@ namespace WFC.Testing
 
         private void Start()
         {
+
+            InitializeHierarchicalConstraints();
+
+            // random number generator with seed
+            if (!useRandomSeed)
+            {
+                UnityEngine.Random.InitState(randomSeed);
+                Debug.Log($"Using fixed random seed: {randomSeed}");
+            }
+            else
+            {
+                randomSeed = System.Environment.TickCount;
+                UnityEngine.Random.InitState(randomSeed);
+                Debug.Log($"Using random seed: {randomSeed}");
+            }
+
             // Setup the WFC environment
             SetupWorld();
 
@@ -80,6 +102,64 @@ namespace WFC.Testing
             if (Input.GetKeyDown(KeyCode.R))
             {
                 ResetGeneration();
+            }
+
+            // Reset with random seed
+            if (Input.GetKeyDown(KeyCode.N))
+            {
+                ResetWithNewSeed();
+            }
+        }
+
+        private void InitializeHierarchicalConstraints()
+        {
+            // Create the hierarchical constraint system
+            hierarchicalConstraints = new HierarchicalConstraintSystem(chunkSize);
+
+            // Generate default constraints based on world configuration
+            hierarchicalConstraints.GenerateDefaultConstraints(
+                new Vector3Int(worldSizeX, worldSizeY, worldSizeZ));
+
+            // Precompute constraints for each chunk
+            foreach (var chunk in chunks.Values)
+            {
+                hierarchicalConstraints.PrecomputeChunkConstraints(chunk, maxStates);
+            }
+        }
+
+        private void ApplyHierarchicalConstraints(Cell cell, Chunk chunk)
+        {
+            if (hierarchicalConstraints != null)
+            {
+                hierarchicalConstraints.ApplyConstraintsToCell(cell, chunk, maxStates);
+            }
+        }
+
+        public void ResetWithNewSeed(int seed = -1)
+        {
+            // Clean up existing generation
+            ResetGeneration();
+
+            // Set new seed
+            if (seed < 0)
+            {
+                randomSeed = System.Environment.TickCount;
+            }
+            else
+            {
+                randomSeed = seed;
+            }
+
+            UnityEngine.Random.InitState(randomSeed);
+            Debug.Log($"Reset with new seed: {randomSeed}");
+
+            // Reinitialize
+            SetupWorld();
+
+            // Start generation if auto-run enabled
+            if (autoRun)
+            {
+                StartCoroutine(RunGenerationProcess());
             }
         }
 
@@ -428,6 +508,7 @@ namespace WFC.Testing
 
                 for (int x = 0; x < chunk.Size; x++)
                 {
+                    ScreenCapture.CaptureScreenshot($"Seed_{x}_Test.png");          // for testing
                     for (int y = 0; y < chunk.Size; y++)
                     {
                         for (int z = 0; z < chunk.Size; z++)
@@ -675,6 +756,7 @@ namespace WFC.Testing
 
         private void PropagateConstraints(Cell cell, Chunk chunk)
         {
+            ApplyHierarchicalConstraints(cell, chunk);
             // Skip if cell isn't collapsed
             if (!cell.CollapsedState.HasValue)
                 return;
@@ -820,5 +902,12 @@ namespace WFC.Testing
 
         public int MaxStates => maxStates;
         public int ChunkSize => chunkSize;
+
+
+        // for API calls
+        public HierarchicalConstraintSystem GetHierarchicalConstraintSystem()
+        {
+            return hierarchicalConstraints;
+        }
     }
 }

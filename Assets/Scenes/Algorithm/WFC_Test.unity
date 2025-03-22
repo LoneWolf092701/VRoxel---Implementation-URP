@@ -1487,7 +1487,7 @@ Transform:
   m_GameObject: {fileID: 1889396416}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.21618639, y: 4.980352, z: 3.1411047}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1509,6 +1509,10 @@ MonoBehaviour:
   terrainMaterial: {fileID: 2100000, guid: f9086f3ea36bc714383439f31aee5bbf, type: 2}
   autoUpdate: 0
   cellSize: 100
+  surfaceLevel: 0.5
+  forceTerrainSurface: 1
+  showDebugInfo: 1
+  gizmoColor: {r: 0, g: 1, b: 0, a: 0.5}
 --- !u!1 &2018647268
 GameObject:
   m_ObjectHideFlags: 0
