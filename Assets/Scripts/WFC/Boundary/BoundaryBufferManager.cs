@@ -6,26 +6,73 @@ using WFC.Generation;
 
 namespace WFC.Boundary
 {
-
-    // Create an interface for the required methods
-    public interface IWFCAlgorithm
+    /// <summary>
+    /// Interface for checking compatibility between states across boundaries
+    /// </summary>
+    public interface IBoundaryCompatibilityChecker
     {
         bool AreStatesCompatible(int stateA, int stateB, Direction direction);
+    }
+
+    /// <summary>
+    /// Interface for propagating constraint events
+    /// </summary>
+    public interface IPropagationHandler
+    {
         void AddPropagationEvent(PropagationEvent evt);
+    }
+
+    /// <summary>
+    /// Interface for accessing chunks
+    /// </summary>
+    public interface IChunkProvider
+    {
         Dictionary<Vector3Int, Chunk> GetChunks();
     }
 
+    /// <summary>
+    /// Combined interface for backward compatibility
+    /// </summary>
+    public interface IWFCAlgorithm : IBoundaryCompatibilityChecker, IPropagationHandler, IChunkProvider
+    {
+        // Empty - just combines the other interfaces
+    }
 
+    /// <summary>
+    /// Manages boundary buffers and coherence between chunks
+    /// </summary>
     public class BoundaryBufferManager
     {
-        private IWFCAlgorithm algorithm;
+        private IBoundaryCompatibilityChecker compatibilityChecker;
+        private IPropagationHandler propagationHandler;
+        private IChunkProvider chunkProvider;
 
-
-        public BoundaryBufferManager(IWFCAlgorithm algorithm)
+        /// <summary>
+        /// Constructor using individual interfaces
+        /// </summary>
+        public BoundaryBufferManager(
+            IBoundaryCompatibilityChecker compatibilityChecker,
+            IPropagationHandler propagationHandler,
+            IChunkProvider chunkProvider)
         {
-            this.algorithm = algorithm;
+            this.compatibilityChecker = compatibilityChecker;
+            this.propagationHandler = propagationHandler;
+            this.chunkProvider = chunkProvider;
         }
 
+        /// <summary>
+        /// Constructor using combined interface (for backward compatibility)
+        /// </summary>
+        public BoundaryBufferManager(IWFCAlgorithm algorithm)
+        {
+            this.compatibilityChecker = algorithm;
+            this.propagationHandler = algorithm;
+            this.chunkProvider = algorithm;
+        }
+
+        /// <summary>
+        /// Updates buffer states when a cell collapses at the boundary
+        /// </summary>
         public void UpdateBuffersAfterCollapse(Cell cell, Chunk chunk)
         {
             // If cell is not a boundary cell, nothing to do
@@ -85,11 +132,14 @@ namespace WFC.Boundary
                         true // is boundary event
                     );
 
-                    algorithm.AddPropagationEvent(propagationEvent);
+                    propagationHandler.AddPropagationEvent(propagationEvent);
                 }
             }
         }
 
+        /// <summary>
+        /// Applies constraints from buffer cells to boundary cells
+        /// </summary>
         public void ApplyBufferConstraints(Cell boundaryCell, Cell bufferCell, Direction direction)
         {
             HashSet<int> newPossibleStates = new HashSet<int>();
@@ -100,7 +150,7 @@ namespace WFC.Boundary
                 foreach (int bufferState in bufferCell.PossibleStates)
                 {
                     // Check if these states can be adjacent
-                    if (algorithm.AreStatesCompatible(boundaryState, bufferState, direction))
+                    if (compatibilityChecker.AreStatesCompatible(boundaryState, bufferState, direction))
                     {
                         newPossibleStates.Add(boundaryState);
                         break;
@@ -115,9 +165,12 @@ namespace WFC.Boundary
             }
         }
 
+        /// <summary>
+        /// Synchronizes all buffers across all chunks
+        /// </summary>
         public void SynchronizeAllBuffers()
         {
-            foreach (var chunk in algorithm.GetChunks().Values)
+            foreach (var chunk in chunkProvider.GetChunks().Values)
             {
                 foreach (var buffer in chunk.BoundaryBuffers.Values)
                 {
@@ -126,6 +179,9 @@ namespace WFC.Boundary
             }
         }
 
+        /// <summary>
+        /// Synchronizes a single buffer with its adjacent chunk
+        /// </summary>
         public void SynchronizeBuffer(BoundaryBuffer buffer)
         {
             if (buffer.AdjacentChunk == null)
@@ -159,11 +215,14 @@ namespace WFC.Boundary
                         true // is boundary event
                     );
 
-                    algorithm.AddPropagationEvent(propagationEvent);
+                    propagationHandler.AddPropagationEvent(propagationEvent);
                 }
             }
         }
 
+        /// <summary>
+        /// Validates that boundaries between chunks are coherent
+        /// </summary>
         public bool ValidateBoundary(BoundaryBuffer buffer)
         {
             if (buffer.AdjacentChunk == null)
@@ -191,7 +250,7 @@ namespace WFC.Boundary
                 // If adjacent cell is collapsed, check compatibility
                 if (adjacentCell.CollapsedState.HasValue)
                 {
-                    if (!algorithm.AreStatesCompatible(
+                    if (!compatibilityChecker.AreStatesCompatible(
                         boundaryCell.CollapsedState.Value,
                         adjacentCell.CollapsedState.Value,
                         buffer.Direction))
@@ -207,7 +266,7 @@ namespace WFC.Boundary
                     bool anyCompatible = false;
                     foreach (int state in adjacentCell.PossibleStates)
                     {
-                        if (algorithm.AreStatesCompatible(boundaryCell.CollapsedState.Value, state, buffer.Direction))
+                        if (compatibilityChecker.AreStatesCompatible(boundaryCell.CollapsedState.Value, state, buffer.Direction))
                         {
                             anyCompatible = true;
                             break;

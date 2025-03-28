@@ -41,6 +41,7 @@ namespace Visualization
                     constraintSystem = testController.GetHierarchicalConstraintSystem();
                 }
             }
+
         }
 
         private void OnDrawGizmos()

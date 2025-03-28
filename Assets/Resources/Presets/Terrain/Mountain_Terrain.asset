@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9ee49d69ef53f314b8af4bd592668647, type: 3}
+  m_Name: Mountain_Terrain
+  m_EditorClassIdentifier: 
+  presetName: Mountain Terrain
+  description: Rugged mountain terrain with rocky peaks and forest valleys
+  previewImage: {fileID: 0}
+  includeMountainRange: 1
+  includeRiver: 1
+  includeForest: 1
+  includeBeach: 0
+  mountainHeight: 0.8
+  mountainCoverage: 0.3
+  mountainRockiness: 0.85
+  mountainPosition: {x: 0.25, y: 0.5, z: 0.5}
+  riverWidth: 4
+  riverDepth: 2
+  riverMeandering: 1
+  riverControlPoints: 4
+  forestDensity: 0.4
+  forestCoverage: 0.4
+  forestPosition: {x: 0.7, y: 0.2, z: 0.3}
+  beachWidth: 3
+  beachSmoothness: 0.5
+  defaultGroundHeight: 0.2
+  noiseScale: 0.05
+  featureBlending: 0.7
+  createTransitionZones: 1
+  mountainBiases: []
+  riverBiases: []
+  forestBiases: []
+  beachBiases: []

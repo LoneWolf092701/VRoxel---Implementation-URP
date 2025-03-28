@@ -38,6 +38,14 @@ namespace WFC.Testing
         [SerializeField] private int randomSeed = 0;
         [SerializeField] private bool useRandomSeed = true;
 
+        // Add to WFCTestController class
+        [Header("Hierarchical Constraints")]
+        [SerializeField] private HierarchicalConstraintSystem constraintSystem;
+        private bool usingConstraints = true;
+
+        [SerializeField] private WFCConfiguration config;
+
+
         // Define state names for better understanding
         private enum TileState
         {
@@ -58,11 +66,12 @@ namespace WFC.Testing
         private Dictionary<Vector3Int, GameObject> cellVisualizers = new Dictionary<Vector3Int, GameObject>();
         private int generationStep = 0;
 
+        private void Awake()
+        {
+            InitializeHierarchicalConstraints();
+        }
         private void Start()
         {
-
-            InitializeHierarchicalConstraints();
-
             // random number generator with seed
             if (!useRandomSeed)
             {
@@ -683,12 +692,14 @@ namespace WFC.Testing
             AddPropagationEvent(evt);
         }
 
+        // Modify the FindCellToCollapse method
         private bool FindCellToCollapse()
         {
             // Find the cell with lowest entropy (but not already collapsed)
             Cell cellToCollapse = null;
             Chunk chunkWithCell = null;
             int lowestEntropy = int.MaxValue;
+            float highestConstraintInfluence = 0f;
 
             foreach (var chunk in chunks.Values)
             {
@@ -708,10 +719,48 @@ namespace WFC.Testing
                             if (cell.PossibleStates.Count == 1)
                                 continue;
 
-                            // Check if this cell has lower entropy
-                            if (cell.Entropy < lowestEntropy)
+                            // Calculate effective entropy based on constraint influence
+                            int effectiveEntropy = cell.Entropy;
+                            float constraintInfluence = 0f;
+
+                            if (usingConstraints && constraintSystem != null)
                             {
-                                lowestEntropy = cell.Entropy;
+                                // Get constraint influence for this cell
+                                Dictionary<int, float> biases = constraintSystem.CalculateConstraintInfluence(
+                                    cell, chunk, maxStates);
+
+                                // Calculate maximum bias as influence measure
+                                foreach (var bias in biases.Values)
+                                {
+                                    if (Mathf.Abs(bias) > constraintInfluence)
+                                        constraintInfluence = Mathf.Abs(bias);
+                                }
+
+                                // Reduce effective entropy based on constraint influence
+                                if (constraintInfluence > 0.7f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.5f);
+                                else if (constraintInfluence > 0.4f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.7f);
+                                else if (constraintInfluence > 0.2f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.9f);
+                            }
+
+                            // Selection criteria: prefer low entropy with high constraint influence
+                            bool betterCell = false;
+
+                            if (effectiveEntropy < lowestEntropy)
+                            {
+                                betterCell = true;
+                            }
+                            else if (effectiveEntropy == lowestEntropy && constraintInfluence > highestConstraintInfluence)
+                            {
+                                betterCell = true;
+                            }
+
+                            if (betterCell)
+                            {
+                                lowestEntropy = effectiveEntropy;
+                                highestConstraintInfluence = constraintInfluence;
                                 cellToCollapse = cell;
                                 chunkWithCell = chunk;
                             }
@@ -720,19 +769,72 @@ namespace WFC.Testing
                 }
             }
 
-            // If found a cell, collapse it to a random possible state
+            // If found a cell, collapse it
             if (cellToCollapse != null && chunkWithCell != null)
             {
-                // Choose a random state
-                int[] possibleStates = cellToCollapse.PossibleStates.ToArray();
-                int randomState = possibleStates[Random.Range(0, possibleStates.Length)];
+                // Choose a state based on constraints and entropy
+                int stateToCollapse = ChooseConstrainedState(cellToCollapse, chunkWithCell);
 
                 // Collapse the cell
-                CollapseCell(cellToCollapse, chunkWithCell, randomState);
+                CollapseCell(cellToCollapse, chunkWithCell, stateToCollapse);
                 return true;
             }
 
             return false;
+        }
+
+        // Add this new method to select a state based on constraints
+        private int ChooseConstrainedState(Cell cell, Chunk chunk)
+        {
+            int[] possibleStates = cell.PossibleStates.ToArray();
+
+            // If no constraints or only one possible state, select randomly
+            if (!usingConstraints || constraintSystem == null || possibleStates.Length == 1)
+            {
+                return possibleStates[Random.Range(0, possibleStates.Length)];
+            }
+
+            // Get constraint biases
+            Dictionary<int, float> biases = constraintSystem.CalculateConstraintInfluence(
+                cell, chunk, maxStates);
+
+            // Calculate selection weights for each state
+            float[] weights = new float[possibleStates.Length];
+            float totalWeight = 0f;
+
+            for (int i = 0; i < possibleStates.Length; i++)
+            {
+                int state = possibleStates[i];
+                float weight = 1.0f; // Base weight
+
+                // Apply bias if available
+                if (biases.TryGetValue(state, out float bias))
+                {
+                    // Convert bias (-1 to 1) to weight multiplier (0.1 to 5)
+                    float multiplier = Mathf.Pow(10, bias);
+                    weight *= multiplier;
+                }
+
+                // Ensure weight is positive
+                weights[i] = Mathf.Max(0.1f, weight);
+                totalWeight += weights[i];
+            }
+
+            // Weighted random selection
+            float randomValue = Random.Range(0, totalWeight);
+            float accumulatedWeight = 0f;
+
+            for (int i = 0; i < possibleStates.Length; i++)
+            {
+                accumulatedWeight += weights[i];
+                if (randomValue <= accumulatedWeight)
+                {
+                    return possibleStates[i];
+                }
+            }
+
+            // Fallback (should never reach here)
+            return possibleStates[0];
         }
 
         private void ProcessNextPropagationEvent()
@@ -757,6 +859,10 @@ namespace WFC.Testing
         private void PropagateConstraints(Cell cell, Chunk chunk)
         {
             ApplyHierarchicalConstraints(cell, chunk);
+            if (usingConstraints && constraintSystem != null)
+            {
+                constraintSystem.ApplyConstraintsToCell(cell, chunk, maxStates);
+            }
             // Skip if cell isn't collapsed
             if (!cell.CollapsedState.HasValue)
                 return;

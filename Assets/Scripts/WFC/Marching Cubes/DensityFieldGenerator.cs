@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
+using System.Linq;
 
 namespace WFC.MarchingCubes
 {
@@ -19,9 +20,13 @@ namespace WFC.MarchingCubes
         // State density values (how "solid" each state is)
         private Dictionary<int, float> stateDensityValues = new Dictionary<int, float>();
 
-        // Cache to prevent infinite recursion
+        // Cache to prevent infinite recursion and improve performance
         private Dictionary<Vector3Int, float[,,]> densityFieldCache = new Dictionary<Vector3Int, float[,,]>();
         private HashSet<Vector3Int> processingChunks = new HashSet<Vector3Int>();
+
+        // Cache management
+        private int maxCacheSize = 100; // Adjust based on expected world size
+        private Queue<Vector3Int> cacheEvictionQueue = new Queue<Vector3Int>();
 
         public DensityFieldGenerator()
         {
@@ -29,19 +34,51 @@ namespace WFC.MarchingCubes
             // Values below 0.5 are "air", values above 0.5 are "solid"
             stateDensityValues.Add(0, 0.1f);   // Empty (definitely air)
             stateDensityValues.Add(1, 0.8f);   // Ground (definitely solid)
-            stateDensityValues.Add(2, 0.73f);   // Grass (solid)
-            stateDensityValues.Add(3, 0.35f);   // Water (slightly solid for water surface)
+            stateDensityValues.Add(2, 0.73f);  // Grass (solid)
+            stateDensityValues.Add(3, 0.35f);  // Water (slightly solid for water surface)
             stateDensityValues.Add(4, 0.92f);  // Rock (very solid)
-            stateDensityValues.Add(5, 0.68f);   // Sand (moderately solid)
+            stateDensityValues.Add(5, 0.68f);  // Sand (moderately solid)
             stateDensityValues.Add(6, 0.78f);  // Tree (solid)
             stateDensityValues.Add(7, 0.8f);   // Forest (solid)
 
             chunkSize = 8;
         }
 
+        /// <summary>
+        /// Get a cached density field or generate a new one
+        /// </summary>
+        public float[,,] GetOrGenerateDensityField(Chunk chunk)
+        {
+            // Check if already cached - if so, update its position in the LRU queue
+            if (densityFieldCache.TryGetValue(chunk.Position, out float[,,] cachedField))
+            {
+                // Update LRU status - move to end of queue (most recently used)
+                if (cacheEvictionQueue.Contains(chunk.Position))
+                {
+                    // Remove from current position and add to end
+                    cacheEvictionQueue = new Queue<Vector3Int>(
+                        cacheEvictionQueue.Where(pos => !pos.Equals(chunk.Position)));
+                    cacheEvictionQueue.Enqueue(chunk.Position);
+                }
+                return cachedField;
+            }
+
+            // Not cached, generate new field
+            float[,,] newField = GenerateDensityField(chunk);
+
+            // Add to cache with LRU tracking
+            AddToCache(chunk.Position, newField);
+
+            return newField;
+        }
+
+        /// <summary>
+        /// Generate a density field for a chunk
+        /// </summary>
         public float[,,] GenerateDensityField(Chunk chunk)
         {
             chunkSize = chunk.Size;
+
             // Exit condition for recursion - if we're already processing this chunk
             if (processingChunks.Contains(chunk.Position))
             {
@@ -60,7 +97,7 @@ namespace WFC.MarchingCubes
                 return tempField;
             }
 
-            // Check if we've already computed this field
+            // Check if we've already computed this field (belt-and-suspenders check)
             if (densityFieldCache.TryGetValue(chunk.Position, out float[,,] cachedField))
             {
                 return cachedField;
@@ -132,21 +169,23 @@ namespace WFC.MarchingCubes
                     Debug.Log($"Forcing empty cells in top half of chunk {chunk.Position}");
                 }
             }
+
+            // Apply pre-processing to improve terrain features
             PreProcessDensityField(densityField, chunk);
 
-            if(!hasSolidCells || !hasEmptyCells)
+            if (!hasSolidCells || !hasEmptyCells)
             {
-                Debug.LogWarning($"Chunk {chunk.Position} lacks a proper surface: hasSolid={hasSolidCells}, hasEmpty={hasEmptyCells}");
+                Debug.LogWarning($"Chunk {chunk.Position} still lacks a proper surface after processing: hasSolid={hasSolidCells}, hasEmpty={hasEmptyCells}");
             }
 
-            // Handle boundaries to ensure seamless meshes - but only AFTER we've
-            // calculated the main density field to avoid infinite recursion
+            // Handle boundaries to ensure seamless meshes - but only AFTER we've calculated the main density field
             SmoothBoundaries(densityField, chunk);
 
+            // Handle corner points where multiple chunks meet
             SmoothCorners(densityField, chunk);
 
-            // Store in cache for future requests
-            densityFieldCache[chunk.Position] = densityField;
+            // Add to cache - using the helper method that manages the LRU queue
+            AddToCache(chunk.Position, densityField);
 
             // Remove from processing set
             processingChunks.Remove(chunk.Position);
@@ -154,7 +193,63 @@ namespace WFC.MarchingCubes
             return densityField;
         }
 
-        // Add this after the GenerateDensityField method
+        /// <summary>
+        /// Add a density field to the cache with LRU tracking
+        /// </summary>
+        private void AddToCache(Vector3Int chunkPos, float[,,] densityField)
+        {
+            // If we're at capacity, remove the least recently used item
+            if (densityFieldCache.Count >= maxCacheSize && cacheEvictionQueue.Count > 0)
+            {
+                Vector3Int oldestChunk = cacheEvictionQueue.Dequeue();
+                densityFieldCache.Remove(oldestChunk);
+                Debug.Log($"Cache full - Evicting chunk {oldestChunk} from density field cache");
+            }
+
+            // Add new entry to cache
+            densityFieldCache[chunkPos] = densityField;
+            cacheEvictionQueue.Enqueue(chunkPos);
+        }
+
+        /// <summary>
+        /// Evict distant chunks from the cache to free up memory
+        /// </summary>
+        public void EvictDistantChunks(Vector3 viewerPosition, float maxDistance)
+        {
+            List<Vector3Int> chunksToEvict = new List<Vector3Int>();
+
+            // Find chunks beyond the max distance
+            foreach (var entry in densityFieldCache)
+            {
+                Vector3 chunkCenter = new Vector3(
+                    entry.Key.x * chunkSize + chunkSize / 2,
+                    entry.Key.y * chunkSize + chunkSize / 2,
+                    entry.Key.z * chunkSize + chunkSize / 2
+                );
+
+                float distance = Vector3.Distance(chunkCenter, viewerPosition);
+                if (distance > maxDistance)
+                {
+                    chunksToEvict.Add(entry.Key);
+                }
+            }
+
+            // Evict chunks
+            foreach (var chunkPos in chunksToEvict)
+            {
+                densityFieldCache.Remove(chunkPos);
+
+                // Also remove from eviction queue
+                cacheEvictionQueue = new Queue<Vector3Int>(
+                    cacheEvictionQueue.Where(pos => !pos.Equals(chunkPos)));
+
+                Debug.Log($"Distance-based eviction: Removed chunk {chunkPos} from density field cache");
+            }
+        }
+
+        /// <summary>
+        /// Apply additional processing to the density field to create more interesting terrain
+        /// </summary>
         private void PreProcessDensityField(float[,,] densityField, Chunk chunk)
         {
             int size = chunk.Size;
@@ -178,6 +273,9 @@ namespace WFC.MarchingCubes
             }
         }
 
+        /// <summary>
+        /// Apply height-based variations to the density field
+        /// </summary>
         private float ApplyHeightVariation(float baseDensity, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
         {
             // Use global coordinates to ensure consistent heights across chunks
@@ -197,14 +295,15 @@ namespace WFC.MarchingCubes
             return Mathf.Lerp(baseDensity, baseDensity * heightInfluence + 0.5f, 0.7f);
         }
 
+        /// <summary>
+        /// Apply additional terrain features like caves, mountain ridges, and rivers
+        /// </summary>
         private float ApplyTerrainFeatures(float density, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
         {
             // Use global coordinates for consistency across chunks
             float globalX = chunkPos.x * chunkSize + x;
             float globalY = chunkPos.y * chunkSize + y;
             float globalZ = chunkPos.z * chunkSize + z;
-
-            // Create large-scale features that cross chunk boundaries
 
             // 1. Cross-chunk cave system
             if (density > 0.6f)
@@ -245,6 +344,10 @@ namespace WFC.MarchingCubes
 
             return density;
         }
+
+        /// <summary>
+        /// Smooth corner points where multiple chunks meet
+        /// </summary>
         private void SmoothCorners(float[,,] densityField, Chunk chunk)
         {
             int size = chunk.Size;
@@ -259,7 +362,7 @@ namespace WFC.MarchingCubes
                         Vector3Int diagonalOffset = new Vector3Int(dx, dy, dz);
                         Vector3Int neighborPos = chunk.Position + diagonalOffset;
 
-                        // Check if this diagonal neighbor exists
+                        // Check if this diagonal neighbor exists in the cache
                         if (!densityFieldCache.TryGetValue(neighborPos, out float[,,] cornerNeighborField))
                             continue;
 
@@ -315,7 +418,9 @@ namespace WFC.MarchingCubes
             }
         }
 
-
+        /// <summary>
+        /// Calculate the density value for a grid point based on surrounding cells
+        /// </summary>
         private float CalculateDensity(Chunk chunk, int x, int y, int z)
         {
             // Grid points are at corners of cells, so we need to sample from surrounding cells
@@ -357,12 +462,6 @@ namespace WFC.MarchingCubes
                                 density += baseDensity + variation;
                                 sampleCount++;
                             }
-                            //else
-                            //{
-                            //    // Default to solid for unknown states
-                            //    density += defaultSolidDensity;
-                            //    sampleCount++;
-                            //}
                         }
                         else if (cell != null)
                         {
@@ -370,7 +469,6 @@ namespace WFC.MarchingCubes
                             float avgDensity = 0.0f;
                             foreach (int state in cell.PossibleStates)
                             {
-                                // Git testing commit
                                 if (stateDensityValues.TryGetValue(state, out float stateDensity))
                                 {
                                     avgDensity += stateDensity;
@@ -409,7 +507,9 @@ namespace WFC.MarchingCubes
             return sampleCount > 0 ? density / sampleCount : defaultEmptyDensity;
         }
 
-        // Modified to avoid infinite recursion
+        /// <summary>
+        /// Smooth boundaries between chunks to ensure seamless meshes
+        /// </summary>
         private void SmoothBoundaries(float[,,] densityField, Chunk chunk)
         {
             int size = chunk.Size;
@@ -505,6 +605,10 @@ namespace WFC.MarchingCubes
                 }
             }
         }
+
+        /// <summary>
+        /// Get or create a field for a neighbor with continuation from existing chunks
+        /// </summary>
         private float[,,] GetNeighborDensityField(Chunk neighbor)
         {
             // Get or generate neighbor density field safely
@@ -521,11 +625,12 @@ namespace WFC.MarchingCubes
             return GenerateDensityField(neighbor);
         }
 
+        /// <summary>
+        /// Create a temporary continuation field for a neighbor that's being processed
+        /// </summary>
         private float[,,] CreateContinuationField(Chunk chunk)
         {
             // Create a field that continues trends from adjacent chunks
-            // This is a simplified version - you would implement a more 
-            // sophisticated continuation based on your terrain needs
             int size = chunk.Size;
             float[,,] field = new float[size + 1, size + 1, size + 1];
 
@@ -543,16 +648,39 @@ namespace WFC.MarchingCubes
 
             return field;
         }
-       
-        // Call this before generating a new batch of density fields to clear the cache
+
+        /// <summary>
+        /// Clear the cache completely
+        /// </summary>
         public void ClearCache()
         {
             densityFieldCache.Clear();
             processingChunks.Clear();
+            cacheEvictionQueue.Clear();
+            Debug.Log("Density field cache cleared");
         }
+
+        /// <summary>
+        /// Set the surface level threshold
+        /// </summary>
         public void SetSurfaceLevel(float level)
         {
             surfaceLevel = level;
+        }
+
+        /// <summary>
+        /// Set the maximum cache size
+        /// </summary>
+        public void SetMaxCacheSize(int size)
+        {
+            maxCacheSize = Mathf.Max(1, size);
+
+            // If current cache exceeds new size, trim it
+            while (densityFieldCache.Count > maxCacheSize && cacheEvictionQueue.Count > 0)
+            {
+                Vector3Int oldestChunk = cacheEvictionQueue.Dequeue();
+                densityFieldCache.Remove(oldestChunk);
+            }
         }
     }
 }

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using Utils;
 
 namespace WFC.Core
 {
@@ -27,7 +28,11 @@ namespace WFC.Core
 
         // Constraint parameters
         public float Strength = 1.0f;
-        public Dictionary<int, float> StateBiases = new Dictionary<int, float>();
+        [SerializeField] private SerializableDictionary<int, float> stateBiases = new SerializableDictionary<int, float>();
+
+        // Public property to access the dictionary
+        public Dictionary<int, float> StateBiases => stateBiases;
+        //public Dictionary<int, float> StateBiases = new Dictionary<int, float>();
 
         // Special parameters for different region types
         public float Gradient = 0.2f;

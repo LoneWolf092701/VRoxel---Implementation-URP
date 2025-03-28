@@ -1,4 +1,5 @@
 // Assets/Scripts/WFC/Core/Chunk.cs
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Boundary; // For BoundaryBuffer
@@ -28,6 +29,17 @@ namespace WFC.Core
         public float Priority { get; set; }
         public bool HasVisualCorrections { get; set; }
 
+        // Memory optimization flags and storage
+        public bool IsMemoryOptimized { get; set; } = false;
+
+        // LOD properties - New additions for the LOD system
+        public int LODLevel { get; set; } = 0; // 0 = highest detail
+        public int MaxIterations { get; set; } = 100; // Controlled by LOD
+        public float ConstraintInfluence { get; set; } = 1.0f; // Multiplier for constraints
+
+        private int[,,] compressedStates;
+        private List<Tuple<Vector3Int, int>> sparseCompressedStates;
+
         public Chunk(Vector3Int position, int size)
         {
             Position = position;
@@ -52,10 +64,29 @@ namespace WFC.Core
             IsFullyCollapsed = false;
             IsDirty = true;
             HasVisualCorrections = false;
+
+            // Initialize LOD properties with default values
+            LODLevel = 0;
+            MaxIterations = 100;
+            ConstraintInfluence = 1.0f;
         }
 
         public Cell GetCell(int x, int y, int z)
         {
+            // If memory is optimized and we have compressed states, need to restore cells first
+            if (IsMemoryOptimized && cells == null)
+            {
+                if (compressedStates != null || sparseCompressedStates != null)
+                {
+                    RestoreFromOptimized();
+                }
+                else
+                {
+                    Debug.LogError($"Chunk at {Position} is memory optimized but has no compressed data");
+                    return null;
+                }
+            }
+
             if (x < 0 || x >= Size || y < 0 || y >= Size || z < 0 || z >= Size)
                 return null;
 
@@ -69,6 +100,12 @@ namespace WFC.Core
 
         public void SetCell(int x, int y, int z, Cell cell)
         {
+            // If memory is optimized, restore cells first
+            if (IsMemoryOptimized && cells == null)
+            {
+                RestoreFromOptimized();
+            }
+
             if (x < 0 || x >= Size || y < 0 || y >= Size || z < 0 || z >= Size)
                 return;
 
@@ -95,6 +132,18 @@ namespace WFC.Core
 
         public void InitializeCells(IEnumerable<int> possibleStates)
         {
+            // If memory is optimized, restore first or recreate cells array
+            if (IsMemoryOptimized)
+            {
+                if (cells == null)
+                {
+                    cells = new Cell[Size, Size, Size];
+                }
+                IsMemoryOptimized = false;
+                compressedStates = null;
+                sparseCompressedStates = null;
+            }
+
             for (int x = 0; x < Size; x++)
             {
                 for (int y = 0; y < Size; y++)
@@ -112,6 +161,208 @@ namespace WFC.Core
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Optimizes chunk memory usage for distant chunks
+        /// </summary>
+        public void OptimizeMemory()
+        {
+            // Already optimized
+            if (IsMemoryOptimized) return;
+
+            if (IsFullyCollapsed)
+            {
+                // For fully collapsed chunks, use a simple 3D array of states
+                CompressToStateArray();
+            }
+            else
+            {
+                // For partially collapsed chunks, use a sparse representation
+                CompressPartiallyCollapsed();
+            }
+
+            IsMemoryOptimized = true;
+        }
+
+        /// <summary>
+        /// Restores chunk from optimized representation
+        /// </summary>
+        public void RestoreFromOptimized()
+        {
+            if (!IsMemoryOptimized) return;
+
+            if (compressedStates != null)
+            {
+                RestoreFromStateArray();
+            }
+            else if (sparseCompressedStates != null)
+            {
+                RestoreFromSparseRepresentation();
+            }
+
+            IsMemoryOptimized = false;
+        }
+
+        private void CompressToStateArray()
+        {
+            // Make sure cells array exists
+            if (cells == null) return;
+
+            // Store only collapsed states in a simple array
+            compressedStates = new int[Size, Size, Size];
+
+            for (int x = 0; x < Size; x++)
+            {
+                for (int y = 0; y < Size; y++)
+                {
+                    for (int z = 0; z < Size; z++)
+                    {
+                        Cell cell = GetCell(x, y, z);
+                        compressedStates[x, y, z] = cell.CollapsedState ?? -1;
+                    }
+                }
+            }
+
+            // Release full cell data to save memory
+            cells = null;
+        }
+
+        private void CompressPartiallyCollapsed()
+        {
+            // Make sure cells array exists
+            if (cells == null) return;
+
+            // Use sparse representation for partially collapsed chunks
+            sparseCompressedStates = new List<Tuple<Vector3Int, int>>();
+
+            for (int x = 0; x < Size; x++)
+            {
+                for (int y = 0; y < Size; y++)
+                {
+                    for (int z = 0; z < Size; z++)
+                    {
+                        Cell cell = GetCell(x, y, z);
+                        if (cell.CollapsedState.HasValue)
+                        {
+                            // Only store collapsed cells
+                            sparseCompressedStates.Add(
+                                new Tuple<Vector3Int, int>(
+                                    new Vector3Int(x, y, z),
+                                    cell.CollapsedState.Value));
+                        }
+                    }
+                }
+            }
+
+            // Release full cell data to save memory
+            cells = null;
+        }
+
+        private void RestoreFromStateArray()
+        {
+            // Create cells from compressed state array
+            if (compressedStates == null) return;
+
+            // Recreate cells array if needed
+            if (cells == null)
+            {
+                cells = new Cell[Size, Size, Size];
+
+                // Initialize with empty cells
+                for (int x = 0; x < Size; x++)
+                {
+                    for (int y = 0; y < Size; y++)
+                    {
+                        for (int z = 0; z < Size; z++)
+                        {
+                            cells[x, y, z] = new Cell(new Vector3Int(x, y, z), new int[0]);
+
+                            // Restore boundary flags
+                            if (IsOnBoundary(x, y, z))
+                            {
+                                cells[x, y, z].IsBoundary = true;
+                                cells[x, y, z].BoundaryDirection = GetBoundaryDirection(x, y, z);
+                            }
+
+                            // Restore collapsed state
+                            int state = compressedStates[x, y, z];
+                            if (state >= 0)
+                            {
+                                cells[x, y, z].Collapse(state);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                // Cells already exist, just update states
+                for (int x = 0; x < Size; x++)
+                {
+                    for (int y = 0; y < Size; y++)
+                    {
+                        for (int z = 0; z < Size; z++)
+                        {
+                            int state = compressedStates[x, y, z];
+                            if (state >= 0)
+                            {
+                                cells[x, y, z].Collapse(state);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Clear compressed data to free memory
+            compressedStates = null;
+        }
+
+        private void RestoreFromSparseRepresentation()
+        {
+            if (sparseCompressedStates == null) return;
+
+            // Recreate cells array if needed
+            if (cells == null)
+            {
+                cells = new Cell[Size, Size, Size];
+
+                // Initialize with empty cells
+                for (int x = 0; x < Size; x++)
+                {
+                    for (int y = 0; y < Size; y++)
+                    {
+                        for (int z = 0; z < Size; z++)
+                        {
+                            cells[x, y, z] = new Cell(new Vector3Int(x, y, z), new int[0]);
+
+                            // Restore boundary flags
+                            if (IsOnBoundary(x, y, z))
+                            {
+                                cells[x, y, z].IsBoundary = true;
+                                cells[x, y, z].BoundaryDirection = GetBoundaryDirection(x, y, z);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Apply collapsed states from sparse representation
+            foreach (var item in sparseCompressedStates)
+            {
+                Vector3Int pos = item.Item1;
+                int state = item.Item2;
+
+                if (pos.x >= 0 && pos.x < Size &&
+                    pos.y >= 0 && pos.y < Size &&
+                    pos.z >= 0 && pos.z < Size)
+                {
+                    cells[pos.x, pos.y, pos.z].Collapse(state);
+                }
+            }
+
+            // Clear compressed data to free memory
+            sparseCompressedStates = null;
         }
     }
 }

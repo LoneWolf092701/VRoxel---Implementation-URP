@@ -1,4 +1,4 @@
-// Optional: Simple camera control script
+// Smooth camera control script with unrestricted rotation
 using UnityEngine;
 
 public class SimpleCamera : MonoBehaviour
@@ -7,6 +7,10 @@ public class SimpleCamera : MonoBehaviour
     [SerializeField] private float rotateSpeed = 40.0f;
     [SerializeField] private float elevateSpeed = 5.0f;
     [SerializeField] private float accelerationMultiplier = 3.0f;
+
+    [Header("Smoothing")]
+    [SerializeField] private float movementSmoothTime = 0.1f;
+    [SerializeField] private float rotationSmoothTime = 0.05f;
 
     [Header("Debug Visualization")]
     [SerializeField] private bool showChunkBoundaries = true;
@@ -18,10 +22,18 @@ public class SimpleCamera : MonoBehaviour
     private Camera mainCamera;
     private WFC.Testing.WFCTestController wfcController;
 
+    // Smoothing variables
+    private Vector3 moveVelocity;
+    private Vector3 targetPosition;
+    private Vector3 rotationVelocity;
+
     private void Start()
     {
         mainCamera = GetComponentInChildren<Camera>();
         wfcController = FindFirstObjectByType<WFC.Testing.WFCTestController>();
+
+        // Initialize position variable
+        targetPosition = transform.position;
 
         // Lock cursor for FPS-style controls
         Cursor.lockState = CursorLockMode.Locked;
@@ -29,7 +41,7 @@ public class SimpleCamera : MonoBehaviour
 
     private void Update()
     {
-        // Movement
+        // Handle movement input
         float horizontal = Input.GetAxis("Horizontal");
         float vertical = Input.GetAxis("Vertical");
         float elevate = 0;
@@ -40,15 +52,38 @@ public class SimpleCamera : MonoBehaviour
         // Acceleration with Left Control
         float speedMultiplier = Input.GetKey(KeyCode.LeftControl) ? accelerationMultiplier : 1.0f;
 
-        // Apply movement
-        transform.Translate(new Vector3(horizontal, elevate, vertical) * moveSpeed * speedMultiplier * Time.deltaTime);
+        // Calculate movement in local space
+        Vector3 moveDirection = new Vector3(horizontal, 0, vertical);
 
-        // Rotation with mouse
+        // Normalize if moving in multiple directions
+        if (moveDirection.magnitude > 1f)
+            moveDirection.Normalize();
+
+        // Scale by speed
+        moveDirection *= moveSpeed * speedMultiplier;
+
+        // Transform to world space based on current orientation
+        moveDirection = transform.TransformDirection(moveDirection);
+        moveDirection.y = elevate * elevateSpeed * speedMultiplier; // Keep y-movement world-aligned
+
+        // Update target position
+        targetPosition = transform.position + moveDirection * Time.deltaTime;
+
+        // Smooth movement
+        transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref moveVelocity, movementSmoothTime);
+
+        // Handle rotation input
         float mouseX = Input.GetAxis("Mouse X");
         float mouseY = Input.GetAxis("Mouse Y");
 
-        transform.Rotate(Vector3.up, mouseX * rotateSpeed * Time.deltaTime);
-        mainCamera.transform.Rotate(Vector3.right, -mouseY * rotateSpeed * Time.deltaTime);
+        // Apply rotation directly to the transforms like in the original code,
+        // but store the desired rotation for smoothing
+        Quaternion targetBodyRotation = transform.rotation * Quaternion.Euler(0, mouseX * rotateSpeed * Time.deltaTime, 0);
+        Quaternion targetCameraRotation = mainCamera.transform.rotation * Quaternion.Euler(-mouseY * rotateSpeed * Time.deltaTime, 0, 0);
+
+        // Apply smooth rotation
+        transform.rotation = Quaternion.Slerp(transform.rotation, targetBodyRotation, 1 - Mathf.Exp(-rotationSmoothTime * 30 * Time.deltaTime));
+        mainCamera.transform.rotation = Quaternion.Slerp(mainCamera.transform.rotation, targetCameraRotation, 1 - Mathf.Exp(-rotationSmoothTime * 30 * Time.deltaTime));
 
         // Toggle visualization modes
         if (Input.GetKeyDown(KeyCode.B)) showChunkBoundaries = !showChunkBoundaries;

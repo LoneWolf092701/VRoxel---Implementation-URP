@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using WFC.Core;
+using WFC.Configuration; // Add this import for accessing configuration
 
 namespace WFC.MarchingCubes
 {
@@ -20,6 +21,11 @@ namespace WFC.MarchingCubes
         [Header("Debug Options")]
         [SerializeField] private bool showDebugInfo = true;
         [SerializeField] private Color gizmoColor = new Color(0, 1, 0, 0.5f); // Semi-transparent green
+
+        // LOD settings override (if not using the global configuration)
+        [Header("LOD Settings")]
+        [SerializeField] private bool useUnityLODSystem = false;
+        [SerializeField] private float[] lodDistanceThresholds = new float[] { 50f, 100f, 200f };
 
         private DensityFieldGenerator densityGenerator;
         private MarchingCubesGenerator marchingCubes;
@@ -169,9 +175,15 @@ namespace WFC.MarchingCubes
             }
         }
 
+        // Add this overload to fix the "no overload for method takes 2 arguments" error
         public void GenerateChunkMesh(Vector3Int chunkPos, Chunk chunk)
         {
-            Debug.Log($"Generating mesh for chunk {chunkPos}...");
+            GenerateChunkMesh(chunk);
+        }
+
+        public void GenerateChunkMesh(Chunk chunk)
+        {
+            Debug.Log($"Generating mesh for chunk {chunk.Position}...");
 
             try
             {
@@ -179,15 +191,15 @@ namespace WFC.MarchingCubes
                 float[,,] densityField = densityGenerator.GenerateDensityField(chunk);
 
                 // Store for debugging
-                debugDensityFields[chunkPos] = densityField;
+                debugDensityFields[chunk.Position] = densityField;
 
-                // Generate mesh
-                Mesh mesh = marchingCubes.GenerateMesh(densityField);
+                // Generate mesh with appropriate LOD level
+                Mesh mesh = marchingCubes.GenerateMesh(densityField, chunk.LODLevel);
 
                 // Debug mesh info
                 if (mesh != null)
                 {
-                    Debug.Log($"Mesh generated with {mesh.vertexCount} vertices and {mesh.triangles.Length / 3} triangles");
+                    Debug.Log($"Mesh generated with {mesh.vertexCount} vertices and {mesh.triangles.Length / 3} triangles (LOD {chunk.LODLevel})");
                 }
                 else
                 {
@@ -208,22 +220,22 @@ namespace WFC.MarchingCubes
                 }
 
                 // Create or update GameObject
-                if (!chunkMeshObjects.TryGetValue(chunkPos, out GameObject meshObject))
+                if (!chunkMeshObjects.TryGetValue(chunk.Position, out GameObject meshObject))
                 {
                     // Create new mesh object
-                    meshObject = new GameObject($"Terrain_Chunk_{chunkPos.x}_{chunkPos.y}_{chunkPos.z}");
+                    meshObject = new GameObject($"Terrain_Chunk_{chunk.Position.x}_{chunk.Position.y}_{chunk.Position.z}");
                     meshObject.transform.parent = transform;
                     meshObject.transform.position = new Vector3(
-                        chunkPos.x * chunk.Size * cellSize,
-                        chunkPos.y * chunk.Size * cellSize,
-                        chunkPos.z * chunk.Size * cellSize
+                        chunk.Position.x * chunk.Size * cellSize,
+                        chunk.Position.y * chunk.Size * cellSize,
+                        chunk.Position.z * chunk.Size * cellSize
                     );
 
                     // Add MeshFilter and MeshRenderer
                     meshObject.AddComponent<MeshFilter>();
                     meshObject.AddComponent<MeshRenderer>();
 
-                    chunkMeshObjects[chunkPos] = meshObject;
+                    chunkMeshObjects[chunk.Position] = meshObject;
                 }
 
                 // Update mesh
@@ -233,11 +245,53 @@ namespace WFC.MarchingCubes
                 // Update material
                 MeshRenderer meshRenderer = meshObject.GetComponent<MeshRenderer>();
                 meshRenderer.material = terrainMaterial;
+
+                // Setup LOD group if using Unity's LOD system
+                SetupUnityLODGroup(meshObject, chunk);
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"Error generating mesh for chunk {chunkPos}: {e.Message}\n{e.StackTrace}");
+                Debug.LogError($"Error generating mesh for chunk {chunk.Position}: {e.Message}\n{e.StackTrace}");
             }
+        }
+
+        private void SetupUnityLODGroup(GameObject meshObject, Chunk chunk)
+        {
+            // Get configuration from WFCConfigManager instead of a non-existent ConfigurationManager
+            var config = WFCConfigManager.Config;
+
+            // Check if we should use Unity's LOD system (either from config or local setting)
+            bool useLODSystem = (config != null && config.Performance.lodSettings.useUnityLODSystem) || useUnityLODSystem;
+            if (!useLODSystem)
+                return;
+
+            LODGroup lodGroup = meshObject.GetComponent<LODGroup>();
+            if (lodGroup == null)
+                lodGroup = meshObject.AddComponent<LODGroup>();
+
+            // Create LOD levels based on the configuration or local settings
+            float[] thresholds = config != null && config.Performance.lodSettings.lodDistanceThresholds.Length > 0
+                ? config.Performance.lodSettings.lodDistanceThresholds
+                : lodDistanceThresholds;
+
+            int lodLevelCount = thresholds.Length + 1;
+            LOD[] lods = new LOD[lodLevelCount];
+
+            // Get renderers
+            Renderer renderer = meshObject.GetComponent<Renderer>();
+
+            // Set up LOD levels
+            for (int i = 0; i < lodLevelCount; i++)
+            {
+                // Calculate screen relative transition height
+                float screenRelativeTransitionHeight = 1.0f - (i / (float)lodLevelCount);
+
+                // For simplicity, we'll use the same renderer for all LOD levels
+                lods[i] = new LOD(screenRelativeTransitionHeight, new Renderer[] { renderer });
+            }
+
+            lodGroup.SetLODs(lods);
+            lodGroup.RecalculateBounds();
         }
 
         private Mesh CreateFallbackTerrainMesh(int size)
@@ -278,7 +332,7 @@ namespace WFC.MarchingCubes
         {
             if (wfcController.GetChunks().TryGetValue(chunkPos, out Chunk chunk))
             {
-                GenerateChunkMesh(chunkPos, chunk);
+                GenerateChunkMesh(chunk);
             }
         }
 
