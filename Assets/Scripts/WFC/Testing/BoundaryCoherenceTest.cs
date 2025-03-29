@@ -6,6 +6,7 @@ using WFC.Core;
 using WFC.Testing;
 using WFC.Boundary;
 using System.Linq;
+using System.Collections;
 
 /// <summary>
 /// Test harness for evaluating boundary coherence in Wave Function Collapse generation
@@ -28,6 +29,13 @@ public class BoundaryCoherenceTest : MonoBehaviour
     [SerializeField] private bool automaticallyTestAllBoundaries = false;
     [SerializeField] private int sampleFrequency = 10; // Test every N frames
 
+    [Header("NEW: Test Configuration")]
+    [SerializeField] private bool runTestOnStart = false;
+    [SerializeField] private bool runContinuousMonitoring = false;
+    [SerializeField] private int continuousTestInterval = 30; // Frames between tests
+    [SerializeField] private bool autoResolveConflicts = false;
+    [SerializeField] private float conflictResolutionThreshold = 0.3f; // Coherence score below this triggers resolution
+
     [Header("Visualization")]
     [SerializeField] private bool highlightBoundaryCells = true;
     [SerializeField] private Material boundaryHighlightMaterial;
@@ -35,6 +43,15 @@ public class BoundaryCoherenceTest : MonoBehaviour
     [SerializeField] private Color compatibleColor = Color.green;
     [SerializeField] private Color lowEntropyColor = Color.yellow;
     [SerializeField] private Color highEntropyColor = Color.blue;
+
+    [Header("NEW: Visual Debug")]
+    [SerializeField] private bool showBoundaryLabels = true;
+    [SerializeField] private bool showCoherenceScores = true;
+    [SerializeField] private bool showConflictCount = true;
+    [SerializeField] private bool colorizeByCoherence = true;
+    [SerializeField] private Gradient coherenceGradient;
+    [SerializeField] private float visualScale = 1.0f;
+    [SerializeField] private GameObject boundaryMarkerPrefab;
 
     // Statistics
     private int boundaryConflictCount = 0;
@@ -45,6 +62,37 @@ public class BoundaryCoherenceTest : MonoBehaviour
     // Cached data
     private Dictionary<Cell, GameObject> highlightObjects = new Dictionary<Cell, GameObject>();
     private List<BoundaryMetrics> historicalMetrics = new List<BoundaryMetrics>();
+
+    // NEW: Reference to boundary manager for conflict resolution
+    private BoundaryBufferManager boundaryManager;
+
+    // NEW: Visual debug elements
+    private Dictionary<Direction, Dictionary<Vector3Int, GameObject>> boundaryMarkers =
+        new Dictionary<Direction, Dictionary<Vector3Int, GameObject>>();
+
+    // NEW: Test status tracking
+    private float overallCoherenceScore = 0f;
+    private int totalConflicts = 0;
+    private int totalBoundaries = 0;
+    private float lowestCoherenceScore = 1.0f;
+    private Direction worstBoundaryDirection;
+    private Vector3Int worstBoundaryChunk;
+
+    // NEW: Runtime test parameters
+    [System.Serializable]
+    public struct TestParameters
+    {
+        public bool RunAutomatically;
+        public float CoherenceThreshold;
+        public bool UseRandomSeed;
+        public int Seed;
+        public float ConflictTolerance;
+        public int MaxRuns;
+        public bool GenerateReport;
+    }
+
+    [Header("NEW: Runtime Test Parameters")]
+    [SerializeField] private TestParameters testParams;
 
     /// <summary>
     /// Class to store comprehensive boundary metrics
@@ -78,6 +126,203 @@ public class BoundaryCoherenceTest : MonoBehaviour
         }
     }
 
+    private void Start()
+    {
+        // Set up boundary manager reference by getting it from WFCTestController
+        if (testController != null)
+        {
+            // Use reflection to get private boundaryManager field
+            var field = testController.GetType().GetField("boundaryManager",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            if (field != null)
+            {
+                boundaryManager = field.GetValue(testController) as BoundaryBufferManager;
+            }
+
+            if (boundaryManager == null)
+            {
+                Debug.LogWarning("Could not get boundary manager from test controller. Auto-conflict resolution disabled.");
+                autoResolveConflicts = false;
+            }
+        }
+
+        // Initialize coherence gradient if not set
+        if (coherenceGradient == null || coherenceGradient.colorKeys.Length == 0)
+        {
+            coherenceGradient = new Gradient();
+            var colorKeys = new GradientColorKey[3];
+            colorKeys[0] = new GradientColorKey(Color.red, 0.0f);
+            colorKeys[1] = new GradientColorKey(Color.yellow, 0.5f);
+            colorKeys[2] = new GradientColorKey(Color.green, 1.0f);
+
+            var alphaKeys = new GradientAlphaKey[2];
+            alphaKeys[0] = new GradientAlphaKey(1.0f, 0.0f);
+            alphaKeys[1] = new GradientAlphaKey(1.0f, 1.0f);
+
+            coherenceGradient.SetKeys(colorKeys, alphaKeys);
+        }
+
+        // Create boundary marker material if needed
+        if (boundaryHighlightMaterial == null)
+        {
+            boundaryHighlightMaterial = new Material(Shader.Find("Standard"));
+            boundaryHighlightMaterial.SetFloat("_Glossiness", 0.0f); // Make matte
+        }
+
+        // Run test on start if requested
+        if (runTestOnStart)
+        {
+            StartCoroutine(DelayedTest());
+        }
+
+        // Start continuous monitoring if requested
+        if (runContinuousMonitoring)
+        {
+            StartCoroutine(ContinuousMonitoring());
+        }
+
+        // Start automated testing if requested
+        if (testParams.RunAutomatically)
+        {
+            StartCoroutine(AutomatedTestSuite());
+        }
+    }
+
+    private IEnumerator DelayedTest()
+    {
+        // Wait a frame to ensure WFC system is initialized
+        yield return null;
+        RunBoundaryTest();
+    }
+
+    private IEnumerator ContinuousMonitoring()
+    {
+        while (true)
+        {
+            yield return new WaitForFrames(continuousTestInterval);
+
+            // Run comprehensive test
+            RunComprehensiveTest();
+
+            // Auto-resolve conflicts if enabled
+            if (autoResolveConflicts && overallCoherenceScore < conflictResolutionThreshold)
+            {
+                ResolveAllConflicts();
+            }
+        }
+    }
+
+    private IEnumerator AutomatedTestSuite()
+    {
+        Debug.Log("Starting automated boundary coherence test suite...");
+
+        int runCount = 0;
+        List<float> coherenceScores = new List<float>();
+        List<int> conflictCounts = new List<int>();
+
+        while (runCount < testParams.MaxRuns)
+        {
+            runCount++;
+            Debug.Log($"Test run {runCount}/{testParams.MaxRuns}");
+
+            // Reset WFC with new seed if requested
+            if (testParams.UseRandomSeed)
+            {
+                int seed = testParams.Seed > 0 ? testParams.Seed + runCount : Random.Range(1, 10000);
+                testController.ResetWithNewSeed(seed);
+                Debug.Log($"Reset with seed: {seed}");
+            }
+            else
+            {
+                testController.ResetGeneration();
+            }
+
+            // Wait for generation to complete some steps
+            yield return new WaitForSeconds(1.0f);
+
+            // Run test and record results
+            RunComprehensiveTest();
+            coherenceScores.Add(overallCoherenceScore);
+            conflictCounts.Add(totalConflicts);
+
+            // Wait between runs
+            yield return new WaitForSeconds(0.5f);
+        }
+
+        // Generate final report
+        if (testParams.GenerateReport)
+        {
+            GenerateTestReport(coherenceScores, conflictCounts);
+        }
+
+        Debug.Log("Automated test suite complete.");
+    }
+
+    private void GenerateTestReport(List<float> coherenceScores, List<int> conflictCounts)
+    {
+        StringBuilder report = new StringBuilder();
+        report.AppendLine("# Boundary Coherence Test Report");
+        report.AppendLine($"Date: {System.DateTime.Now}");
+        report.AppendLine($"Test Runs: {coherenceScores.Count}");
+        report.AppendLine();
+
+        // Calculate statistics
+        float avgCoherence = coherenceScores.Average();
+        float minCoherence = coherenceScores.Min();
+        float maxCoherence = coherenceScores.Max();
+        float stdDevCoherence = CalculateStdDev(coherenceScores);
+
+        int avgConflicts = (int)conflictCounts.Average();
+        int minConflicts = conflictCounts.Min();
+        int maxConflicts = conflictCounts.Max();
+
+        report.AppendLine("## Coherence Scores");
+        report.AppendLine($"Average: {avgCoherence:F4}");
+        report.AppendLine($"Min: {minCoherence:F4}");
+        report.AppendLine($"Max: {maxCoherence:F4}");
+        report.AppendLine($"StdDev: {stdDevCoherence:F4}");
+        report.AppendLine();
+
+        report.AppendLine("## Conflict Counts");
+        report.AppendLine($"Average: {avgConflicts}");
+        report.AppendLine($"Min: {minConflicts}");
+        report.AppendLine($"Max: {maxConflicts}");
+        report.AppendLine();
+
+        report.AppendLine("## Test Parameters");
+        report.AppendLine($"Coherence Threshold: {testParams.CoherenceThreshold}");
+        report.AppendLine($"Seed: {(testParams.UseRandomSeed ? "Random" : testParams.Seed.ToString())}");
+        report.AppendLine($"Conflict Tolerance: {testParams.ConflictTolerance}");
+        report.AppendLine();
+
+        report.AppendLine("## Raw Data");
+        report.AppendLine("Run,Coherence,Conflicts");
+        for (int i = 0; i < coherenceScores.Count; i++)
+        {
+            report.AppendLine($"{i + 1},{coherenceScores[i]:F4},{conflictCounts[i]}");
+        }
+
+        // Save report
+        string reportPath = "boundary_test_report.txt";
+        try
+        {
+            File.WriteAllText(reportPath, report.ToString());
+            Debug.Log($"Test report saved to {reportPath}");
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"Error saving test report: {e.Message}");
+        }
+    }
+
+    private float CalculateStdDev(List<float> values)
+    {
+        float avg = values.Average();
+        float sumOfSquares = values.Sum(v => (v - avg) * (v - avg));
+        return Mathf.Sqrt(sumOfSquares / values.Count);
+    }
+
     private void Update()
     {
         // Automatic testing if enabled
@@ -85,6 +330,131 @@ public class BoundaryCoherenceTest : MonoBehaviour
         {
             RunComprehensiveTest();
         }
+
+        // Debug key controls
+        if (Input.GetKeyDown(KeyCode.F5))
+        {
+            RunBoundaryTest();
+        }
+
+        if (Input.GetKeyDown(KeyCode.F6))
+        {
+            RunComprehensiveTest();
+        }
+
+        if (Input.GetKeyDown(KeyCode.F7))
+        {
+            ResolveAllConflicts();
+        }
+
+        if (Input.GetKeyDown(KeyCode.F8))
+        {
+            ToggleAllBoundaryVisualizations();
+        }
+    }
+
+    private void ResolveAllConflicts()
+    {
+        if (boundaryManager == null || testController == null)
+            return;
+
+        Debug.Log("Attempting to resolve all boundary conflicts...");
+
+        var chunks = testController.GetChunks();
+        int resolvedCount = 0;
+
+        foreach (var chunkEntry in chunks)
+        {
+            Chunk chunk = chunkEntry.Value;
+
+            foreach (var bufferEntry in chunk.BoundaryBuffers)
+            {
+                Direction dir = bufferEntry.Key;
+                BoundaryBuffer buffer = bufferEntry.Value;
+
+                // Skip if no adjacent chunk
+                if (buffer.AdjacentChunk == null)
+                    continue;
+
+                // Check for conflicts in each cell pair
+                for (int i = 0; i < buffer.BoundaryCells.Count; i++)
+                {
+                    Cell boundaryCell = buffer.BoundaryCells[i];
+                    Direction oppositeDir = dir.GetOpposite();
+
+                    if (!buffer.AdjacentChunk.BoundaryBuffers.TryGetValue(oppositeDir, out BoundaryBuffer adjacentBuffer))
+                        continue;
+
+                    if (i >= adjacentBuffer.BoundaryCells.Count)
+                        continue;
+
+                    Cell adjacentCell = adjacentBuffer.BoundaryCells[i];
+
+                    // Check for conflict
+                    if (boundaryCell.CollapsedState.HasValue && adjacentCell.CollapsedState.HasValue)
+                    {
+                        if (!testController.AreStatesCompatible(
+                            boundaryCell.CollapsedState.Value,
+                            adjacentCell.CollapsedState.Value,
+                            dir))
+                        {
+                            // Resolve conflict
+                            boundaryManager.ResolveBoundaryConflict(buffer, i);
+                            resolvedCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        Debug.Log($"Resolved {resolvedCount} boundary conflicts.");
+
+        // Update visualization
+        if (highlightBoundaryCells)
+        {
+            ClearPreviousHighlights();
+            UpdateAllBoundaryVisualizations();
+        }
+    }
+
+    private void ToggleAllBoundaryVisualizations()
+    {
+        highlightBoundaryCells = !highlightBoundaryCells;
+
+        if (highlightBoundaryCells)
+        {
+            UpdateAllBoundaryVisualizations();
+        }
+        else
+        {
+            ClearPreviousHighlights();
+            ClearAllBoundaryMarkers();
+        }
+    }
+
+    private void UpdateAllBoundaryVisualizations()
+    {
+        ClearPreviousHighlights();
+        ClearAllBoundaryMarkers();
+
+        // Run boundary test to update all visualizations
+        RunComprehensiveTest();
+    }
+
+    private void ClearAllBoundaryMarkers()
+    {
+        foreach (var dirEntry in boundaryMarkers)
+        {
+            foreach (var marker in dirEntry.Value.Values)
+            {
+                if (marker != null)
+                {
+                    DestroyImmediate(marker);
+                }
+            }
+        }
+
+        boundaryMarkers.Clear();
     }
 
     /// <summary>
@@ -96,6 +466,12 @@ public class BoundaryCoherenceTest : MonoBehaviour
 
         // Test all boundaries in the world
         var chunks = testController.GetChunks();
+
+        // Reset statistics
+        totalConflicts = 0;
+        totalBoundaries = 0;
+        lowestCoherenceScore = 1.0f;
+        overallCoherenceScore = 0f;
 
         foreach (var chunkEntry in chunks)
         {
@@ -132,7 +508,33 @@ public class BoundaryCoherenceTest : MonoBehaviour
                 metrics.CollapsedPercentage = collapsedCount / (float)(boundaryCells1.Count * 2);
 
                 allMetrics.Add(metrics);
+
+                // Update overall statistics
+                totalBoundaries++;
+                totalConflicts += metrics.ConflictCount;
+                overallCoherenceScore += metrics.OverallCoherence;
+
+                // Track worst boundary
+                if (metrics.OverallCoherence < lowestCoherenceScore)
+                {
+                    lowestCoherenceScore = metrics.OverallCoherence;
+                    worstBoundaryDirection = dir;
+                    worstBoundaryChunk = chunkPos;
+                }
+
+                // Create boundary visualization if enabled
+                if (highlightBoundaryCells)
+                {
+                    CreateBoundaryMarker(chunkPos, dir, metrics);
+                    HighlightBoundaryCells(boundaryCells1, boundaryCells2, dir);
+                }
             }
+        }
+
+        // Calculate average coherence
+        if (totalBoundaries > 0)
+        {
+            overallCoherenceScore /= totalBoundaries;
         }
 
         // Calculate overall statistics
@@ -140,15 +542,14 @@ public class BoundaryCoherenceTest : MonoBehaviour
         float avgTransitionSmoothness = allMetrics.Average(m => m.TransitionSmoothness);
         float avgEntropy = allMetrics.Average(m => m.StateDistributionEntropy);
         float avgPatternContinuity = allMetrics.Average(m => m.PatternContinuity);
-        int totalConflicts = allMetrics.Sum(m => m.ConflictCount);
 
         Debug.Log($"Comprehensive Boundary Analysis:");
-        Debug.Log($"Overall boundary coherence: {avgCoherence:F3}");
+        Debug.Log($"Overall boundary coherence: {avgCoherence:F3} ({totalBoundaries} boundaries)");
         Debug.Log($"Average transition smoothness: {avgTransitionSmoothness:F3}");
         Debug.Log($"Average state distribution entropy: {avgEntropy:F3}");
         Debug.Log($"Average pattern continuity: {avgPatternContinuity:F3}");
         Debug.Log($"Total conflicts across all boundaries: {totalConflicts}");
-        Debug.Log($"Boundaries analyzed: {allMetrics.Count}");
+        Debug.Log($"Worst boundary: {worstBoundaryChunk} ({worstBoundaryDirection}) - coherence: {lowestCoherenceScore:F3}");
 
         // Output to CSV if requested
         if (!string.IsNullOrEmpty(outputFilePath))
@@ -186,7 +587,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
         // Visualize boundaries
         if (highlightBoundaryCells)
         {
-            HighlightBoundaryCells(boundaryCells1, boundaryCells2);
+            HighlightBoundaryCells(boundaryCells1, boundaryCells2, boundaryDirection);
         }
 
         // Optionally force a conflict for testing resolution strategies
@@ -618,7 +1019,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
     /// <summary>
     /// Highlight the boundary cells to visualize compatibility
     /// </summary>
-    private void HighlightBoundaryCells(List<Cell> cells1, List<Cell> cells2)
+    private void HighlightBoundaryCells(List<Cell> cells1, List<Cell> cells2, Direction direction)
     {
         if (cells1.Count != cells2.Count)
             return;
@@ -628,13 +1029,142 @@ public class BoundaryCoherenceTest : MonoBehaviour
             Cell cell1 = cells1[i];
             Cell cell2 = cells2[i];
 
-            bool compatible = AreStatesCompatible(cell1, cell2, boundaryDirection);
+            bool compatible = AreStatesCompatible(cell1, cell2, direction);
+            bool bothCollapsed = cell1.CollapsedState.HasValue && cell2.CollapsedState.HasValue;
+            bool potentiallyCompatible = CheckPotentialCompatibility(cell1, cell2, direction);
+
+            Color color;
+            if (bothCollapsed)
+            {
+                color = compatible ? compatibleColor : conflictColor;
+            }
+            else
+            {
+                // Use entropy-based colors for uncollapsed cells
+                float entropyFactor = (float)(cell1.Entropy + cell2.Entropy) / (2 * testController.MaxStates);
+                color = potentiallyCompatible ?
+                    Color.Lerp(lowEntropyColor, highEntropyColor, entropyFactor) :
+                    conflictColor;
+            }
 
             // Create or update highlight for cell1
-            CreateHighlight(cell1, compatible ? compatibleColor : conflictColor);
+            CreateHighlight(cell1, color);
 
             // Create or update highlight for cell2
-            CreateHighlight(cell2, compatible ? compatibleColor : conflictColor);
+            CreateHighlight(cell2, color);
+        }
+    }
+
+    /// <summary>
+    /// Create a boundary marker to show the overall coherence of a boundary
+    /// </summary>
+    private void CreateBoundaryMarker(Vector3Int chunkPos, Direction direction, BoundaryMetrics metrics)
+    {
+        // Skip if not showing boundary markers
+        if (!showBoundaryLabels && !showCoherenceScores && !showConflictCount)
+            return;
+
+        // Calculate world position for marker
+        Vector3 chunkWorldPos = new Vector3(
+            chunkPos.x * testController.ChunkSize,
+            chunkPos.y * testController.ChunkSize,
+            chunkPos.z * testController.ChunkSize
+        );
+
+        // Calculate marker position based on direction
+        Vector3 dirVector = direction.ToVector3Int();
+        Vector3 markerPos = chunkWorldPos + new Vector3(
+            (direction == Direction.Right ? testController.ChunkSize : (direction == Direction.Left ? 0 : testController.ChunkSize / 2f)),
+            (direction == Direction.Up ? testController.ChunkSize : (direction == Direction.Down ? 0 : testController.ChunkSize / 2f)),
+            (direction == Direction.Forward ? testController.ChunkSize : (direction == Direction.Back ? 0 : testController.ChunkSize / 2f))
+        );
+
+        // Get or create dictionary for this direction
+        if (!boundaryMarkers.TryGetValue(direction, out var dirMarkers))
+        {
+            dirMarkers = new Dictionary<Vector3Int, GameObject>();
+            boundaryMarkers[direction] = dirMarkers;
+        }
+
+        // Check if marker already exists
+        GameObject marker;
+        if (!dirMarkers.TryGetValue(chunkPos, out marker) || marker == null)
+        {
+            // Create new marker
+            if (boundaryMarkerPrefab != null)
+            {
+                marker = Instantiate(boundaryMarkerPrefab, markerPos, Quaternion.identity);
+            }
+            else
+            {
+                marker = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                marker.transform.position = markerPos;
+                marker.transform.localScale = Vector3.one * visualScale * 0.5f;
+            }
+
+            marker.name = $"BoundaryMarker_{direction}_{chunkPos.x}_{chunkPos.y}_{chunkPos.z}";
+            marker.transform.parent = transform;
+
+            dirMarkers[chunkPos] = marker;
+        }
+        else
+        {
+            // Update position
+            marker.transform.position = markerPos;
+        }
+
+        // Set color based on coherence
+        Renderer renderer = marker.GetComponent<Renderer>();
+        if (renderer != null && colorizeByCoherence)
+        {
+            if (coherenceGradient != null)
+            {
+                renderer.material.color = coherenceGradient.Evaluate(metrics.OverallCoherence);
+            }
+            else
+            {
+                // Fallback color scheme
+                renderer.material.color = Color.Lerp(Color.red, Color.green, metrics.OverallCoherence);
+            }
+        }
+
+        // Add TextMesh component for labels if needed
+        TextMesh textMesh = marker.GetComponent<TextMesh>();
+        if (textMesh == null && (showBoundaryLabels || showCoherenceScores || showConflictCount))
+        {
+            GameObject textObj = new GameObject("Label");
+            textObj.transform.parent = marker.transform;
+            textObj.transform.localPosition = Vector3.up * 0.5f;
+            textObj.transform.localRotation = Quaternion.identity;
+
+            textMesh = textObj.AddComponent<TextMesh>();
+            textMesh.fontSize = 36;
+            textMesh.alignment = TextAlignment.Center;
+            textMesh.anchor = TextAnchor.LowerCenter;
+            textMesh.characterSize = 0.1f * visualScale;
+        }
+
+        // Update text content
+        if (textMesh != null)
+        {
+            StringBuilder sb = new StringBuilder();
+
+            if (showBoundaryLabels)
+            {
+                sb.AppendLine($"{direction}");
+            }
+
+            if (showCoherenceScores)
+            {
+                sb.AppendLine($"Coherence: {metrics.OverallCoherence:F2}");
+            }
+
+            if (showConflictCount && metrics.ConflictCount > 0)
+            {
+                sb.AppendLine($"Conflicts: {metrics.ConflictCount}");
+            }
+
+            textMesh.text = sb.ToString();
         }
     }
 
@@ -657,13 +1187,14 @@ public class BoundaryCoherenceTest : MonoBehaviour
             GameObject newHighlight = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             newHighlight.name = "BoundaryHighlight";
             newHighlight.transform.position = worldPos;
-            newHighlight.transform.localScale = Vector3.one * 0.3f;
+            newHighlight.transform.localScale = Vector3.one * 0.3f * visualScale;
             newHighlight.transform.parent = transform;
 
             // Set material and color
             Renderer renderer = newHighlight.GetComponent<Renderer>();
             renderer.material = boundaryHighlightMaterial != null ?
-                boundaryHighlightMaterial : new Material(Shader.Find("Standard"));
+                new Material(boundaryHighlightMaterial) : // Create a clone to avoid sharing the material
+                new Material(Shader.Find("Standard"));
             renderer.material.color = color;
 
             // Store reference
@@ -734,11 +1265,76 @@ public class BoundaryCoherenceTest : MonoBehaviour
     private void OnDestroy()
     {
         ClearPreviousHighlights();
+        ClearAllBoundaryMarkers();
 
         // Save any unsaved metrics
         if (historicalMetrics.Count > 0 && !string.IsNullOrEmpty(outputFilePath))
         {
             OutputMetricsToCSV(historicalMetrics, outputFilePath);
         }
+    }
+
+    /// <summary>
+    /// Waits for the specified number of frames
+    /// </summary>
+    private class WaitForFrames : CustomYieldInstruction
+    {
+        private int framesRemaining;
+
+        public WaitForFrames(int frames)
+        {
+            framesRemaining = frames;
+        }
+
+        public override bool keepWaiting
+        {
+            get
+            {
+                framesRemaining--;
+                return framesRemaining > 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Export metrics to JSON format
+    /// </summary>
+    public string ExportMetricsToJson()
+    {
+        StringBuilder jsonBuilder = new StringBuilder();
+        jsonBuilder.AppendLine("{");
+        jsonBuilder.AppendLine("  \"timestamp\": \"" + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\",");
+        jsonBuilder.AppendLine("  \"worldSeed\": " + testController.GetType().GetField("randomSeed")?.GetValue(testController) + ",");
+        jsonBuilder.AppendLine("  \"overallCoherence\": " + overallCoherenceScore.ToString("F4") + ",");
+        jsonBuilder.AppendLine("  \"totalConflicts\": " + totalConflicts + ",");
+        jsonBuilder.AppendLine("  \"totalBoundaries\": " + totalBoundaries + ",");
+        jsonBuilder.AppendLine("  \"metrics\": [");
+
+        for (int i = 0; i < historicalMetrics.Count; i++)
+        {
+            var metric = historicalMetrics[i];
+            jsonBuilder.AppendLine("    {");
+            jsonBuilder.AppendLine("      \"timestamp\": \"" + metric.Timestamp + "\",");
+            jsonBuilder.AppendLine("      \"chunkPosition\": [" + metric.ChunkPosition.x + ", " + metric.ChunkPosition.y + ", " + metric.ChunkPosition.z + "],");
+            jsonBuilder.AppendLine("      \"neighborPosition\": [" + metric.NeighborPosition.x + ", " + metric.NeighborPosition.y + ", " + metric.NeighborPosition.z + "],");
+            jsonBuilder.AppendLine("      \"direction\": \"" + metric.Direction + "\",");
+            jsonBuilder.AppendLine("      \"coherence\": " + metric.OverallCoherence.ToString("F4") + ",");
+            jsonBuilder.AppendLine("      \"conflicts\": " + metric.ConflictCount + ",");
+            jsonBuilder.AppendLine("      \"totalCells\": " + metric.TotalCells + ",");
+            jsonBuilder.AppendLine("      \"collapsedPercentage\": " + metric.CollapsedPercentage.ToString("F4") + ",");
+            jsonBuilder.AppendLine("      \"stateEntropy\": " + metric.StateDistributionEntropy.ToString("F4") + ",");
+            jsonBuilder.AppendLine("      \"patternContinuity\": " + metric.PatternContinuity.ToString("F4") + ",");
+            jsonBuilder.AppendLine("      \"transitionSmoothness\": " + metric.TransitionSmoothness.ToString("F4"));
+
+            if (i < historicalMetrics.Count - 1)
+                jsonBuilder.AppendLine("    },");
+            else
+                jsonBuilder.AppendLine("    }");
+        }
+
+        jsonBuilder.AppendLine("  ]");
+        jsonBuilder.AppendLine("}");
+
+        return jsonBuilder.ToString();
     }
 }

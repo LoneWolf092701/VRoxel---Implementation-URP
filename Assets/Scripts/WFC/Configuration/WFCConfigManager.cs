@@ -112,7 +112,11 @@ namespace WFC.Configuration
                 string path = UnityEditor.AssetDatabase.GetAssetPath(_instance.configAsset);
                 if (!string.IsNullOrEmpty(path))
                 {
-                    WFCConfiguration reloadedConfig = UnityEditor.AssetDatabase.LoadAssetAtPath<WFCConfiguration>(path);
+                    #if UNITY_EDITOR
+                    WFCConfiguration reloadedConfig = UnityEditor.AssetDatabase.LoadAssetAtPath<WFCConfiguration>(path);        //have to check
+                    #else
+                        Debug.LogWarning("Cannot reload configuration at runtime in builds");
+                    #endif
                     if (reloadedConfig != null)
                     {
                         _instance.configAsset = reloadedConfig;

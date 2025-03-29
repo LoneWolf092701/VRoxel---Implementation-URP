@@ -1,0 +1,54 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 038d498eb4ba9c446883d82c1daa57b9, type: 3}
+  m_Name: 2_WFCConfig
+  m_EditorClassIdentifier: 
+  World:
+    worldSizeX: 2
+    worldSizeY: 2
+    worldSizeZ: 1
+    chunkSize: 8
+    maxStates: 7
+    randomSeed: 0
+  Algorithm:
+    boundaryCoherenceWeight: 1
+    entropyWeight: 1
+    constraintWeight: 1
+    useConstraints: 1
+    maxIterationsPerChunk: 100
+  Visualization:
+    cellSize: 1
+    showUncollapsedCells: 1
+    highlightBoundaries: 1
+  Performance:
+    maxThreads: 4
+    meshGenerationPriority: 50
+    cacheSizeLimit: 100
+    loadDistance: 100
+    unloadDistance: 150
+    maxConcurrentChunks: 16
+    lodSettings:
+      lodDistanceThresholds:
+      - 50
+      - 100
+      - 200
+      maxIterationsPerLOD: 640000003200000019000000
+      constraintInfluencePerLOD:
+      - 1
+      - 0.7
+      - 0.4
+      useSimplifiedMeshes: 1
+      vertexReductionPerLOD:
+      - 0
+      - 0.4
+      - 0.7
+      useUnityLODSystem: 0

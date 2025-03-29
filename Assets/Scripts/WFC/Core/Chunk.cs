@@ -1,6 +1,7 @@
 // Assets/Scripts/WFC/Core/Chunk.cs
 using System;
 using System.Collections.Generic;
+using System.Text;
 using UnityEngine;
 using WFC.Boundary; // For BoundaryBuffer
 
@@ -364,5 +365,145 @@ namespace WFC.Core
             // Clear compressed data to free memory
             sparseCompressedStates = null;
         }
+
+        /// <summary>
+        /// Gets the status of the chunk
+        /// </summary>
+        public ChunkStatus GetStatus()
+        {
+            if (IsMemoryOptimized)
+                return ChunkStatus.Optimized;
+
+            if (IsFullyCollapsed)
+                return ChunkStatus.FullyCollapsed;
+
+            // Count how many cells are collapsed
+            int totalCells = Size * Size * Size;
+            int collapsedCount = 0;
+
+            for (int x = 0; x < Size; x++)
+            {
+                for (int y = 0; y < Size; y++)
+                {
+                    for (int z = 0; z < Size; z++)
+                    {
+                        if (GetCell(x, y, z).CollapsedState.HasValue)
+                            collapsedCount++;
+                    }
+                }
+            }
+
+            float collapsePercentage = (float)collapsedCount / totalCells;
+
+            if (collapsePercentage == 0)
+                return ChunkStatus.Initialized;
+            else if (collapsePercentage < 0.5f)
+                return ChunkStatus.PartiallyCollapsed;
+            else
+                return ChunkStatus.MostlyCollapsed;
+        }
+
+        /// <summary>
+        /// Serializes the chunk state to a string
+        /// </summary>
+        public string Serialize()
+        {
+            StringBuilder sb = new StringBuilder();
+
+            // Write header
+            sb.AppendLine($"CHUNK:{Position.x},{Position.y},{Position.z}:{Size}");
+
+            // Write cells
+            for (int x = 0; x < Size; x++)
+            {
+                for (int y = 0; y < Size; y++)
+                {
+                    for (int z = 0; z < Size; z++)
+                    {
+                        Cell cell = GetCell(x, y, z);
+                        if (cell.CollapsedState.HasValue)
+                        {
+                            sb.AppendLine($"C:{x},{y},{z}:{cell.CollapsedState.Value}");
+                        }
+                    }
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Deserializes a chunk from a string
+        /// </summary>
+        public static Chunk Deserialize(string data)
+        {
+            Chunk chunk = null;
+
+            // Split into lines
+            string[] lines = data.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+            // Process header
+            if (lines.Length > 0 && lines[0].StartsWith("CHUNK:"))
+            {
+                string[] headerParts = lines[0].Substring(6).Split(':');
+                if (headerParts.Length == 2)
+                {
+                    // Parse chunk position
+                    string[] posParts = headerParts[0].Split(',');
+                    if (posParts.Length == 3)
+                    {
+                        int posX = int.Parse(posParts[0]);
+                        int posY = int.Parse(posParts[1]);
+                        int posZ = int.Parse(posParts[2]);
+
+                        // Parse chunk size
+                        int size = int.Parse(headerParts[1]);
+
+                        // Create chunk
+                        chunk = new Chunk(new Vector3Int(posX, posY, posZ), size);
+
+                        // Process cell data
+                        for (int i = 1; i < lines.Length; i++)
+                        {
+                            if (lines[i].StartsWith("C:"))
+                            {
+                                string[] cellParts = lines[i].Substring(2).Split(':');
+                                if (cellParts.Length == 2)
+                                {
+                                    string[] posParts2 = cellParts[0].Split(',');
+                                    if (posParts2.Length == 3)
+                                    {
+                                        int x = int.Parse(posParts2[0]);
+                                        int y = int.Parse(posParts2[1]);
+                                        int z = int.Parse(posParts2[2]);
+
+                                        int state = int.Parse(cellParts[1]);
+
+                                        // Set cell state
+                                        Cell cell = chunk.GetCell(x, y, z);
+                                        cell.Collapse(state);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return chunk;
+        }
+    }
+
+    /// <summary>
+    /// Enum representing the current status of a chunk
+    /// </summary>
+    public enum ChunkStatus
+    {
+        Uninitialized,
+        Initialized,
+        PartiallyCollapsed,
+        MostlyCollapsed,
+        FullyCollapsed,
+        Optimized
     }
 }

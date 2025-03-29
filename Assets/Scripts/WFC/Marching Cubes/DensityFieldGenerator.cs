@@ -28,6 +28,9 @@ namespace WFC.MarchingCubes
         private int maxCacheSize = 100; // Adjust based on expected world size
         private Queue<Vector3Int> cacheEvictionQueue = new Queue<Vector3Int>();
 
+        private Dictionary<Vector3Int, Dictionary<Vector3Int, Vector3>> boundaryVertexCache = new Dictionary<Vector3Int, Dictionary<Vector3Int, Vector3>>();
+
+
         public DensityFieldGenerator()
         {
             // Set more extreme density values to ensure there's a clear surface
@@ -512,11 +515,16 @@ namespace WFC.MarchingCubes
         /// </summary>
         private void SmoothBoundaries(float[,,] densityField, Chunk chunk)
         {
+            // Get chunk size
             int size = chunk.Size;
 
-            // For each direction, smooth boundary if there's a neighbor
+            // If no neighbors, nothing to smooth
+            if (chunk.Neighbors == null) return;
+
+            // Iterate through all six directions
             foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
             {
+                // Skip if no neighbor in this direction
                 if (!chunk.Neighbors.ContainsKey(dir))
                     continue;
 
@@ -526,82 +534,109 @@ namespace WFC.MarchingCubes
                 if (processingChunks.Contains(neighbor.Position))
                     continue;
 
-                // Get density field for neighbor - this can recursively call back to this chunk
-                // but we've added protection with the processingChunks set
-                float[,,] neighborDensity;
-                if (densityFieldCache.TryGetValue(neighbor.Position, out float[,,] cachedNeighborField))
-                {
-                    neighborDensity = cachedNeighborField;
-                }
-                else
-                {
-                    // Only generate neighbor fields for adjacent chunks that aren't already being processed
-                    neighborDensity = GenerateDensityField(neighbor);
-                }
+                // Safely get or generate neighbor's density field
+                float[,,] neighborDensity = GetNeighborDensityField(neighbor);
 
-                // Smooth boundaries based on direction
+                // Smoothing logic varies by direction
                 switch (dir)
                 {
-                    case Direction.Left: // -X
-                        for (int y = 0; y <= size; y++)
-                        {
-                            for (int z = 0; z <= size; z++)
-                            {
-                                // Average with neighbor's density
-                                densityField[0, y, z] = (densityField[0, y, z] + neighborDensity[size, y, z]) / 2.0f;
-                            }
-                        }
+                    case Direction.Left: // Negative X boundary
+                        SmoothXBoundary(densityField, neighborDensity, 0, size);
                         break;
 
-                    case Direction.Right: // +X
-                        for (int y = 0; y <= size; y++)
-                        {
-                            for (int z = 0; z <= size; z++)
-                            {
-                                densityField[size, y, z] = (densityField[size, y, z] + neighborDensity[0, y, z]) / 2.0f;
-                            }
-                        }
+                    case Direction.Right: // Positive X boundary
+                        SmoothXBoundary(densityField, neighborDensity, size, 0);
                         break;
 
-                    case Direction.Down: // -Y
-                        for (int x = 0; x <= size; x++)
-                        {
-                            for (int z = 0; z <= size; z++)
-                            {
-                                densityField[x, 0, z] = (densityField[x, 0, z] + neighborDensity[x, size, z]) / 2.0f;
-                            }
-                        }
+                    case Direction.Down: // Negative Y boundary
+                        SmoothYBoundary(densityField, neighborDensity, 0, size);
                         break;
 
-                    case Direction.Up: // +Y
-                        for (int x = 0; x <= size; x++)
-                        {
-                            for (int z = 0; z <= size; z++)
-                            {
-                                densityField[x, size, z] = (densityField[x, size, z] + neighborDensity[x, 0, z]) / 2.0f;
-                            }
-                        }
+                    case Direction.Up: // Positive Y boundary
+                        SmoothYBoundary(densityField, neighborDensity, size, 0);
                         break;
 
-                    case Direction.Back: // -Z
-                        for (int x = 0; x <= size; x++)
-                        {
-                            for (int y = 0; y <= size; y++)
-                            {
-                                densityField[x, y, 0] = (densityField[x, y, 0] + neighborDensity[x, y, size]) / 2.0f;
-                            }
-                        }
+                    case Direction.Back: // Negative Z boundary
+                        SmoothZBoundary(densityField, neighborDensity, 0, size);
                         break;
 
-                    case Direction.Forward: // +Z
-                        for (int x = 0; x <= size; x++)
-                        {
-                            for (int y = 0; y <= size; y++)
-                            {
-                                densityField[x, y, size] = (densityField[x, y, size] + neighborDensity[x, y, 0]) / 2.0f;
-                            }
-                        }
+                    case Direction.Forward: // Positive Z boundary
+                        SmoothZBoundary(densityField, neighborDensity, size, 0);
                         break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Smooth the X boundary between chunks
+        /// </summary>
+        private void SmoothXBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
+        {
+            int size = densityField1.GetLength(1); // Y dimension
+            int depth = densityField1.GetLength(2); // Z dimension
+
+            for (int y = 0; y <= size; y++)
+            {
+                for (int z = 0; z <= depth; z++)
+                {
+                    // Use weighted average with bias toward neighbor chunk's edge
+                    float blendFactor = 0.5f; // Can be adjusted for different blending behavior
+                    float smoothedDensity = (
+                        densityField1[index1, y, z] * (1 - blendFactor) +
+                        densityField2[index2, y, z] * blendFactor
+                    );
+
+                    // Update both density fields for consistency
+                    densityField1[index1, y, z] = smoothedDensity;
+                    densityField2[index2, y, z] = smoothedDensity;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Smooth the Y boundary between chunks
+        /// </summary>
+        private void SmoothYBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
+        {
+            int width = densityField1.GetLength(0); // X dimension
+            int depth = densityField1.GetLength(2); // Z dimension
+
+            for (int x = 0; x <= width; x++)
+            {
+                for (int z = 0; z <= depth; z++)
+                {
+                    float blendFactor = 0.5f;
+                    float smoothedDensity = (
+                        densityField1[x, index1, z] * (1 - blendFactor) +
+                        densityField2[x, index2, z] * blendFactor
+                    );
+
+                    densityField1[x, index1, z] = smoothedDensity;
+                    densityField2[x, index2, z] = smoothedDensity;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Smooth the Z boundary between chunks
+        /// </summary>
+        private void SmoothZBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
+        {
+            int width = densityField1.GetLength(0); // X dimension
+            int height = densityField1.GetLength(1); // Y dimension
+
+            for (int x = 0; x <= width; x++)
+            {
+                for (int y = 0; y <= height; y++)
+                {
+                    float blendFactor = 0.5f;
+                    float smoothedDensity = (
+                        densityField1[x, y, index1] * (1 - blendFactor) +
+                        densityField2[x, y, index2] * blendFactor
+                    );
+
+                    densityField1[x, y, index1] = smoothedDensity;
+                    densityField2[x, y, index2] = smoothedDensity;
                 }
             }
         }
