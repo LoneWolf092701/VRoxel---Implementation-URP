@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using WFC.Core;
+using WFC.Generation;
 using WFC.Configuration; // Add this import for accessing configuration
 
 namespace WFC.MarchingCubes
 {
     public class MeshGenerator : MonoBehaviour
     {
-        [SerializeField] private WFC.Testing.WFCTestController wfcController;
+        [SerializeField] public WFCGenerator wfcController;     // changed
         [SerializeField] private Material terrainMaterial;
         [SerializeField] private bool autoUpdate = false;
         [SerializeField] private float cellSize = 1.0f;

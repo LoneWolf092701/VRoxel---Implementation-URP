@@ -1,12 +1,13 @@
 using UnityEngine;
 using WFC.Core;
 using WFC.Testing;
+using WFC.Generation;
 using System.Collections.Generic;
 using System.Collections;
 
 public class ConstraintInitializer : MonoBehaviour
 {
-    [SerializeField] private WFCTestController wfcController;
+    [SerializeField] public WFCGenerator wfcController;        //changed // changed
 
     [Header("Global Constraint Settings")]
     [SerializeField] private bool createMountainRange = true;
@@ -30,7 +31,7 @@ public class ConstraintInitializer : MonoBehaviour
         if (wfcController == null)
         {
             // Use the newer API instead of the deprecated FindObjectOfType
-            wfcController = Object.FindAnyObjectByType<WFCTestController>();
+            wfcController = Object.FindAnyObjectByType<WFCGenerator>();     //changed
             if (wfcController == null)
             {
                 Debug.LogError("ConstraintInitializer: No WFCTestController found!");
@@ -39,26 +40,38 @@ public class ConstraintInitializer : MonoBehaviour
         }
         StartCoroutine(DelayedInitialization());
 
-        // Clear existing constraints
-        constraintSystem.ClearConstraints();
-
-        // Create new constraints
-        CreateGlobalConstraints();
-
-        if (createTransitionZones)
-            CreateRegionConstraints();
     }
 
-    private IEnumerator DelayedInitialization() 
+    private IEnumerator DelayedInitialization()
     {
+        // Wait a few frames to ensure other components are initialized
+        yield return new WaitForSeconds(0.2f);
 
-        yield return null;
-        // Get constraint system from the test controller
-        constraintSystem = wfcController.GetHierarchicalConstraintSystem();
-        if (constraintSystem == null)
+        // Get constraint system from the controller
+        if (wfcController != null)
         {
-            Debug.LogError("ConstraintInitializer: No HierarchicalConstraintSystem available in WFCTestController!");
-            yield break;
+            constraintSystem = wfcController.GetHierarchicalConstraintSystem();
+            if (constraintSystem == null)
+            {
+                Debug.LogWarning("ConstraintInitializer: No HierarchicalConstraintSystem available in WFCController!");
+                yield break;
+            }
+
+            // Only now create constraints
+            Debug.Log("ConstraintInitializer: Successfully got constraint system, creating constraints...");
+
+            // Clear existing constraints
+            constraintSystem.ClearConstraints();
+
+            // Create new constraints
+            CreateGlobalConstraints();
+
+            if (createTransitionZones)
+                CreateRegionConstraints();
+        }
+        else
+        {
+            Debug.LogError("ConstraintInitializer: WFCController reference is null!");
         }
     }
 

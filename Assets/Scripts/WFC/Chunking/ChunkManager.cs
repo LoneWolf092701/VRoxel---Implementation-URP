@@ -25,7 +25,7 @@ namespace WFC.Chunking
         [SerializeField] private WFCConfiguration configOverride;
 
         [Header("References")]
-        [SerializeField] private Transform viewer;
+        [SerializeField] public Transform viewer;       // changed
         [SerializeField] private WFCGenerator wfcGenerator; // Reference from inspector
         [SerializeField] private PerformanceMonitor performanceMonitor;
 

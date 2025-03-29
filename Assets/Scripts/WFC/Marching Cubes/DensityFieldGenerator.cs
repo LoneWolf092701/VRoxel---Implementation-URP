@@ -533,36 +533,43 @@ namespace WFC.MarchingCubes
                 // Skip if we're already processing this neighbor (prevents infinite recursion)
                 if (processingChunks.Contains(neighbor.Position))
                     continue;
-
-                // Safely get or generate neighbor's density field
-                float[,,] neighborDensity = GetNeighborDensityField(neighbor);
-
-                // Smoothing logic varies by direction
-                switch (dir)
+                try
                 {
-                    case Direction.Left: // Negative X boundary
-                        SmoothXBoundary(densityField, neighborDensity, 0, size);
-                        break;
+                    // Safely get or generate neighbor's density field
+                    float[,,] neighborDensity = GetNeighborDensityField(neighbor);
 
-                    case Direction.Right: // Positive X boundary
-                        SmoothXBoundary(densityField, neighborDensity, size, 0);
-                        break;
+                    // Smoothing logic varies by direction
+                    switch (dir)
+                    {
+                        case Direction.Left: // Negative X boundary
+                            SmoothXBoundary(densityField, neighborDensity, 0, size);
+                            break;
 
-                    case Direction.Down: // Negative Y boundary
-                        SmoothYBoundary(densityField, neighborDensity, 0, size);
-                        break;
+                        case Direction.Right: // Positive X boundary
+                            SmoothXBoundary(densityField, neighborDensity, size, 0);
+                            break;
 
-                    case Direction.Up: // Positive Y boundary
-                        SmoothYBoundary(densityField, neighborDensity, size, 0);
-                        break;
+                        case Direction.Down: // Negative Y boundary
+                            SmoothYBoundary(densityField, neighborDensity, 0, size);
+                            break;
 
-                    case Direction.Back: // Negative Z boundary
-                        SmoothZBoundary(densityField, neighborDensity, 0, size);
-                        break;
+                        case Direction.Up: // Positive Y boundary
+                            SmoothYBoundary(densityField, neighborDensity, size, 0);
+                            break;
 
-                    case Direction.Forward: // Positive Z boundary
-                        SmoothZBoundary(densityField, neighborDensity, size, 0);
-                        break;
+                        case Direction.Back: // Negative Z boundary
+                            SmoothZBoundary(densityField, neighborDensity, 0, size);
+                            break;
+
+                        case Direction.Forward: // Positive Z boundary
+                            SmoothZBoundary(densityField, neighborDensity, size, 0);
+                            break;
+                    }
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogWarning($"Error smoothing boundary with neighbor at {neighbor.Position}: {e.Message}");
+                    // Continue with other neighbors instead of letting the exception propagate
                 }
             }
         }
@@ -598,12 +605,31 @@ namespace WFC.MarchingCubes
         /// </summary>
         private void SmoothYBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
         {
-            int width = densityField1.GetLength(0); // X dimension
-            int depth = densityField1.GetLength(2); // Z dimension
+            // Check if arrays have compatible dimensions
+            if (densityField1 == null || densityField2 == null)
+                return;
 
-            for (int x = 0; x <= width; x++)
+            int width1 = densityField1.GetLength(0);
+            int depth1 = densityField1.GetLength(2);
+            int width2 = densityField2.GetLength(0);
+            int depth2 = densityField2.GetLength(2);
+
+            // Determine common dimensions to avoid index out of bounds
+            int commonWidth = Mathf.Min(width1, width2);
+            int commonDepth = Mathf.Min(depth1, depth2);
+
+            // Validate indices
+            if (index1 < 0 || index1 >= densityField1.GetLength(1) ||
+                index2 < 0 || index2 >= densityField2.GetLength(1))
             {
-                for (int z = 0; z <= depth; z++)
+                Debug.LogWarning($"SmoothYBoundary: Invalid indices - index1: {index1}, max: {densityField1.GetLength(1) - 1}, index2: {index2}, max: {densityField2.GetLength(1) - 1}");
+                return;
+            }
+
+            // Perform smoothing only on the common area
+            for (int x = 0; x < commonWidth; x++)
+            {
+                for (int z = 0; z < commonDepth; z++)
                 {
                     float blendFactor = 0.5f;
                     float smoothedDensity = (

@@ -13,7 +13,7 @@ namespace WFC.Generation
     /// <summary>
     /// Updated WFCGenerator class that properly integrates with the configuration system
     /// </summary>
-    public class WFCGenerator : MonoBehaviour, WFC.Boundary.IWFCAlgorithm
+    public class WFCGenerator : MonoBehaviour, WFC.Boundary.IChunkProvider, WFC.Boundary.IWFCAlgorithm
     {
         [Header("Configuration")]
         [Tooltip("Override the global configuration with a specific asset")]

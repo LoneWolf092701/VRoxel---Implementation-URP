@@ -16,7 +16,7 @@ namespace WFC.Performance
     public class PerformanceMonitor : MonoBehaviour
     {
         [Header("References")]
-        [SerializeField] private ChunkManager chunkManager;
+        [SerializeField] public ChunkManager chunkManager;      // changed
 
         [Header("Settings")]
         [SerializeField] private int logFrequency = 60; // Log every 60 frames

@@ -17,7 +17,7 @@ namespace WFC.Processing
     public class ParallelWFCManager : MonoBehaviour
     {
         [Header("References")]
-        [SerializeField] private WFCGenerator wfcGenerator;
+        [SerializeField] public WFCGenerator wfcGenerator;      // changed
         [SerializeField] private WFC.Chunking.ChunkManager chunkManager;
         [SerializeField] private WFCTestController wfcTestController;
 

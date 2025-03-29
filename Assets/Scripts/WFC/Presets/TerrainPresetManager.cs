@@ -18,7 +18,7 @@ namespace WFC.Presets
         [SerializeField] public WFCTestController wfcTestController;
 
         [Header("Presets")]
-        [SerializeField] private TerrainConstraintPreset defaultPreset;
+        [SerializeField] public TerrainConstraintPreset defaultPreset;      // changed
         [SerializeField] private List<TerrainConstraintPreset> availablePresets = new List<TerrainConstraintPreset>();
 
         [Header("Debug")]
