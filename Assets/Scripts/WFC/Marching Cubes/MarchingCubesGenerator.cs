@@ -103,6 +103,7 @@ namespace WFC.MarchingCubes
         /// </summary>
         public Mesh GenerateMesh(float[,,] densityField, int lodLevel = 0)
         {
+            int skipFactor = lodLevel + 1;
             SetLODLevel(lodLevel, meshSimplificationFactors);
 
             // Get pooled collections instead of creating new ones

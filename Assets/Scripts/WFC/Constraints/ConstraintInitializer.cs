@@ -1,13 +1,13 @@
 using UnityEngine;
 using WFC.Core;
-using WFC.Testing;
+//using WFC.Testing;
 using WFC.Generation;
 using System.Collections.Generic;
 using System.Collections;
 
 public class ConstraintInitializer : MonoBehaviour
 {
-    [SerializeField] public WFCGenerator wfcController;        //changed // changed
+    [SerializeField] public WFCGenerator wfcGenerator;        //changed // changed
 
     [Header("Global Constraint Settings")]
     [SerializeField] private bool createMountainRange = true;
@@ -28,11 +28,11 @@ public class ConstraintInitializer : MonoBehaviour
 
     private void Start()
     {
-        if (wfcController == null)
+        if (wfcGenerator == null)
         {
             // Use the newer API instead of the deprecated FindObjectOfType
-            wfcController = Object.FindAnyObjectByType<WFCGenerator>();     //changed
-            if (wfcController == null)
+            wfcGenerator = Object.FindAnyObjectByType<WFCGenerator>();     //changed
+            if (wfcGenerator == null)
             {
                 Debug.LogError("ConstraintInitializer: No WFCTestController found!");
                 return;
@@ -48,9 +48,9 @@ public class ConstraintInitializer : MonoBehaviour
         yield return new WaitForSeconds(0.2f);
 
         // Get constraint system from the controller
-        if (wfcController != null)
+        if (wfcGenerator != null)
         {
-            constraintSystem = wfcController.GetHierarchicalConstraintSystem();
+            constraintSystem = wfcGenerator.GetHierarchicalConstraintSystem();
             if (constraintSystem == null)
             {
                 Debug.LogWarning("ConstraintInitializer: No HierarchicalConstraintSystem available in WFCController!");
@@ -80,9 +80,9 @@ public class ConstraintInitializer : MonoBehaviour
         // Get world dimensions using public properties or methods
         // We'll use safe extraction methods for world sizes
         Vector3Int worldSize = GetWorldSize();
-        int worldX = worldSize.x * wfcController.ChunkSize;
-        int worldY = worldSize.y * wfcController.ChunkSize;
-        int worldZ = worldSize.z * wfcController.ChunkSize;
+        int worldX = worldSize.x * wfcGenerator.ChunkSize;
+        int worldY = worldSize.y * wfcGenerator.ChunkSize;
+        int worldZ = worldSize.z * wfcGenerator.ChunkSize;
 
         // Create ground level constraint (always present)
         GlobalConstraint groundConstraint = new GlobalConstraint
@@ -91,7 +91,7 @@ public class ConstraintInitializer : MonoBehaviour
             Type = ConstraintType.HeightMap,
             WorldCenter = new Vector3(worldX / 2, 0, worldZ / 2),
             WorldSize = new Vector3(worldX, 0, worldZ),
-            BlendRadius = wfcController.ChunkSize,
+            BlendRadius = wfcGenerator.ChunkSize,
             Strength = 0.8f,
             MinHeight = 0,
             MaxHeight = worldY
@@ -115,7 +115,7 @@ public class ConstraintInitializer : MonoBehaviour
                 Type = ConstraintType.HeightMap,
                 WorldCenter = new Vector3(worldX * 0.25f, worldY * 0.5f, worldZ * 0.5f),
                 WorldSize = new Vector3(worldX * 0.3f, worldY * 0.7f, worldZ * 0.3f),
-                BlendRadius = wfcController.ChunkSize * 2,
+                BlendRadius = wfcGenerator.ChunkSize * 2,
                 Strength = 0.7f,
                 MinHeight = worldY * 0.3f,
                 MaxHeight = worldY
@@ -136,8 +136,8 @@ public class ConstraintInitializer : MonoBehaviour
                 Name = "River",
                 Type = ConstraintType.RiverPath,
                 Strength = 0.8f,
-                PathWidth = wfcController.ChunkSize * 0.5f,
-                BlendRadius = wfcController.ChunkSize
+                PathWidth = wfcGenerator.ChunkSize * 0.5f,
+                BlendRadius = wfcGenerator.ChunkSize
             };
 
             // Add control points for the river path
@@ -161,7 +161,7 @@ public class ConstraintInitializer : MonoBehaviour
                 Type = ConstraintType.BiomeRegion,
                 WorldCenter = new Vector3(worldX * 0.7f, worldY * 0.2f, worldZ * 0.3f),
                 WorldSize = new Vector3(worldX * 0.4f, worldY * 0.3f, worldZ * 0.4f),
-                BlendRadius = wfcController.ChunkSize * 1.5f,
+                BlendRadius = wfcGenerator.ChunkSize * 1.5f,
                 Strength = 0.6f
             };
 
@@ -190,10 +190,10 @@ public class ConstraintInitializer : MonoBehaviour
     private int? TryGetWorldSizeX()
     {
         // Check if WFCTestController has a public GetWorldSizeX method
-        var method = wfcController.GetType().GetMethod("GetWorldSizeX", System.Type.EmptyTypes);
+        var method = wfcGenerator.GetType().GetMethod("GetWorldSizeX", System.Type.EmptyTypes);
         if (method != null)
         {
-            return (int)method.Invoke(wfcController, null);
+            return (int)method.Invoke(wfcGenerator, null);
         }
 
         // Your WFCTestController might have different public accessor

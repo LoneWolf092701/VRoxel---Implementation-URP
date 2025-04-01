@@ -77,10 +77,10 @@ public class WFCInitializer : MonoBehaviour
         if (constraintInitializer != null)
         {
             // Ensure WFC reference is set
-            if (constraintInitializer.wfcController == null && wfcGenerator != null)
+            if (constraintInitializer.wfcGenerator == null && wfcGenerator != null)
             {
                 LogInitialization("   Setting WFC reference on ConstraintInitializer");
-                constraintInitializer.wfcController = wfcGenerator;
+                constraintInitializer.wfcGenerator = wfcGenerator;
             }
 
             // We need to wait for it to initialize on its own via Start()
@@ -141,10 +141,10 @@ public class WFCInitializer : MonoBehaviour
         if (meshGenerator != null)
         {
             // Make sure references are set
-            if (meshGenerator.wfcController == null && wfcGenerator != null)
+            if (meshGenerator.wfcGenerator == null && wfcGenerator != null)
             {
                 LogInitialization("   Setting WFCGenerator reference on MeshGenerator");
-                meshGenerator.wfcController = wfcGenerator;
+                meshGenerator.wfcGenerator = wfcGenerator;
             }
 
             // Generate initial meshes

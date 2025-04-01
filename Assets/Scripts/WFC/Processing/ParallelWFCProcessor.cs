@@ -48,7 +48,8 @@ namespace WFC.Processing
         public ParallelWFCProcessor(IWFCAlgorithm algorithm, int maxThreads = 0)
         {
             this.wfcAlgorithm = algorithm;
-            this.maxThreads = maxThreads > 0 ? maxThreads : Mathf.Max(1, Environment.ProcessorCount - 1);
+            //this.maxThreads = maxThreads > 0 ? maxThreads : Mathf.Max(1, Environment.ProcessorCount - 1);
+            this.maxThreads = maxThreads > 0 ? maxThreads : Mathf.Clamp(SystemInfo.processorCount - 1, 1, 8);   // new one
 
             // Initialize thread-local random generators
             threadLocalRandom = new ThreadLocal<System.Random>(() =>

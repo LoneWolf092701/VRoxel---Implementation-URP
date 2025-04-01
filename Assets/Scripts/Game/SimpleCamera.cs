@@ -1,160 +1,206 @@
-// Smooth camera control script with unrestricted rotation
 using UnityEngine;
 
+/// <summary>
+/// A first-person controller for Unity that uses gravity-based movement and 
+/// directional control based on camera view.
+/// </summary>
 public class SimpleCamera : MonoBehaviour
 {
+    [Header("Movement Settings")]
+    [Tooltip("The maximum movement speed")]
     [SerializeField] private float moveSpeed = 10.0f;
-    [SerializeField] private float rotateSpeed = 40.0f;
-    [SerializeField] private float elevateSpeed = 5.0f;
-    [SerializeField] private float accelerationMultiplier = 3.0f;
+    [Tooltip("Acceleration rate - how quickly the player reaches maximum speed")]
+    [SerializeField] private float acceleration = 15.0f;
+    [Tooltip("Deceleration rate - how quickly the player stops")]
+    [SerializeField] private float deceleration = 20.0f;
+    [Tooltip("Speed multiplier when sprinting")]
+    [SerializeField] private float sprintSpeedMultiplier = 2.5f;
 
-    [Header("Smoothing")]
-    [SerializeField] private float movementSmoothTime = 0.1f;
-    [SerializeField] private float rotationSmoothTime = 0.05f;
+    [Header("Gravity Settings")]
+    [Tooltip("Enable gravity")]
+    [SerializeField] private bool useGravity = false;
+    [Tooltip("Custom gravity strength (higher values = faster falling)")]
+    [SerializeField] private float gravityStrength = 9.81f;
+    [Tooltip("Jump height")]
+    [SerializeField] private float jumpHeight = 2.0f; // New
+    [Tooltip("Air control multiplier")]
+    [SerializeField] private float airControlMultiplier = 0.5f;
 
-    [Header("Debug Visualization")]
-    [SerializeField] private bool showChunkBoundaries = true;
-    [SerializeField] private bool showChunkCorners = true;
-    [SerializeField] private float boundaryLineThickness = 0.1f;
-    [SerializeField] private Color boundaryColor = new Color(1f, 0.5f, 0f, 0.8f);
-    [SerializeField] private Color cornerColor = new Color(1f, 0f, 0f, 1f);
+    [Header("Look Settings")]
+    [Tooltip("Mouse sensitivity for looking around")]
+    [SerializeField] private float lookSensitivity = 3.0f;
+    [Tooltip("Option to invert Y axis")]
+    [SerializeField] private bool invertYAxis = false;
+    [Tooltip("Enable camera rotation around the X-axis")]
+    [SerializeField] private bool allowXAxisCameraRotation = true; // Now true by default
 
-    private Camera mainCamera;
-    private WFC.Testing.WFCTestController wfcController;
+    // Component references
+    private Camera playerCamera;
+    private CharacterController characterController;
+    private Transform cameraTransform;
 
-    // Smoothing variables
-    private Vector3 moveVelocity;
-    private Vector3 targetPosition;
-    private Vector3 rotationVelocity;
+    // Movement variables
+    private Vector3 moveDirection;
+    private Vector3 verticalMovement;
+    private float currentSpeed;
+    private bool isGrounded;
+    private bool isFalling;
 
-    private void Start()
+    // Look variables
+    private float rotationX = 0;
+    private float rotationY = 0;
+
+    private void Awake()
     {
-        mainCamera = GetComponentInChildren<Camera>();
-        wfcController = FindFirstObjectByType<WFC.Testing.WFCTestController>();
+        // Get component references
+        characterController = GetComponent<CharacterController>();
+        playerCamera = GetComponentInChildren<Camera>();
+        cameraTransform = playerCamera.transform;
 
-        // Initialize position variable
-        targetPosition = transform.position;
-
-        // Lock cursor for FPS-style controls
+        // Lock and hide cursor
         Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
 
     private void Update()
     {
-        // Handle movement input
-        float horizontal = Input.GetAxis("Horizontal");
-        float vertical = Input.GetAxis("Vertical");
-        float elevate = 0;
+        // Handle all player input and movement
+        HandleMovementInput();
+        HandleMouseLook();
 
-        if (Input.GetKey(KeyCode.Space)) elevate += 1.0f;
-        if (Input.GetKey(KeyCode.LeftShift)) elevate -= 1.0f;
+        // Apply all movement
+        ApplyFinalMovement();
 
-        // Acceleration with Left Control
-        float speedMultiplier = Input.GetKey(KeyCode.LeftControl) ? accelerationMultiplier : 1.0f;
-
-        // Calculate movement in local space
-        Vector3 moveDirection = new Vector3(horizontal, 0, vertical);
-
-        // Normalize if moving in multiple directions
-        if (moveDirection.magnitude > 1f)
-            moveDirection.Normalize();
-
-        // Scale by speed
-        moveDirection *= moveSpeed * speedMultiplier;
-
-        // Transform to world space based on current orientation
-        moveDirection = transform.TransformDirection(moveDirection);
-        moveDirection.y = elevate * elevateSpeed * speedMultiplier; // Keep y-movement world-aligned
-
-        // Update target position
-        targetPosition = transform.position + moveDirection * Time.deltaTime;
-
-        // Smooth movement
-        transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref moveVelocity, movementSmoothTime);
-
-        // Handle rotation input
-        float mouseX = Input.GetAxis("Mouse X");
-        float mouseY = Input.GetAxis("Mouse Y");
-
-        // Apply rotation directly to the transforms like in the original code,
-        // but store the desired rotation for smoothing
-        Quaternion targetBodyRotation = transform.rotation * Quaternion.Euler(0, mouseX * rotateSpeed * Time.deltaTime, 0);
-        Quaternion targetCameraRotation = mainCamera.transform.rotation * Quaternion.Euler(-mouseY * rotateSpeed * Time.deltaTime, 0, 0);
-
-        // Apply smooth rotation
-        transform.rotation = Quaternion.Slerp(transform.rotation, targetBodyRotation, 1 - Mathf.Exp(-rotationSmoothTime * 30 * Time.deltaTime));
-        mainCamera.transform.rotation = Quaternion.Slerp(mainCamera.transform.rotation, targetCameraRotation, 1 - Mathf.Exp(-rotationSmoothTime * 30 * Time.deltaTime));
-
-        // Toggle visualization modes
-        if (Input.GetKeyDown(KeyCode.B)) showChunkBoundaries = !showChunkBoundaries;
-        if (Input.GetKeyDown(KeyCode.C)) showChunkCorners = !showChunkCorners;
-
-        // Escape to unlock cursor
+        // Allow cursor toggle with Escape key
         if (Input.GetKeyDown(KeyCode.Escape))
         {
             Cursor.lockState = Cursor.lockState == CursorLockMode.Locked ?
                 CursorLockMode.None : CursorLockMode.Locked;
+            Cursor.visible = !Cursor.visible;
         }
     }
 
-    private void OnGUI()
+    private void HandleMovementInput()
     {
-        GUI.Label(new Rect(10, 10, 300, 20), "WASD: Move, Space/Shift: Up/Down, Mouse: Look");
-        GUI.Label(new Rect(10, 30, 300, 20), "B: Toggle Boundaries, C: Toggle Corners, Esc: Cursor");
-        GUI.Label(new Rect(10, 50, 300, 20), $"Position: {transform.position}");
-    }
+        // Get input values
+        float horizontal = Input.GetAxisRaw("Horizontal");
+        float vertical = Input.GetAxisRaw("Vertical");
+        bool isSprinting = Input.GetKey(KeyCode.LeftShift);
 
-    private void OnDrawGizmos()
-    {
-        if (!Application.isPlaying || wfcController == null) return;
+        // Check if player is grounded
+        isGrounded = characterController.isGrounded;
+        isFalling = !isGrounded && verticalMovement.y < 0;
 
-        var chunks = wfcController.GetChunks();
-        int chunkSize = wfcController.ChunkSize;
+        // Calculate move direction based on camera orientation
+        Vector3 cameraForward = cameraTransform.forward;
+        Vector3 cameraRight = cameraTransform.right;
 
-        foreach (var chunkEntry in chunks)
+        // Flatten the camera direction to horizontal plane
+        cameraForward.y = 0;
+        cameraForward.Normalize();
+
+        // Calculate direction from input
+        Vector3 targetDirection = (cameraForward * vertical + cameraRight * horizontal).normalized;
+
+        // Apply air control if not grounded
+        if (!isGrounded)
         {
-            Vector3Int chunkPos = chunkEntry.Key;
+            targetDirection *= airControlMultiplier;
+        }
 
-            Vector3 worldPos = new Vector3(
-                chunkPos.x * chunkSize,
-                chunkPos.y * chunkSize,
-                chunkPos.z * chunkSize
-            );
-
-            if (showChunkBoundaries)
+        // Calculate vertical movement
+        if (useGravity)  // Apply gravity logic only if useGravity is enabled
+        {
+            if (isGrounded)
             {
-                // Draw chunk boundaries
-                Gizmos.color = boundaryColor;
-                Gizmos.DrawWireCube(
-                    worldPos + new Vector3(chunkSize / 2f, chunkSize / 2f, chunkSize / 2f),
-                    new Vector3(chunkSize, chunkSize, chunkSize)
-                );
-            }
+                // Reset vertical velocity when grounded
+                verticalMovement.y = 0f;
 
-            if (showChunkCorners)
-            {
-                // Draw corner markers
-                Gizmos.color = cornerColor;
-                float cornerSize = 0.5f;
-
-                // Draw all 8 corners of the chunk
-                for (int x = 0; x <= 1; x++)
+                if (Input.GetKeyDown(KeyCode.Space))
                 {
-                    for (int y = 0; y <= 1; y++)
-                    {
-                        for (int z = 0; z <= 1; z++)
-                        {
-                            Vector3 cornerPos = worldPos + new Vector3(
-                                x * chunkSize,
-                                y * chunkSize,
-                                z * chunkSize
-                            );
-
-                            Gizmos.DrawSphere(cornerPos, cornerSize);
-                        }
-                    }
+                    // Calculate jump force based on gravity and desired jump height
+                    verticalMovement.y = Mathf.Sqrt(jumpHeight * 2f * gravityStrength);
                 }
             }
+            else
+            {
+                // Apply gravity when not grounded
+                verticalMovement.y -= gravityStrength * Time.deltaTime;
+            }
         }
+        else  // if gravity is disabled
+        {
+            verticalMovement.y = 0; // no gravity or jump, so vertical movement is always 0.
+            if (Input.GetKey(KeyCode.Space)) // If you want to add some vertical movement when the gravity is disabled
+            {
+                verticalMovement.y = 2.0f;
+            }
+
+            if (Input.GetKey(KeyCode.LeftControl)) // If you want to add some vertical movement when the gravity is disabled
+            {
+                verticalMovement.y = -2.0f;
+            }
+        }
+
+        // Calculate target speed based on sprint state
+        float targetSpeed = isSprinting ? moveSpeed * sprintSpeedMultiplier : moveSpeed;
+
+        // Smooth acceleration/deceleration
+        if (targetDirection.magnitude > 0.1f)
+        {
+            // Accelerate
+            currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
+        }
+        else
+        {
+            // Decelerate
+            currentSpeed = Mathf.Lerp(currentSpeed, 0, deceleration * Time.deltaTime);
+        }
+
+        // Save the move direction
+        moveDirection = targetDirection * currentSpeed;
+    }
+
+    private void HandleMouseLook()
+    {
+        // Get mouse input with increased sensitivity for Unity 6
+        float mouseX = Input.GetAxis("Mouse X") * lookSensitivity;
+        float mouseY = Input.GetAxis("Mouse Y") * lookSensitivity;
+
+        // Apply inversion if enabled
+        mouseY = invertYAxis ? mouseY : -mouseY;
+
+        // Update rotation values directly
+        rotationX += mouseY;
+        rotationY += mouseX;
+
+        // No clamping for full 360 degree rotation
+
+        // Apply rotations directly - this fixed approach works better with Unity 6
+        // X rotation (looking up/down) is applied to the camera
+
+        if (allowXAxisCameraRotation)
+        {
+            playerCamera.transform.localRotation = Quaternion.Euler(rotationX, 0, 0);
+        }
+        else
+        {
+            //This keeps the camera from rotating on the X axis.
+            rotationX = Mathf.Clamp(rotationX, -90, 90);
+            playerCamera.transform.localRotation = Quaternion.Euler(rotationX, 0, 0);
+        }
+
+
+        // Y rotation (looking left/right) is applied to the player body
+        transform.rotation = Quaternion.Euler(0, rotationY, 0);
+    }
+
+    private void ApplyFinalMovement()
+    {
+        // Combine horizontal movement and vertical velocity
+        Vector3 movement = (moveDirection + verticalMovement);
+
+        // Apply movement to character controller
+        characterController.Move(movement * Time.deltaTime);
     }
 }

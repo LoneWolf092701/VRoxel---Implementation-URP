@@ -10,7 +10,7 @@ namespace WFC.MarchingCubes
 {
     public class MeshGenerator : MonoBehaviour
     {
-        [SerializeField] public WFCGenerator wfcController;     // changed
+        [SerializeField] public WFCGenerator wfcGenerator;     // changed
         [SerializeField] private Material terrainMaterial;
         [SerializeField] private bool autoUpdate = false;
         [SerializeField] private float cellSize = 1.0f;
@@ -71,7 +71,7 @@ namespace WFC.MarchingCubes
             {
                 Debug.Log("G key pressed - Debugging density field");
                 // Debug the first chunk by default
-                var firstChunk = wfcController.GetChunks().FirstOrDefault();
+                var firstChunk = wfcGenerator.GetChunks().FirstOrDefault();
                 if (firstChunk.Value != null)
                 {
                     DebugDensityField(firstChunk.Key);
@@ -160,13 +160,13 @@ namespace WFC.MarchingCubes
         {
             Debug.Log("Starting mesh generation for all chunks...");
 
-            if (wfcController == null)
+            if (wfcGenerator == null)
             {
                 Debug.LogError("WFC Controller reference is missing!");
                 return;
             }
 
-            var chunks = wfcController.GetChunks();
+            var chunks = wfcGenerator.GetChunks();
             Debug.Log($"Found {chunks.Count} chunks to process");
 
             foreach (var chunkEntry in chunks)
@@ -185,6 +185,13 @@ namespace WFC.MarchingCubes
         public void GenerateChunkMesh(Chunk chunk)
         {
             Debug.Log($"Generating mesh for chunk {chunk.Position}...");
+
+            // Only generate if chunk is dirty or doesn't have a mesh yet
+            if (!chunk.IsDirty && chunkMeshObjects.ContainsKey(chunk.Position))
+                return;
+
+            // Reset dirty flag
+            chunk.IsDirty = false;
 
             try
             {
@@ -331,7 +338,7 @@ namespace WFC.MarchingCubes
 
         public void UpdateChunkMesh(Vector3Int chunkPos)
         {
-            if (wfcController.GetChunks().TryGetValue(chunkPos, out Chunk chunk))
+            if (wfcGenerator.GetChunks().TryGetValue(chunkPos, out Chunk chunk))
             {
                 GenerateChunkMesh(chunk);
             }
@@ -359,7 +366,7 @@ namespace WFC.MarchingCubes
 
         public void DebugDensityField(Vector3Int chunkPos)
         {
-            if (!wfcController.GetChunks().TryGetValue(chunkPos, out Chunk chunk))
+            if (!wfcGenerator.GetChunks().TryGetValue(chunkPos, out Chunk chunk))
             {
                 Debug.LogError($"Chunk not found at {chunkPos}");
                 return;
@@ -426,15 +433,34 @@ namespace WFC.MarchingCubes
             }
         }
 
+        // to support specific chunks
+        public void GenerateMeshForChunk(Vector3Int chunkPos)
+        {
+            if (wfcGenerator == null)
+            {
+                Debug.LogError("MeshGenerator: WFCGenerator reference is missing!");
+                return;
+            }
+
+            var chunks = wfcGenerator.GetChunks();
+            if (!chunks.TryGetValue(chunkPos, out Chunk chunk))
+            {
+                Debug.LogWarning($"MeshGenerator: Chunk not found at {chunkPos}");
+                return;
+            }
+
+            Debug.Log($"Generating mesh for chunk {chunkPos}...");
+            GenerateChunkMesh(chunk);
+        }
         private void OnDrawGizmos()
         {
-            if (!showDebugInfo || wfcController == null)
+            if (!showDebugInfo || wfcGenerator == null)
                 return;
 
             Gizmos.color = gizmoColor;
 
             // Draw chunk boundaries
-            foreach (var chunkEntry in wfcController.GetChunks())
+            foreach (var chunkEntry in wfcGenerator.GetChunks())
             {
                 Vector3Int chunkPos = chunkEntry.Key;
                 Chunk chunk = chunkEntry.Value;

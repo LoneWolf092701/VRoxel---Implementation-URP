@@ -1,11 +1,11 @@
 // Assets/Scripts/WFC/Processing/WFCAlgorithmAdapter.cs
-
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Boundary;
 using WFC.Core;
 using WFC.Generation;
-using WFC.Testing;
+// Remove this import if you're not using it anymore
+//using WFC.Testing;
 
 namespace WFC.Processing
 {
@@ -16,7 +16,6 @@ namespace WFC.Processing
     public class WFCAlgorithmAdapter : IWFCAlgorithm
     {
         private WFCGenerator wfcGenerator;
-        private WFCTestController wfcTestController;
         private bool useTestController;
 
         /// <summary>
@@ -28,6 +27,9 @@ namespace WFC.Processing
             this.useTestController = false;
         }
 
+        // Since we're removing the WFCTestController dependency, 
+        // we can remove this constructor entirely
+        /*
         /// <summary>
         /// Create an adapter for a WFCTestController
         /// </summary>
@@ -36,23 +38,15 @@ namespace WFC.Processing
             this.wfcTestController = testController;
             this.useTestController = true;
         }
+        */
 
         /// <summary>
         /// Check if two states are compatible in a given direction
         /// </summary>
         public bool AreStatesCompatible(int stateA, int stateB, Direction direction)
         {
-            if (useTestController)
-            {
-                return wfcTestController.AreStatesCompatible(stateA, stateB, direction);
-            }
-            else
-            {
-                // Access WFCGenerator's compatibility check
-                // If wfcGenerator's method is private, use reflection to access it
-                // or modify WFCGenerator to expose this functionality
-                return wfcGenerator.AreStatesCompatible(stateA, stateB, direction);
-            }
+            // Since we're only using WFCGenerator now, we can simplify this
+            return wfcGenerator.AreStatesCompatible(stateA, stateB, direction);
         }
 
         /// <summary>
@@ -60,14 +54,8 @@ namespace WFC.Processing
         /// </summary>
         public void AddPropagationEvent(PropagationEvent evt)
         {
-            if (useTestController)
-            {
-                wfcTestController.AddPropagationEvent(evt);
-            }
-            else
-            {
-                wfcGenerator.AddPropagationEvent(evt);
-            }
+            // Since we're only using WFCGenerator now, we can simplify this
+            wfcGenerator.AddPropagationEvent(evt);
         }
 
         /// <summary>
@@ -75,14 +63,8 @@ namespace WFC.Processing
         /// </summary>
         public Dictionary<Vector3Int, Chunk> GetChunks()
         {
-            if (useTestController)
-            {
-                return wfcTestController.GetChunks();
-            }
-            else
-            {
-                return wfcGenerator.GetChunks();
-            }
+            // Since we're only using WFCGenerator now, we can simplify this
+            return wfcGenerator.GetChunks();
         }
     }
 }

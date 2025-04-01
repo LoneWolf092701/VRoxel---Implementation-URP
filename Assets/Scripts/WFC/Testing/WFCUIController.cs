@@ -1,169 +1,201 @@
-// Assets/Scripts/WFC/Testing/WFCUIController.cs
 using UnityEngine;
-using UnityEngine.UI;
 using WFC.MarchingCubes;
+using WFC.Generation;
 
-namespace WFC.Testing
+public class WFCUIController : MonoBehaviour
 {
-    public class WFCUIController : MonoBehaviour
+    [Header("References")]
+    [SerializeField] private WFCGenerator wfcGenerator;
+    [SerializeField] private WFCVisualizer wfcVisualizer;
+    [SerializeField] private MeshGenerator meshGenerator;
+
+    [Header("Visualization")]
+    [SerializeField] private bool showCellVisualization = true;
+    [SerializeField] private bool showMeshVisualization = true;
+
+    [Header("Keyboard Controls")]
+    [Tooltip("Key to execute a generation step")]
+    [SerializeField] private KeyCode stepKey = KeyCode.Alpha1;       // Key 1
+
+    [Tooltip("Key to reset the WFC algorithm")]
+    [SerializeField] private KeyCode resetKey = KeyCode.Alpha2;      // Key 2
+
+    [Tooltip("Key to generate mesh from current WFC state")]
+    [SerializeField] private KeyCode generateMeshKey = KeyCode.Alpha3; // Key 3
+
+    [Tooltip("Key to toggle cell visualization")]
+    [SerializeField] private KeyCode toggleCellsKey = KeyCode.Alpha4;  // Key 4
+
+    [Tooltip("Key to toggle mesh visualization")]
+    [SerializeField] private KeyCode toggleMeshKey = KeyCode.Alpha5;   // Key 5
+
+    private void Start()
     {
-        [SerializeField] private WFCTestController wfcController;
-        [SerializeField] private MeshGenerator meshGenerator;
+        // Find references if not set
+        if (wfcGenerator == null)
+            wfcGenerator = FindObjectOfType<WFCGenerator>();
 
-        [SerializeField] private Button stepButton;
-        [SerializeField] private Button resetButton;
-        [SerializeField] private Button generateMeshButton;
-        [SerializeField] private Toggle showCellsToggle;
-        [SerializeField] private Toggle showMeshToggle;
+        if (wfcVisualizer == null)
+            wfcVisualizer = FindObjectOfType<WFCVisualizer>();
 
-        [Header("Keyboard Controls")]
-        [SerializeField] private KeyCode stepKey = KeyCode.Alpha1;       // Key 1
-        [SerializeField] private KeyCode resetKey = KeyCode.Alpha2;      // Key 2
-        [SerializeField] private KeyCode generateMeshKey = KeyCode.Alpha3; // Key 3
-        [SerializeField] private KeyCode toggleCellsKey = KeyCode.Alpha4;  // Key 4
-        [SerializeField] private KeyCode toggleMeshKey = KeyCode.Alpha5;   // Key 5
-        [SerializeField] private KeyCode runTestKey = KeyCode.Alpha6;      // Key 6
+        if (meshGenerator == null)
+            meshGenerator = FindObjectOfType<MeshGenerator>();
 
-        private void Start()
+        // Set initial visualization states
+        if (wfcVisualizer != null)
+            wfcVisualizer.ToggleVisualization(showCellVisualization);
+
+        if (meshGenerator != null && meshGenerator.gameObject != null)
+            meshGenerator.gameObject.SetActive(showMeshVisualization);
+
+        // Log available controls for testing
+        LogKeyboardControls();
+    }
+
+    private void LogKeyboardControls()
+    {
+        Debug.Log("WFC UI Controller - Keyboard Controls:");
+        Debug.Log($"  {stepKey} - Step WFC Generation");
+        Debug.Log($"  {resetKey} - Reset WFC");
+        Debug.Log($"  {generateMeshKey} - Generate Mesh");
+        Debug.Log($"  {toggleCellsKey} - Toggle Cell Visualization");
+        Debug.Log($"  {toggleMeshKey} - Toggle Mesh Visualization");
+    }
+
+    private void Update()
+    {
+        // Handle keyboard controls
+        if (Input.GetKeyDown(stepKey))
         {
-            // Setup button listeners
-            if (stepButton != null)
-            {
-                stepButton.onClick.AddListener(StepWFC);
-            }
-
-            if (resetButton != null)
-            {
-                resetButton.onClick.AddListener(ResetWFC);
-            }
-
-            if (generateMeshButton != null)
-            {
-                generateMeshButton.onClick.AddListener(GenerateMesh);
-            }
-
-            if (showCellsToggle != null)
-            {
-                showCellsToggle.onValueChanged.AddListener(ToggleCellVisibility);
-            }
-
-            if (showMeshToggle != null)
-            {
-                showMeshToggle.onValueChanged.AddListener(ToggleMeshVisibility);
-            }
-
-            Debug.Log("WFC UI Controller initialized. Keyboard controls:");
-            Debug.Log($"  {stepKey} - Step WFC");
-            Debug.Log($"  {resetKey} - Reset WFC");
-            Debug.Log($"  {generateMeshKey} - Generate Mesh");
-            Debug.Log($"  {toggleCellsKey} - Toggle Cell Visibility");
-            Debug.Log($"  {toggleMeshKey} - Toggle Mesh Visibility");
-            Debug.Log($"  {runTestKey} - Run Boundary Test");
+            StepWFC();
         }
 
-        private void Update()
+        if (Input.GetKeyDown(resetKey))
         {
-            // Handle keyboard controls
-            if (Input.GetKeyDown(stepKey))
-            {
-                StepWFC();
-            }
-
-            if (Input.GetKeyDown(resetKey))
-            {
-                ResetWFC();
-            }
-
-            if (Input.GetKeyDown(generateMeshKey))
-            {
-                GenerateMesh();
-            }
-
-            if (Input.GetKeyDown(toggleCellsKey) && showCellsToggle != null)
-            {
-                showCellsToggle.isOn = !showCellsToggle.isOn;
-            }
-
-            if (Input.GetKeyDown(toggleMeshKey) && showMeshToggle != null)
-            {
-                showMeshToggle.isOn = !showMeshToggle.isOn;
-            }
-
-            if (Input.GetKeyDown(runTestKey))
-            {
-                RunBoundaryTest();
-            }
-
-            // Note: Space and R keys are already handled by WFCTestController
-            // This provides alternative keys and additional functionality
+            ResetWFC();
         }
 
-        private void StepWFC()
+        if (Input.GetKeyDown(generateMeshKey))
         {
-            // Run one step of the WFC algorithm
-            if (wfcController != null)
-            {
-                wfcController.RunOneStep();
-            }
+            GenerateMesh();
         }
 
-        private void ResetWFC()
+        if (Input.GetKeyDown(toggleCellsKey))
         {
-            // Reset the WFC algorithm
-            if (wfcController != null)
-            {
-                wfcController.ResetGeneration();
-            }
-
-            // Clear meshes
-            if (meshGenerator != null)
-            {
-                meshGenerator.ClearMeshes();
-            }
+            ToggleCellVisibility();
         }
 
-        private void GenerateMesh()
+        if (Input.GetKeyDown(toggleMeshKey))
         {
-            if (meshGenerator != null)
-            {
-                meshGenerator.GenerateAllMeshes();
-            }
+            ToggleMeshVisibility();
+        }
+    }
+
+    [ContextMenu("Step WFC")]
+    public void StepWFC()
+    {
+        if (wfcGenerator == null)
+        {
+            Debug.LogWarning("WFC Generator reference is missing");
+            return;
         }
 
-        private void RunBoundaryTest()
+        // This is where you need to add a method to your WFCGenerator to run a single step
+        // For example, something like:
+        // wfcGenerator.RunSingleStep();
+
+        // For now, we'll assume this method exists:
+        // Process propagation events and collapse a cell if queue is empty
+        if (wfcGenerator.GetType().GetMethod("RunSingleStep") != null)
         {
-            // Find and run boundary test if available
-            var boundaryTest = FindAnyObjectByType<BoundaryCoherenceTest>();
-            if (boundaryTest != null)
-            {
-                Debug.Log("Running boundary coherence test...");
-                boundaryTest.RunBoundaryTest();
-            }
-            else
-            {
-                Debug.LogWarning("BoundaryCoherenceTest component not found in the scene.");
-            }
+            wfcGenerator.GetType().GetMethod("RunSingleStep").Invoke(wfcGenerator, null);
+            Debug.Log("WFC step executed");
+        }
+        else
+        {
+            Debug.LogWarning("WFCGenerator does not have a RunSingleStep method. Add this method to your WFCGenerator.");
         }
 
-        private void ToggleCellVisibility(bool visible)
+        // Update visualizations
+        if (wfcVisualizer != null)
         {
-            // Show/hide cell visualizations
-            Transform vizParent = wfcController.transform.Find("WFC_Visualization");
-            if (vizParent != null)
-            {
-                vizParent.gameObject.SetActive(visible);
-                Debug.Log(visible ? "Cell visualization enabled" : "Cell visualization disabled");
-            }
+            wfcVisualizer.UpdateVisualization();
+        }
+    }
+
+    [ContextMenu("Reset WFC")]
+    public void ResetWFC()
+    {
+        if (wfcGenerator != null)
+        {
+            wfcGenerator.ResetGeneration();
+            Debug.Log("WFC algorithm reset");
+        }
+        else
+        {
+            Debug.LogWarning("WFC Generator reference is missing");
         }
 
-        private void ToggleMeshVisibility(bool visible)
+        if (meshGenerator != null)
         {
-            // Show/hide generated meshes
-            if (meshGenerator != null)
-            {
-                meshGenerator.gameObject.SetActive(visible);
-                Debug.Log(visible ? "Mesh visualization enabled" : "Mesh visualization disabled");
-            }
+            meshGenerator.ClearMeshes();
+            Debug.Log("Meshes cleared");
+        }
+
+        // Refresh visualization
+        if (wfcVisualizer != null)
+        {
+            wfcVisualizer.RefreshVisualization();
+        }
+    }
+
+    [ContextMenu("Generate Mesh")]
+    public void GenerateMesh()
+    {
+        if (meshGenerator != null)
+        {
+            meshGenerator.GenerateAllMeshes();
+            Debug.Log("Generating meshes from current WFC state");
+        }
+        else
+        {
+            Debug.LogWarning("Mesh Generator reference is missing");
+        }
+    }
+
+    [ContextMenu("Toggle Cell Visualization")]
+    public void ToggleCellVisibility()
+    {
+        showCellVisualization = !showCellVisualization;
+
+        if (wfcVisualizer != null)
+        {
+            wfcVisualizer.ToggleVisualization(showCellVisualization);
+            Debug.Log(showCellVisualization ?
+                "Cell visualization enabled" :
+                "Cell visualization disabled");
+        }
+        else
+        {
+            Debug.LogWarning("WFC Visualizer reference is missing");
+        }
+    }
+
+    [ContextMenu("Toggle Mesh Visualization")]
+    public void ToggleMeshVisibility()
+    {
+        showMeshVisualization = !showMeshVisualization;
+
+        if (meshGenerator != null && meshGenerator.gameObject != null)
+        {
+            meshGenerator.gameObject.SetActive(showMeshVisualization);
+            Debug.Log(showMeshVisualization ?
+                "Mesh visualization enabled" :
+                "Mesh visualization disabled");
+        }
+        else
+        {
+            Debug.LogWarning("Mesh Generator reference is missing");
         }
     }
 }

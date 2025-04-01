@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
 using WFC.Generation;
-using WFC.Testing;
+//using WFC.Testing;
 using WFC.Boundary;
 
 namespace WFC.Processing
@@ -19,7 +19,7 @@ namespace WFC.Processing
         [Header("References")]
         [SerializeField] public WFCGenerator wfcGenerator;      // changed
         [SerializeField] private WFC.Chunking.ChunkManager chunkManager;
-        [SerializeField] private WFCTestController wfcTestController;
+        //[SerializeField] private WFCTestController wfcTestController;     // not needed for now
 
         [Header("Settings")]
         [SerializeField] private bool enableParallelProcessing = true;
@@ -46,12 +46,13 @@ namespace WFC.Processing
             if (chunkManager == null)
                 chunkManager = FindAnyObjectByType<WFC.Chunking.ChunkManager>();
 
-            if (wfcGenerator == null && wfcTestController == null)
+            //if (wfcGenerator == null && wfcTestController == null)
+            if (wfcGenerator == null)
             {
                 // Try to find WFCTestController if WFCGenerator not found
-                wfcTestController = FindAnyObjectByType<WFCTestController>();
+                wfcGenerator = FindAnyObjectByType<WFCGenerator>();
 
-                if (wfcTestController == null)
+                if (wfcGenerator == null)
                 {
                     Debug.LogError("ParallelWFCManager: Missing required WFC implementation");
                     enabled = false;
@@ -68,7 +69,8 @@ namespace WFC.Processing
             }
             else
             {
-                algorithmAdapter = new WFCAlgorithmAdapter(wfcTestController);
+                //algorithmAdapter = new WFCAlgorithmAdapter(wfcTestController);
+                algorithmAdapter = null;
                 Debug.Log("Using WFCTestController for parallel processing");
             }
 
@@ -81,8 +83,14 @@ namespace WFC.Processing
 
         private void Update()
         {
-            if (parallelProcessor == null)
-                return;
+            if (parallelProcessor == null) {
+                ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
+                if (parallelManager != null)
+                {
+                    parallelProcessor = parallelManager.GetParallelProcessor();
+                    Debug.Log("Connected to ParallelWFCManager for parallel processing");
+                }
+            }
 
             // Update performance stats
             activeThreads = parallelProcessor.ActiveThreads;
@@ -93,6 +101,12 @@ namespace WFC.Processing
             // This would require accessing the ChunkManager's task queue
             // For now, let's assume you modify ChunkManager to expose a method
             // CheckForParallelProcessingTasks();
+        }
+
+        // expose the processor for other scripts
+        public ParallelWFCProcessor GetParallelProcessor()
+        {
+            return parallelProcessor;
         }
 
         /// <summary>

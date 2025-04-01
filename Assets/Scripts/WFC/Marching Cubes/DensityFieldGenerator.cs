@@ -35,14 +35,13 @@ namespace WFC.MarchingCubes
         {
             // Set more extreme density values to ensure there's a clear surface
             // Values below 0.5 are "air", values above 0.5 are "solid"
-            stateDensityValues.Add(0, 0.1f);   // Empty (definitely air)
-            stateDensityValues.Add(1, 0.8f);   // Ground (definitely solid)
-            stateDensityValues.Add(2, 0.73f);  // Grass (solid)
-            stateDensityValues.Add(3, 0.35f);  // Water (slightly solid for water surface)
-            stateDensityValues.Add(4, 0.92f);  // Rock (very solid)
-            stateDensityValues.Add(5, 0.68f);  // Sand (moderately solid)
-            stateDensityValues.Add(6, 0.78f);  // Tree (solid)
-            stateDensityValues.Add(7, 0.8f);   // Forest (solid)
+            stateDensityValues.Add(0, 0.2f);   // Empty (air)
+            stateDensityValues.Add(1, 0.7f);   // Ground (solid)
+            stateDensityValues.Add(2, 0.65f);  // Grass (make closer to ground)
+            stateDensityValues.Add(3, 0.4f);   // Water (slightly more solid)
+            stateDensityValues.Add(4, 0.8f);   // Rock (solid)
+            stateDensityValues.Add(5, 0.6f);   // Sand (less extreme difference)
+            stateDensityValues.Add(6, 0.7f);   // Tree (closer to ground)
 
             chunkSize = 8;
         }
@@ -383,8 +382,12 @@ namespace WFC.MarchingCubes
                         float cornerAverage = (densityField[cornerX, cornerY, cornerZ] +
                                              cornerNeighborField[neighborX, neighborY, neighborZ]) / 2.0f;
 
+                        // CRITICAL: Use identical values at the corner point
+                        densityField[cornerX, cornerY, cornerZ] = cornerAverage;
+                        cornerNeighborField[neighborX, neighborY, neighborZ] = cornerAverage;
+
                         // Apply with a wider influence radius for smoother transition
-                        int blendRadius = 2; // How far from corner to blend
+                        int blendRadius = 3; // How far from corner to blend
                         for (int x = 0; x <= blendRadius; x++)
                         {
                             for (int y = 0; y <= blendRadius; y++)
@@ -575,32 +578,6 @@ namespace WFC.MarchingCubes
         }
 
         /// <summary>
-        /// Smooth the X boundary between chunks
-        /// </summary>
-        private void SmoothXBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
-        {
-            int size = densityField1.GetLength(1); // Y dimension
-            int depth = densityField1.GetLength(2); // Z dimension
-
-            for (int y = 0; y <= size; y++)
-            {
-                for (int z = 0; z <= depth; z++)
-                {
-                    // Use weighted average with bias toward neighbor chunk's edge
-                    float blendFactor = 0.5f; // Can be adjusted for different blending behavior
-                    float smoothedDensity = (
-                        densityField1[index1, y, z] * (1 - blendFactor) +
-                        densityField2[index2, y, z] * blendFactor
-                    );
-
-                    // Update both density fields for consistency
-                    densityField1[index1, y, z] = smoothedDensity;
-                    densityField2[index2, y, z] = smoothedDensity;
-                }
-            }
-        }
-
-        /// <summary>
         /// Smooth the Y boundary between chunks
         /// </summary>
         private void SmoothYBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
@@ -631,14 +608,95 @@ namespace WFC.MarchingCubes
             {
                 for (int z = 0; z < commonDepth; z++)
                 {
-                    float blendFactor = 0.5f;
-                    float smoothedDensity = (
-                        densityField1[x, index1, z] * (1 - blendFactor) +
-                        densityField2[x, index2, z] * blendFactor
-                    );
+                    // CRITICAL: Use identical values exactly at the boundary
+                    float averageDensity = (densityField1[x, index1, z] + densityField2[x, index2, z]) / 2.0f;
 
-                    densityField1[x, index1, z] = smoothedDensity;
-                    densityField2[x, index2, z] = smoothedDensity;
+                    // Set both fields to the same value at the boundary
+                    densityField1[x, index1, z] = averageDensity;
+                    densityField2[x, index2, z] = averageDensity;
+
+                    // Also smooth adjacent cells with a falloff gradient
+                    if (index1 > 0 && index1 < densityField1.GetLength(1) - 1)
+                    {
+                        float blendFactor = 0.7f; // Less influence as we move away from boundary
+                        int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
+                        densityField1[x, inwardIndex, z] = Mathf.Lerp(
+                            densityField1[x, inwardIndex, z],
+                            averageDensity,
+                            blendFactor);
+                    }
+
+                    if (index2 > 0 && index2 < densityField2.GetLength(1) - 1)
+                    {
+                        float blendFactor = 0.7f;
+                        int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
+                        densityField2[x, inwardIndex, z] = Mathf.Lerp(
+                            densityField2[x, inwardIndex, z],
+                            averageDensity,
+                            blendFactor);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Smooth the X boundary between chunks
+        /// </summary>
+        private void SmoothXBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
+        {
+            // Check if arrays have compatible dimensions
+            if (densityField1 == null || densityField2 == null)
+                return;
+
+            int height1 = densityField1.GetLength(1); // Y dimension
+            int depth1 = densityField1.GetLength(2); // Z dimension
+            int height2 = densityField2.GetLength(1);
+            int depth2 = densityField2.GetLength(2);
+
+            // Determine common dimensions to avoid index out of bounds
+            int commonHeight = Mathf.Min(height1, height2);
+            int commonDepth = Mathf.Min(depth1, depth2);
+
+            // Validate indices
+            if (index1 < 0 || index1 >= densityField1.GetLength(0) ||
+                index2 < 0 || index2 >= densityField2.GetLength(0))
+            {
+                Debug.LogWarning($"SmoothXBoundary: Invalid indices - index1: {index1}, max: {densityField1.GetLength(0) - 1}, index2: {index2}, max: {densityField2.GetLength(0) - 1}");
+                return;
+            }
+
+            // Perform smoothing only on the common area
+            for (int y = 0; y < commonHeight; y++)
+            {
+                for (int z = 0; z < commonDepth; z++)
+                {
+                    // CRITICAL: Use identical values exactly at the boundary
+                    float averageDensity = (densityField1[index1, y, z] + densityField2[index2, y, z]) / 2.0f;
+
+                    // Set both fields to the same value at the boundary
+                    densityField1[index1, y, z] = averageDensity;
+                    densityField2[index2, y, z] = averageDensity;
+
+                    // Also smooth adjacent cells with a falloff gradient
+                    if (index1 > 0 && index1 < densityField1.GetLength(0) - 1)
+                    {
+                        float blendFactor = 0.7f;
+                        int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
+                        densityField1[inwardIndex, y, z] = Mathf.Lerp(
+                            densityField1[inwardIndex, y, z],
+                            averageDensity,
+                            blendFactor);
+                    }
+
+                    if (index2 > 0 && index2 < densityField2.GetLength(0) - 1)
+                    {
+                        float blendFactor = 0.7f;
+                        int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
+                        densityField2[inwardIndex, y, z] = Mathf.Lerp(
+                            densityField2[inwardIndex, y, z],
+                            averageDensity,
+                            blendFactor);
+                    }
                 }
             }
         }
@@ -648,21 +706,59 @@ namespace WFC.MarchingCubes
         /// </summary>
         private void SmoothZBoundary(float[,,] densityField1, float[,,] densityField2, int index1, int index2)
         {
-            int width = densityField1.GetLength(0); // X dimension
-            int height = densityField1.GetLength(1); // Y dimension
+            // Check if arrays have compatible dimensions
+            if (densityField1 == null || densityField2 == null)
+                return;
 
-            for (int x = 0; x <= width; x++)
+            int width1 = densityField1.GetLength(0); // X dimension
+            int height1 = densityField1.GetLength(1); // Y dimension
+            int width2 = densityField2.GetLength(0);
+            int height2 = densityField2.GetLength(1);
+
+            // Determine common dimensions to avoid index out of bounds
+            int commonWidth = Mathf.Min(width1, width2);
+            int commonHeight = Mathf.Min(height1, height2);
+
+            // Validate indices
+            if (index1 < 0 || index1 >= densityField1.GetLength(2) ||
+                index2 < 0 || index2 >= densityField2.GetLength(2))
             {
-                for (int y = 0; y <= height; y++)
-                {
-                    float blendFactor = 0.5f;
-                    float smoothedDensity = (
-                        densityField1[x, y, index1] * (1 - blendFactor) +
-                        densityField2[x, y, index2] * blendFactor
-                    );
+                Debug.LogWarning($"SmoothZBoundary: Invalid indices - index1: {index1}, max: {densityField1.GetLength(2) - 1}, index2: {index2}, max: {densityField2.GetLength(2) - 1}");
+                return;
+            }
 
-                    densityField1[x, y, index1] = smoothedDensity;
-                    densityField2[x, y, index2] = smoothedDensity;
+            // Perform smoothing only on the common area
+            for (int x = 0; x < commonWidth; x++)
+            {
+                for (int y = 0; y < commonHeight; y++)
+                {
+                    // CRITICAL: Use identical values exactly at the boundary
+                    float averageDensity = (densityField1[x, y, index1] + densityField2[x, y, index2]) / 2.0f;
+
+                    // Set both fields to the same value at the boundary
+                    densityField1[x, y, index1] = averageDensity;
+                    densityField2[x, y, index2] = averageDensity;
+
+                    // Also smooth adjacent cells with a falloff gradient
+                    if (index1 > 0 && index1 < densityField1.GetLength(2) - 1)
+                    {
+                        float blendFactor = 0.7f;
+                        int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
+                        densityField1[x, y, inwardIndex] = Mathf.Lerp(
+                            densityField1[x, y, inwardIndex],
+                            averageDensity,
+                            blendFactor);
+                    }
+
+                    if (index2 > 0 && index2 < densityField2.GetLength(2) - 1)
+                    {
+                        float blendFactor = 0.7f;
+                        int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
+                        densityField2[x, y, inwardIndex] = Mathf.Lerp(
+                            densityField2[x, y, inwardIndex],
+                            averageDensity,
+                            blendFactor);
+                    }
                 }
             }
         }
@@ -685,6 +781,7 @@ namespace WFC.MarchingCubes
 
             return GenerateDensityField(neighbor);
         }
+
 
         /// <summary>
         /// Create a temporary continuation field for a neighbor that's being processed

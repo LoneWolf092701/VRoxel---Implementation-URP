@@ -3,17 +3,18 @@ using UnityEngine;
 using System.IO;
 using System.Text;
 using WFC.Core;
-using WFC.Testing;
+//using WFC.Testing;
 using WFC.Boundary;
 using System.Linq;
 using System.Collections;
+using WFC.Generation;
 
 /// <summary>
 /// Test harness for evaluating boundary coherence in Wave Function Collapse generation
 /// </summary>
 public class BoundaryCoherenceTest : MonoBehaviour
 {
-    [SerializeField] private WFCTestController testController;
+    [SerializeField] private WFCGenerator generator;      // changed
 
     [Header("Boundary Test Configuration")]
     [SerializeField] private Vector3Int testChunkCoordinate1;
@@ -129,15 +130,15 @@ public class BoundaryCoherenceTest : MonoBehaviour
     private void Start()
     {
         // Set up boundary manager reference by getting it from WFCTestController
-        if (testController != null)
+        if (generator != null)
         {
             // Use reflection to get private boundaryManager field
-            var field = testController.GetType().GetField("boundaryManager",
+            var field = generator.GetType().GetField("boundaryManager",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
             if (field != null)
             {
-                boundaryManager = field.GetValue(testController) as BoundaryBufferManager;
+                boundaryManager = field.GetValue(generator) as BoundaryBufferManager;
             }
 
             if (boundaryManager == null)
@@ -230,12 +231,12 @@ public class BoundaryCoherenceTest : MonoBehaviour
             if (testParams.UseRandomSeed)
             {
                 int seed = testParams.Seed > 0 ? testParams.Seed + runCount : Random.Range(1, 10000);
-                testController.ResetWithNewSeed(seed);
+                //generator.ResetWithNewSeed(seed);
                 Debug.Log($"Reset with seed: {seed}");
             }
             else
             {
-                testController.ResetGeneration();
+                generator.ResetGeneration();
             }
 
             // Wait for generation to complete some steps
@@ -355,12 +356,12 @@ public class BoundaryCoherenceTest : MonoBehaviour
 
     private void ResolveAllConflicts()
     {
-        if (boundaryManager == null || testController == null)
+        if (boundaryManager == null || generator == null)
             return;
 
         Debug.Log("Attempting to resolve all boundary conflicts...");
 
-        var chunks = testController.GetChunks();
+        var chunks = generator.GetChunks();
         int resolvedCount = 0;
 
         foreach (var chunkEntry in chunks)
@@ -393,7 +394,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
                     // Check for conflict
                     if (boundaryCell.CollapsedState.HasValue && adjacentCell.CollapsedState.HasValue)
                     {
-                        if (!testController.AreStatesCompatible(
+                        if (!generator.AreStatesCompatible(
                             boundaryCell.CollapsedState.Value,
                             adjacentCell.CollapsedState.Value,
                             dir))
@@ -465,7 +466,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
         List<BoundaryMetrics> allMetrics = new List<BoundaryMetrics>();
 
         // Test all boundaries in the world
-        var chunks = testController.GetChunks();
+        var chunks = generator.GetChunks();
 
         // Reset statistics
         totalConflicts = 0;
@@ -569,8 +570,8 @@ public class BoundaryCoherenceTest : MonoBehaviour
         ClearPreviousHighlights();
 
         // Get chunks to test
-        if (!testController.GetChunks().TryGetValue(testChunkCoordinate1, out Chunk chunk1) ||
-            !testController.GetChunks().TryGetValue(testChunkCoordinate2, out Chunk chunk2))
+        if (!generator.GetChunks().TryGetValue(testChunkCoordinate1, out Chunk chunk1) ||
+            !generator.GetChunks().TryGetValue(testChunkCoordinate2, out Chunk chunk2))
         {
             Debug.LogError("Invalid test chunk coordinates!");
             return;
@@ -855,7 +856,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
                 // Calculate similarity (difference between states)
                 // The smaller the difference, the smoother the transition
                 float difference = Mathf.Abs(state1 - state2);
-                float maxStateDifference = testController.MaxStates - 1; // Maximum possible difference
+                float maxStateDifference = generator.MaxCellStates - 1; // Maximum possible difference
 
                 // Normalize to 0-1 range and invert (1 is smooth, 0 is abrupt)
                 float smoothness = 1.0f - (difference / maxStateDifference);
@@ -892,8 +893,8 @@ public class BoundaryCoherenceTest : MonoBehaviour
         }
 
         // Calculate variety as ratio of unique states to maximum possible states
-        float variety1 = uniqueStates1.Count / (float)testController.MaxStates;
-        float variety2 = uniqueStates2.Count / (float)testController.MaxStates;
+        float variety1 = uniqueStates1.Count / (float)generator.MaxCellStates;
+        float variety2 = uniqueStates2.Count / (float)generator.MaxCellStates;
 
         // Average variety on both sides
         return (variety1 + variety2) / 2.0f;
@@ -907,7 +908,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
         if (!cell1.CollapsedState.HasValue || !cell2.CollapsedState.HasValue)
             return true; // Uncollapsed cells are potentially compatible
 
-        return testController.AreStatesCompatible(cell1.CollapsedState.Value, cell2.CollapsedState.Value, direction);
+        return generator.AreStatesCompatible(cell1.CollapsedState.Value, cell2.CollapsedState.Value, direction);
     }
 
     /// <summary>
@@ -919,7 +920,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
         {
             foreach (int state2 in cell2.PossibleStates)
             {
-                if (testController.AreStatesCompatible(state1, state2, direction))
+                if (generator.AreStatesCompatible(state1, state2, direction))
                 {
                     return true; // Found at least one compatible state pair
                 }
@@ -999,7 +1000,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
     private void CreateBoundaryConflict(Cell cell1, Cell cell2)
     {
         // Force specific states that are incompatible
-        if (testController.AreStatesCompatible(conflictStateA, conflictStateB, boundaryDirection))
+        if (generator.AreStatesCompatible(conflictStateA, conflictStateB, boundaryDirection))
         {
             Debug.LogWarning("The selected states are actually compatible! Choose different states for conflict testing.");
             return;
@@ -1041,7 +1042,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
             else
             {
                 // Use entropy-based colors for uncollapsed cells
-                float entropyFactor = (float)(cell1.Entropy + cell2.Entropy) / (2 * testController.MaxStates);
+                float entropyFactor = (float)(cell1.Entropy + cell2.Entropy) / (2 * generator.MaxCellStates);
                 color = potentiallyCompatible ?
                     Color.Lerp(lowEntropyColor, highEntropyColor, entropyFactor) :
                     conflictColor;
@@ -1066,17 +1067,17 @@ public class BoundaryCoherenceTest : MonoBehaviour
 
         // Calculate world position for marker
         Vector3 chunkWorldPos = new Vector3(
-            chunkPos.x * testController.ChunkSize,
-            chunkPos.y * testController.ChunkSize,
-            chunkPos.z * testController.ChunkSize
+            chunkPos.x * generator.ChunkSize,
+            chunkPos.y * generator.ChunkSize,
+            chunkPos.z * generator.ChunkSize
         );
 
         // Calculate marker position based on direction
         Vector3 dirVector = direction.ToVector3Int();
         Vector3 markerPos = chunkWorldPos + new Vector3(
-            (direction == Direction.Right ? testController.ChunkSize : (direction == Direction.Left ? 0 : testController.ChunkSize / 2f)),
-            (direction == Direction.Up ? testController.ChunkSize : (direction == Direction.Down ? 0 : testController.ChunkSize / 2f)),
-            (direction == Direction.Forward ? testController.ChunkSize : (direction == Direction.Back ? 0 : testController.ChunkSize / 2f))
+            (direction == Direction.Right ? generator.ChunkSize : (direction == Direction.Left ? 0 : generator.ChunkSize / 2f)),
+            (direction == Direction.Up ? generator.ChunkSize : (direction == Direction.Down ? 0 : generator.ChunkSize / 2f)),
+            (direction == Direction.Forward ? generator.ChunkSize : (direction == Direction.Back ? 0 : generator.ChunkSize / 2f))
         );
 
         // Get or create dictionary for this direction
@@ -1216,7 +1217,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
     /// </summary>
     private Vector3 FindCellWorldPosition(Cell cell)
     {
-        foreach (var chunkEntry in testController.GetChunks())
+        foreach (var chunkEntry in generator.GetChunks())
         {
             Chunk chunk = chunkEntry.Value;
             int size = chunk.Size;
@@ -1304,7 +1305,7 @@ public class BoundaryCoherenceTest : MonoBehaviour
         StringBuilder jsonBuilder = new StringBuilder();
         jsonBuilder.AppendLine("{");
         jsonBuilder.AppendLine("  \"timestamp\": \"" + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "\",");
-        jsonBuilder.AppendLine("  \"worldSeed\": " + testController.GetType().GetField("randomSeed")?.GetValue(testController) + ",");
+        jsonBuilder.AppendLine("  \"worldSeed\": " + generator.GetType().GetField("randomSeed")?.GetValue(generator) + ",");
         jsonBuilder.AppendLine("  \"overallCoherence\": " + overallCoherenceScore.ToString("F4") + ",");
         jsonBuilder.AppendLine("  \"totalConflicts\": " + totalConflicts + ",");
         jsonBuilder.AppendLine("  \"totalBoundaries\": " + totalBoundaries + ",");

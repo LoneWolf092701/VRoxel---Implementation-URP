@@ -25,7 +25,7 @@ namespace WFC.Core
 
         // Configuration
         private int chunkSize;
-        private float globalWeight = 1.0f;
+        private float globalWeight = 0.7f;  //1.0f old
         private float regionWeight = 1.0f;
         private float localWeight = 1.0f;
 

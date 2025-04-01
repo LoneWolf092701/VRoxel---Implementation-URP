@@ -857,42 +857,41 @@ namespace WFC.Chunking
                 ChunkTask task = chunkTasks.Dequeue();
 
                 // Use parallel processing if enabled
-                if (useParallelProcessing && parallelProcessor != null)
+                if (parallelProcessor != null)
                 {
+                    bool queued = false;
+
                     switch (task.Type)
                     {
-                        case ChunkTaskType.Create:
-                            CreateChunk(task.Position);
-                            break;
-
-                        case ChunkTaskType.Unload:
-                            UnloadChunk(task.Position);
-                            break;
-
                         case ChunkTaskType.Collapse:
                             // Queue for parallel processing
-                            if (!parallelProcessor.QueueChunkForProcessing(
+                            queued = parallelProcessor.QueueChunkForProcessing(
                                 task.Chunk,
                                 WFCJobType.Collapse,
                                 task.MaxIterations,
-                                task.Priority))
-                            {
-                                // If queueing failed, add back to our queue
-                                chunkTasks.Enqueue(task, task.Priority);
-                            }
+                                task.Priority);
                             break;
 
                         case ChunkTaskType.GenerateMesh:
-                            if (!parallelProcessor.QueueChunkForProcessing(
-                           task.Chunk,
-                           WFCJobType.GenerateMesh,
-                           100,
-                           task.Priority))
-                            {
-                                // If queueing failed, add back to our queue
-                                chunkTasks.Enqueue(task, task.Priority);
-                            }
+                            queued = parallelProcessor.QueueChunkForProcessing(
+                                task.Chunk,
+                                WFCJobType.GenerateMesh,
+                                100,
+                                task.Priority);
                             break;
+                    }
+
+                    // If queuing failed, add back to our queue
+                    if (!queued && (task.Type == ChunkTaskType.Collapse || task.Type == ChunkTaskType.GenerateMesh))
+                    {
+                        chunkTasks.Enqueue(task, task.Priority);
+                        break; // Don't count this as processed
+                    }
+                    else
+                    {
+                        // Successfully queued for parallel processing
+                        tasksProcessed++;
+                        continue;
                     }
                 }
                 else
@@ -916,9 +915,14 @@ namespace WFC.Chunking
                             GenerateChunkMesh(task.Chunk);
                             break;
                     }
+                    //tasksProcessed++;
                 }
 
                 tasksProcessed++;
+            }
+            if (parallelProcessor != null)
+            {
+                parallelProcessor.ProcessMainThreadEvents();
             }
         }
 

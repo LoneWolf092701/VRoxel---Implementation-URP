@@ -34,7 +34,7 @@ namespace WFC.Generation
 
         // Cache for config access
         private WFCConfiguration activeConfig;
-
+       
         // Properties that now use the configuration
         public int MaxCellStates => activeConfig.World.maxStates;
         public int ChunkSize => activeConfig.World.chunkSize;
@@ -259,6 +259,18 @@ namespace WFC.Generation
             InitializeHierarchicalConstraints();
         }
 
+        private int GenerateChunkSeed(Vector3Int chunkPos)
+        {
+            // Create a deterministic seed from chunk position
+            // This ensures the same terrain is always generated for the same chunk
+            int baseSeed = WFCConfigManager.Config.World.randomSeed;
+            int chunkSeed = baseSeed +
+                            chunkPos.x * 73856093 ^
+                            chunkPos.y * 19349663 ^
+                            chunkPos.z * 83492791;
+            return chunkSeed;
+        }
+
         private void InitializeHierarchicalConstraints()
         {
             // Create the hierarchical constraint system
@@ -271,6 +283,513 @@ namespace WFC.Generation
             foreach (var chunk in chunks.Values)
             {
                 hierarchicalConstraints.PrecomputeChunkConstraints(chunk, MaxCellStates);
+            }
+        }
+
+        private void ApplyRegionalConstraints(Chunk chunk, System.Random random)
+        {
+            // Global coordinates for consistent noise across world
+            Vector3 worldPos = new Vector3(
+                chunk.Position.x * ChunkSize,
+                chunk.Position.y * ChunkSize,
+                chunk.Position.z * ChunkSize
+            );
+
+            // Use noise functions to determine biome types
+            float elevationNoise = Mathf.PerlinNoise(worldPos.x * 0.01f, worldPos.z * 0.01f);
+            float moistureNoise = Mathf.PerlinNoise(worldPos.x * 0.02f + 500, worldPos.z * 0.02f + 500);
+            float temperatureNoise = Mathf.PerlinNoise(worldPos.x * 0.015f + 1000, worldPos.z * 0.015f + 1000);
+
+            // Apply biome-specific constraints
+            if (elevationNoise > 0.7f)
+            {
+                ApplyMountainConstraints(chunk, elevationNoise, random);
+            }
+            else if (moistureNoise > 0.7f && elevationNoise < 0.4f)
+            {
+                ApplyWaterBodyConstraints(chunk, moistureNoise, random);
+            }
+            else if (moistureNoise > 0.5f && temperatureNoise > 0.5f)
+            {
+                ApplyForestConstraints(chunk, moistureNoise, random);
+            }
+            else if (moistureNoise < 0.3f && temperatureNoise > 0.6f)
+            {
+                ApplyDesertConstraints(chunk, temperatureNoise, random);
+            }
+            else
+            {
+                ApplyPlainsConstraints(chunk, elevationNoise, moistureNoise, random);
+            }
+        }
+
+        // Replace the ApplyWaterBodyConstraints method with this improved version
+        private void ApplyWaterBodyConstraints(Chunk chunk, float intensity, System.Random random)
+        {
+            GlobalConstraint waterConstraint = new GlobalConstraint
+            {
+                Name = $"Water_{chunk.Position}",
+                Type = ConstraintType.BiomeRegion,
+                WorldCenter = new Vector3(
+                    chunk.Position.x * ChunkSize + ChunkSize / 2,
+                    chunk.Position.y * ChunkSize + ChunkSize / 3, // Lower to create water bodies
+                    chunk.Position.z * ChunkSize + ChunkSize / 2
+                ),
+                WorldSize = new Vector3(ChunkSize, ChunkSize / 2, ChunkSize),
+                BlendRadius = ChunkSize * 1.5f, // Increased blend radius for smoother transitions
+                Strength = 0.8f
+            };
+
+            // Add biases for water terrain
+            waterConstraint.StateBiases[3] = 0.9f;  // Water
+            waterConstraint.StateBiases[5] = 0.6f;  // Sand for shores
+
+            // Create a water body with surrounding shore and varied height
+            int baseWaterLevel = chunk.Size / 3;
+
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Add noise to water level for natural shorelines
+                    float heightVariation = Mathf.PerlinNoise(
+                        (chunk.Position.x * chunk.Size + x) * 0.1f,
+                        (chunk.Position.z * chunk.Size + z) * 0.1f) * 2.0f;
+
+                    int localWaterLevel = Mathf.FloorToInt(baseWaterLevel + heightVariation);
+
+                    // Calculate distance from edge for shore formation
+                    float distFromEdge = Mathf.Min(
+                        Mathf.Min(x, chunk.Size - 1 - x),
+                        Mathf.Min(z, chunk.Size - 1 - z)
+                    );
+
+                    // Apply noise to shore distance
+                    float shoreNoise = Mathf.PerlinNoise(
+                        (chunk.Position.x * chunk.Size + x) * 0.2f + 500f,
+                        (chunk.Position.z * chunk.Size + z) * 0.2f + 500f) * 2.0f;
+
+                    float shoreWidth = 2.0f + shoreNoise;
+
+                    // Water at and below water level
+                    for (int y = 0; y <= localWaterLevel; y++)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+                        if (!cell.CollapsedState.HasValue)
+                        {
+                            if (y == localWaterLevel && distFromEdge < shoreWidth)
+                            {
+                                cell.Collapse(5); // Sand shores with varied width
+                            }
+                            else if (y < localWaterLevel)
+                            {
+                                cell.Collapse(3); // Water
+                            }
+                        }
+                    }
+                }
+            }
+
+            hierarchicalConstraints.AddGlobalConstraint(waterConstraint);
+        }
+
+        // Replace the ApplyMountainConstraints method with this improved version
+        private void ApplyMountainConstraints(Chunk chunk, float intensity, System.Random random)
+        {
+            // Create a mountain constraint with improved blending
+            GlobalConstraint mountainConstraint = new GlobalConstraint
+            {
+                Name = $"Mountain_{chunk.Position}",
+                Type = ConstraintType.HeightMap,
+                WorldCenter = new Vector3(
+                    chunk.Position.x * ChunkSize + ChunkSize / 2,
+                    chunk.Position.y * ChunkSize + ChunkSize / 2,
+                    chunk.Position.z * ChunkSize + ChunkSize / 2
+                ),
+                WorldSize = new Vector3(ChunkSize, ChunkSize, ChunkSize),
+                BlendRadius = ChunkSize * 2.0f, // Increased blend radius for smoother transitions
+                Strength = 0.7f + intensity * 0.3f,
+                MinHeight = chunk.Position.y * ChunkSize,
+                MaxHeight = (chunk.Position.y + 1) * ChunkSize,
+                NoiseScale = 0.08f // Added noise scale for terrain variation
+            };
+
+            // Add biases for mountain terrain
+            mountainConstraint.StateBiases[0] = -0.9f; // Strongly discourage empty
+            mountainConstraint.StateBiases[4] = 0.8f;  // Strongly encourage rock
+
+            // Create varied mountain terrain with gradual slopes
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Use multiple octaves of noise for more natural mountains
+                    float baseNoise = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.05f,
+                        (chunk.Position.z * ChunkSize + z) * 0.05f);
+
+                    float detailNoise = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.1f + 500f,
+                        (chunk.Position.z * ChunkSize + z) * 0.1f + 500f) * 0.5f;
+
+                    // Combine noise layers for more complex heightmap
+                    float combinedNoise = baseNoise * 0.7f + detailNoise * 0.3f;
+
+                    // Calculate height based on noise and intensity
+                    int peakHeight = Mathf.FloorToInt(chunk.Size * 0.9f * combinedNoise * intensity);
+
+                    // Create gradual slopes from peak
+                    for (int y = 0; y < chunk.Size; y++)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+                        if (!cell.CollapsedState.HasValue)
+                        {
+                            // Higher elevations have more rock
+                            if (y <= peakHeight)
+                            {
+                                float heightRatio = (float)y / peakHeight;
+
+                                // Bottom layers are ground/rock mix, top is mostly rock
+                                if (heightRatio > 0.6f || (heightRatio > 0.4f && random.NextDouble() < 0.7f))
+                                {
+                                    cell.Collapse(4); // Rock
+                                }
+                                else
+                                {
+                                    cell.Collapse(1); // Ground for lower elevations
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            hierarchicalConstraints.AddGlobalConstraint(mountainConstraint);
+        }
+
+        // Modify the ApplyForestConstraints method for smoother transitions
+        private void ApplyForestConstraints(Chunk chunk, float intensity, System.Random random)
+        {
+            GlobalConstraint forestConstraint = new GlobalConstraint
+            {
+                Name = $"Forest_{chunk.Position}",
+                Type = ConstraintType.BiomeRegion,
+                WorldCenter = new Vector3(
+                    chunk.Position.x * ChunkSize + ChunkSize / 2,
+                    chunk.Position.y * ChunkSize + ChunkSize / 2,
+                    chunk.Position.z * ChunkSize + ChunkSize / 2
+                ),
+                WorldSize = new Vector3(ChunkSize, ChunkSize, ChunkSize),
+                BlendRadius = ChunkSize * 1.5f, // Increased blend radius
+                Strength = 0.7f
+            };
+
+            // Add biases for forest terrain
+            forestConstraint.StateBiases[2] = 0.7f;  // Grass
+            forestConstraint.StateBiases[6] = 0.8f;  // Trees
+
+            // Generate a varied terrain height for the forest floor
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Use noise to create varied terrain height
+                    float terrainNoise = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.1f,
+                        (chunk.Position.z * ChunkSize + z) * 0.1f);
+
+                    // Create rolling hills for forest floor
+                    int terrainHeight = Mathf.FloorToInt(chunk.Size * 0.4f * terrainNoise);
+
+                    // Create layered ground/grass terrain
+                    for (int y = 0; y <= terrainHeight; y++)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+                        if (!cell.CollapsedState.HasValue)
+                        {
+                            if (y == terrainHeight)
+                            {
+                                cell.Collapse(2); // Grass top layer
+                            }
+                            else
+                            {
+                                cell.Collapse(1); // Ground beneath
+                            }
+                        }
+                    }
+
+                    // Place trees with varied density based on noise
+                    float treeNoise = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.2f + 1000f,
+                        (chunk.Position.z * ChunkSize + z) * 0.2f + 1000f);
+
+                    // Higher tree density in forest center, sparser at edges
+                    float treeDensity = 0.3f * intensity * treeNoise;
+
+                    if (random.NextDouble() < treeDensity)
+                    {
+                        // Place tree on top of terrain
+                        if (terrainHeight + 1 < chunk.Size)
+                        {
+                            Cell cell = chunk.GetCell(x, terrainHeight + 1, z);
+                            if (!cell.CollapsedState.HasValue)
+                            {
+                                cell.Collapse(6); // Tree
+                            }
+                        }
+                    }
+                }
+            }
+
+            hierarchicalConstraints.AddGlobalConstraint(forestConstraint);
+        }
+
+        // Modify the ApplyPlainsConstraints method for better terrain variation
+        private void ApplyPlainsConstraints(Chunk chunk, float elevation, float moisture, System.Random random)
+        {
+            GlobalConstraint plainsConstraint = new GlobalConstraint
+            {
+                Name = $"Plains_{chunk.Position}",
+                Type = ConstraintType.BiomeRegion,
+                WorldCenter = new Vector3(
+                    chunk.Position.x * ChunkSize + ChunkSize / 2,
+                    chunk.Position.y * ChunkSize + ChunkSize / 2,
+                    chunk.Position.z * ChunkSize + ChunkSize / 2
+                ),
+                WorldSize = new Vector3(ChunkSize, ChunkSize, ChunkSize),
+                BlendRadius = ChunkSize * 1.8f, // Increased blend radius for smoother transitions
+                Strength = 0.7f
+            };
+
+            // Add biases for plains terrain
+            plainsConstraint.StateBiases[1] = 0.6f;  // Ground
+            plainsConstraint.StateBiases[2] = 0.7f;  // Grass
+
+            // Create rolling hills with varied heights
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Multiple noise layers for more natural plains
+                    float baseHeight = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.05f,
+                        (chunk.Position.z * ChunkSize + z) * 0.05f);
+
+                    float detailHeight = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.15f + 200f,
+                        (chunk.Position.z * ChunkSize + z) * 0.15f + 200f) * 0.3f;
+
+                    // Combine noise layers with moisture influence
+                    float combinedHeight = baseHeight * 0.7f + detailHeight * 0.3f;
+                    combinedHeight = Mathf.Lerp(combinedHeight, combinedHeight * 1.2f, moisture);
+
+                    int terrainHeight = Mathf.FloorToInt(chunk.Size * 0.4f * combinedHeight);
+
+                    // Create layered terrain
+                    for (int y = 0; y <= terrainHeight; y++)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+                        if (!cell.CollapsedState.HasValue)
+                        {
+                            // Top layer is grass, lower layers are ground
+                            if (y == terrainHeight)
+                            {
+                                cell.Collapse(2); // Grass
+                            }
+                            else
+                            {
+                                cell.Collapse(1); // Ground
+                            }
+                        }
+                    }
+
+                    // More realistic tree placement based on combined factors
+                    float treeProbability = moisture * 0.15f; // Base on moisture
+
+                    // Add some randomness to tree placement
+                    float treeNoise = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.25f + 300f,
+                        (chunk.Position.z * ChunkSize + z) * 0.25f + 300f);
+
+                    if (treeNoise > 0.7f && random.NextDouble() < treeProbability)
+                    {
+                        if (terrainHeight + 1 < chunk.Size)
+                        {
+                            Cell cell = chunk.GetCell(x, terrainHeight + 1, z);
+                            if (!cell.CollapsedState.HasValue)
+                            {
+                                cell.Collapse(6); // Tree
+                            }
+                        }
+                    }
+                }
+            }
+
+            hierarchicalConstraints.AddGlobalConstraint(plainsConstraint);
+        }
+
+        // Modify the ApplyDesertConstraints method for better terrain variation
+        private void ApplyDesertConstraints(Chunk chunk, float intensity, System.Random random)
+        {
+            GlobalConstraint desertConstraint = new GlobalConstraint
+            {
+                Name = $"Desert_{chunk.Position}",
+                Type = ConstraintType.BiomeRegion,
+                WorldCenter = new Vector3(
+                    chunk.Position.x * ChunkSize + ChunkSize / 2,
+                    chunk.Position.y * ChunkSize + ChunkSize / 2,
+                    chunk.Position.z * ChunkSize + ChunkSize / 2
+                ),
+                WorldSize = new Vector3(ChunkSize, ChunkSize, ChunkSize),
+                BlendRadius = ChunkSize * 1.5f, // Increased for better transitions
+                Strength = 0.8f
+            };
+
+            // Add biases for desert terrain
+            desertConstraint.StateBiases[5] = 0.9f;  // Sand
+
+            // Also add some ground and rock for variety
+            desertConstraint.StateBiases[1] = 0.3f;  // Some ground
+            desertConstraint.StateBiases[4] = 0.2f;  // Occasional rocks
+
+            // Create varied desert terrain with dunes
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Use multiple noise frequencies for more natural dunes
+                    float primaryDune = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.08f,
+                        (chunk.Position.z * ChunkSize + z) * 0.08f);
+
+                    float secondaryDune = Mathf.PerlinNoise(
+                        (chunk.Position.x * ChunkSize + x) * 0.16f + 100f,
+                        (chunk.Position.z * ChunkSize + z) * 0.16f + 100f) * 0.5f;
+
+                    // Combine noise layers for more realistic dunes
+                    float combinedHeight = primaryDune * 0.7f + secondaryDune * 0.3f;
+
+                    // Create varied dune heights
+                    int duneHeight = Mathf.FloorToInt(chunk.Size * 0.6f * combinedHeight);
+
+                    // Apply terrain with occasional rock formations
+                    for (int y = 0; y <= duneHeight; y++)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+                        if (!cell.CollapsedState.HasValue)
+                        {
+                            // Determine terrain type
+                            if (y == duneHeight && random.NextDouble() < 0.05f)
+                            {
+                                // Occasional rock outcroppings
+                                cell.Collapse(4); // Rock
+                            }
+                            else if (y < duneHeight * 0.3f && random.NextDouble() < 0.2f)
+                            {
+                                // Some ground mixed into lower layers
+                                cell.Collapse(1); // Ground
+                            }
+                            else
+                            {
+                                // Primarily sand
+                                cell.Collapse(5); // Sand
+                            }
+                        }
+                    }
+                }
+            }
+
+            hierarchicalConstraints.AddGlobalConstraint(desertConstraint);
+        }
+
+        // Add this new helper function to create smoother biome transitions
+        private void CreateBiomeTransition(Vector3Int chunkPos, Direction direction, int sourceState, int targetState)
+        {
+            // Create a transition constraint between biomes
+            RegionConstraint transitionConstraint = new RegionConstraint
+            {
+                Name = $"Transition_{chunkPos}_{direction}",
+                Type = RegionType.Transition,
+                ChunkPosition = chunkPos,
+                ChunkSize = Vector3Int.one,
+                Strength = 0.7f,
+                Gradient = 0.7f, // Higher gradient for smoother transitions
+                SourceState = sourceState,
+                TargetState = targetState,
+                TransitionDirection = direction.ToVector3Int()
+            };
+
+            // Add the transition to the constraint system
+            hierarchicalConstraints.AddRegionConstraint(transitionConstraint);
+        }
+
+        // Add this to ConnectChunkNeighbors method after individual biome generation
+        // This creates transition zones between adjacent biomes
+        private void CreateBiomeTransitions()
+        {
+            foreach (var chunk in chunks.Values)
+            {
+                foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
+                {
+                    // Skip if no neighbor in this direction
+                    if (!chunk.Neighbors.ContainsKey(dir))
+                        continue;
+
+                    Chunk neighbor = chunk.Neighbors[dir];
+
+                    // Determine chunk biome types and create appropriate transitions
+                    string chunkBiomeName = GetDominantBiome(chunk);
+                    string neighborBiomeName = GetDominantBiome(neighbor);
+
+                    // Only create transitions between different biomes
+                    if (chunkBiomeName != neighborBiomeName)
+                    {
+                        // Define source and target states based on biome types
+                        int sourceState = GetPrimaryStateForBiome(chunkBiomeName);
+                        int targetState = GetPrimaryStateForBiome(neighborBiomeName);
+
+                        // Create a transition constraint
+                        CreateBiomeTransition(chunk.Position, dir, sourceState, targetState);
+                    }
+                }
+            }
+        }
+
+        // Helper method to identify the dominant biome in a chunk
+        private string GetDominantBiome(Chunk chunk)
+        {
+            // Check for constraint names to identify biome type
+            foreach (var constraint in hierarchicalConstraints.GetGlobalConstraints())
+            {
+                if (constraint.Name.Contains($"_{chunk.Position}"))
+                {
+                    if (constraint.Name.StartsWith("Mountain_"))
+                        return "Mountain";
+                    else if (constraint.Name.StartsWith("Water_"))
+                        return "Water";
+                    else if (constraint.Name.StartsWith("Forest_"))
+                        return "Forest";
+                    else if (constraint.Name.StartsWith("Desert_"))
+                        return "Desert";
+                    else if (constraint.Name.StartsWith("Plains_"))
+                        return "Plains";
+                }
+            }
+
+            return "Unknown";
+        }
+
+        // Helper to get the primary state for each biome type
+        private int GetPrimaryStateForBiome(string biomeName)
+        {
+            switch (biomeName)
+            {
+                case "Mountain": return 4; // Rock
+                case "Water": return 3;    // Water
+                case "Forest": return 6;   // Tree
+                case "Desert": return 5;   // Sand
+                case "Plains": return 2;   // Grass
+                default: return 1;         // Ground as default
             }
         }
 
@@ -344,6 +863,13 @@ namespace WFC.Generation
                         chunk.Neighbors[dir] = neighbor;
                     }
                 }
+            }
+
+            foreach (var chunk in chunks.Values)
+            {
+                int chunkSeed = GenerateChunkSeed(chunk.Position);
+                System.Random random = new System.Random(chunkSeed);
+                ApplyRegionalConstraints(chunk, random);
             }
         }
 
@@ -747,10 +1273,17 @@ namespace WFC.Generation
                 }
 
                 // Strong bias reduces effective entropy
+                //if (adjustedBias > 0.7f)
+                //    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.7f);
+                //else if (adjustedBias > 0.3f)
+                //    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.85f);
+                // Find constraint influence by increasing weight for biome constraints
                 if (adjustedBias > 0.7f)
-                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.7f);
-                else if (adjustedBias > 0.3f)
-                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.85f);
+                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.4f); // Stronger reduction
+                else if (adjustedBias > 0.4f)
+                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.6f); // Moderate reduction
+                else if (adjustedBias > 0.2f)
+                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.8f); // Slight reduction
             }
 
             return effectiveEntropy;

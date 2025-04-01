@@ -560,16 +560,16 @@ namespace WFC.Boundary
                 }
             }
 
-            // Try to get from WFCTestController
-            var wfcTestController = compatibilityChecker as WFC.Testing.WFCTestController;
-            if (wfcTestController != null)
-            {
-                var prop = wfcTestController.GetType().GetProperty("MaxStates");
-                if (prop != null)
-                {
-                    return (int)prop.GetValue(wfcTestController);
-                }
-            }
+            //// Try to get from WFCTestController
+            //var wfcTestController = compatibilityChecker as WFC.Testing.WFCTestController;
+            //if (wfcTestController != null)
+            //{
+            //    var prop = wfcTestController.GetType().GetProperty("MaxStates");
+            //    if (prop != null)
+            //    {
+            //        return (int)prop.GetValue(wfcTestController);
+            //    }
+            //}
 
             // Default fallback
             return 7; // Common default

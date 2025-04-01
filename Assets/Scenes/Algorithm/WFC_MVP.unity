@@ -165,9 +165,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   wfcGenerator: {fileID: 1124905181}
   chunkManager: {fileID: 1218634540}
-  wfcTestController: {fileID: 0}
   enableParallelProcessing: 1
-  maxThreads: 0
+  maxThreads: 4
   showDebugInfo: 1
 --- !u!1 &207340124
 GameObject:
@@ -293,7 +292,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   wfcGenerator: {fileID: 1124905181}
-  wfcTestController: {fileID: 0}
   defaultPreset: {fileID: 11400000, guid: 905c6e6a6ef664a49856241ca4cd530a, type: 2}
   availablePresets:
   - {fileID: 11400000, guid: f4451cd76fe8b9145b364fe96d149634, type: 2}
@@ -311,13 +309,14 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 266812409}
+  - component: {fileID: 266812410}
   m_Layer: 0
   m_Name: UI
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &266812409
 Transform:
   m_ObjectHideFlags: 0
@@ -334,6 +333,28 @@ Transform:
   - {fileID: 811068973}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &266812410
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 266812408}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4a1dd19f1928264c8157111127db442, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  wfcGenerator: {fileID: 1124905181}
+  wfcVisualizer: {fileID: 1314112788}
+  meshGenerator: {fileID: 1411155122}
+  showCellVisualization: 1
+  showMeshVisualization: 1
+  stepKey: 282
+  resetKey: 283
+  generateMeshKey: 284
+  toggleCellsKey: 286
+  toggleMeshKey: 287
 --- !u!1 &291866357
 GameObject:
   m_ObjectHideFlags: 0
@@ -470,6 +491,88 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 291866357}
   m_CullTransparentMesh: 1
+--- !u!1 &480418798
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 480418799}
+  - component: {fileID: 480418801}
+  - component: {fileID: 480418800}
+  m_Layer: 0
+  m_Name: Player
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &480418799
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 480418798}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: -111.1}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1693266745}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!143 &480418800
+CharacterController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 480418798}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Height: 2
+  m_Radius: 0.5
+  m_SlopeLimit: 45
+  m_StepOffset: 0.3
+  m_SkinWidth: 0.08
+  m_MinMoveDistance: 0.001
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &480418801
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 480418798}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ddc11291e72f7ee47b669894794b8f99, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  moveSpeed: 10
+  acceleration: 15
+  deceleration: 20
+  sprintSpeedMultiplier: 2.5
+  useGravity: 0
+  gravityStrength: 9.81
+  jumpHeight: 2
+  airControlMultiplier: 0.5
+  lookSensitivity: 4
+  invertYAxis: 0
+  allowXAxisCameraRotation: 1
 --- !u!1 &647946195
 GameObject:
   m_ObjectHideFlags: 0
@@ -723,19 +826,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f4a1dd19f1928264c8157111127db442, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcController: {fileID: 0}
+  wfcGenerator: {fileID: 0}
+  wfcVisualizer: {fileID: 0}
   meshGenerator: {fileID: 0}
-  stepButton: {fileID: 1466852795}
-  resetButton: {fileID: 1885611902}
-  generateMeshButton: {fileID: 1590042414}
-  showCellsToggle: {fileID: 0}
-  showMeshToggle: {fileID: 0}
+  showCellVisualization: 1
+  showMeshVisualization: 1
   stepKey: 49
   resetKey: 50
   generateMeshKey: 51
   toggleCellsKey: 52
   toggleMeshKey: 53
-  runTestKey: 54
 --- !u!1 &948878865
 GameObject:
   m_ObjectHideFlags: 0
@@ -1048,7 +1148,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a8079f73c214c42ad54ea6a5ff6656, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcComponent: {fileID: 1124905181}
+  wfcGenerator: {fileID: 0}
   maxCellStates: 7
   showBoundaries: 1
   showUncollapsedCells: 1
@@ -1140,7 +1240,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: efc606c3876443040ae95ff53a0c10b2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcController: {fileID: 1124905181}
+  wfcGenerator: {fileID: 1124905181}
   terrainMaterial: {fileID: 2100000, guid: f9086f3ea36bc714383439f31aee5bbf, type: 2}
   autoUpdate: 1
   cellSize: 1
@@ -1177,6 +1277,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1450287014}
+  - component: {fileID: 1450287015}
   m_Layer: 0
   m_Name: MVP Objects
   m_TagString: Untagged
@@ -1210,6 +1311,28 @@ Transform:
   - {fileID: 1229439649}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1450287015
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1450287013}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a5ce0d5300cd82f42a8b9d6c27bd2aa6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  configManager: {fileID: 1229439650}
+  terrainManager: {fileID: 226482519}
+  constraintInitializer: {fileID: 1703491499}
+  wfcGenerator: {fileID: 1124905181}
+  parallelManager: {fileID: 93430298}
+  chunkManager: {fileID: 1218634540}
+  meshGenerator: {fileID: 1411155122}
+  perfMonitor: {fileID: 1408270512}
+  initDelayBetweenSteps: 0.1
+  debugLogging: 1
 --- !u!1 &1466852793
 GameObject:
   m_ObjectHideFlags: 0
@@ -1228,7 +1351,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1466852794
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1349,7 +1472,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1590042413
 RectTransform:
   m_ObjectHideFlags: 0
@@ -1597,7 +1720,6 @@ GameObject:
   - component: {fileID: 1693266744}
   - component: {fileID: 1693266743}
   - component: {fileID: 1693266747}
-  - component: {fileID: 1693266746}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -1672,36 +1794,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1693266742}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -28.1, y: 6.04921, z: -33.96}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 480418799}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1693266746
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1693266742}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ddc11291e72f7ee47b669894794b8f99, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  moveSpeed: 10
-  rotateSpeed: 40
-  elevateSpeed: 5
-  accelerationMultiplier: 3
-  movementSmoothTime: 0.1
-  rotationSmoothTime: 1
-  showChunkBoundaries: 1
-  showChunkCorners: 1
-  boundaryLineThickness: 0.1
-  boundaryColor: {r: 1, g: 0.5, b: 0, a: 0.8}
-  cornerColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!114 &1693266747
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1790,13 +1889,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 47d6f693de2b4b54abb66b6219cc80e6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcController: {fileID: 1124905181}
+  wfcGenerator: {fileID: 0}
   createMountainRange: 1
   createRiver: 1
   createForest: 1
   createTransitionZones: 1
-  fallbackWorldSizeX: 2
-  fallbackWorldSizeY: 2
+  fallbackWorldSizeX: 20
+  fallbackWorldSizeY: 20
   fallbackWorldSizeZ: 1
 --- !u!1 &1885611900
 GameObject:
@@ -1816,7 +1915,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1885611901
 RectTransform:
   m_ObjectHideFlags: 0
@@ -2059,7 +2158,7 @@ CanvasRenderer:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 1693266745}
+  - {fileID: 480418799}
   - {fileID: 1622535023}
   - {fileID: 207340127}
   - {fileID: 266812409}
