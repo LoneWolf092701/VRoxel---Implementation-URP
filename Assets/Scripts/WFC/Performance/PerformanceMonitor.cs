@@ -208,7 +208,7 @@ namespace WFC.Performance
             }
 
             // Log the complete report
-            Debug.Log(sb.ToString());
+            //Debug.Log(sb.ToString());
         }
 
         private void OnGUI()

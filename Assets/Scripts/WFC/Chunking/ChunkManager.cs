@@ -1,4 +1,5 @@
 // Assets/Scripts/WFC/Chunking/ChunkManagerUpdated.cs
+// Assets/Scripts/WFC/Chunking/ChunkManager.cs
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
@@ -11,27 +12,44 @@ using System.Collections;
 using System.Diagnostics;
 using Debug = UnityEngine.Debug;
 using WFC.Performance;
+using WFC.MarchingCubes;
+using WFC.Boundary;
+using System;
 
 namespace WFC.Chunking
 {
     /// <summary>
-    /// Updated ChunkManager that uses the central configuration system
-    /// and implements advanced predictive generation
+    /// Updated ChunkManager that uses the central configuration system,
+    /// implements advanced predictive generation, and properly manages chunk lifecycle
     /// </summary>
     public class ChunkManager : MonoBehaviour
     {
+        #region Configuration and References
+
         [Header("Configuration")]
         [Tooltip("Override the global configuration with a specific asset")]
         [SerializeField] private WFCConfiguration configOverride;
 
         [Header("References")]
-        [SerializeField] public Transform viewer;       // changed
-        [SerializeField] private WFCGenerator wfcGenerator; // Reference from inspector
+        [SerializeField] public Transform viewer;
+        [SerializeField] private WFCGenerator wfcGenerator;
         [SerializeField] private PerformanceMonitor performanceMonitor;
+        [SerializeField] private MeshGenerator meshGenerator;
 
         [Header("Prediction Settings")]
         [SerializeField] private int movementHistorySize = 60; // Store 60 frames of movement history
         [SerializeField] private float basePredictionTime = 2.0f; // Default look ahead time
+
+        [Header("Debug Settings")]
+        [SerializeField] private bool enableDebugLogging = false;
+        [SerializeField] private bool visualizeChunkStates = false;
+
+        #endregion
+
+        #region Private Fields
+
+        // State management
+        private Dictionary<Vector3Int, ChunkState> chunkStates = new Dictionary<Vector3Int, ChunkState>();
 
         // Loaded chunks
         private Dictionary<Vector3Int, Chunk> loadedChunks = new Dictionary<Vector3Int, Chunk>();
@@ -64,11 +82,30 @@ namespace WFC.Chunking
         // Cache for configuration access
         private WFCConfiguration activeConfig;
 
+        // Events and timing
+        private float lastChunkStateCleanupTime = 0f;
+
+        // Chunk state change event
+        public delegate void ChunkStateChangeHandler(Vector3Int chunkPos, ChunkLifecycleState oldState, ChunkLifecycleState newState);
+        public event ChunkStateChangeHandler OnChunkStateChanged;
+
+        #endregion
+
+        #region Properties
+
         // Properties that now use configuration
         private int ChunkSize => activeConfig.World.chunkSize;
         private float LoadDistance => currentLoadDistance; // Now using adaptive distance
         private float UnloadDistance => activeConfig.Performance.unloadDistance;
         private int MaxConcurrentChunks => maxConcurrentChunks; // Now adaptive
+
+        private Vector3 lastChunkGenerationPosition;
+        private float chunkGenerationDistance = 10f; // Distance player must move before generating new chunks
+
+
+        #endregion
+
+        #region Initialization
 
         private void Start()
         {
@@ -88,38 +125,196 @@ namespace WFC.Chunking
                 Debug.LogWarning("ChunkManager: Using configuration with validation issues.");
             }
 
-            if (viewer == null)
-                viewer = Camera.main.transform;
-
-            viewerPosition = viewer.position;
-            lastViewerPosition = viewerPosition;
+            // Initialize references
+            InitializeReferences();
 
             // Initialize adaptive parameters
             currentLoadDistance = activeConfig.Performance.loadDistance;
             maxConcurrentChunks = activeConfig.Performance.maxConcurrentChunks;
 
-            var adapter = new WFCAlgorithmAdapter(wfcGenerator);
+            // Initialize WFC algorithm adapter
+            InitializeWFCAdapter();
+
+            // Start adaptive strategy coroutine
+            StartCoroutine(AdaptiveStrategyUpdateCoroutine());
+
+            // Use a more robust delayed initialization approach
+            StartCoroutine(RobustDelayedChunkGeneration());
+
+            // Explicitly prevent origin chunk generation during startup
+            //Vector3Int originChunk = Vector3Int.zero;
+            //UpdateChunkState(originChunk, ChunkLifecycleState.Error);
+            Vector3Int viewerChunk = new Vector3Int(
+                Mathf.FloorToInt(viewerPosition.x / ChunkSize),
+                Mathf.FloorToInt(viewerPosition.y / ChunkSize),
+                Mathf.FloorToInt(viewerPosition.z / ChunkSize)
+            );
+            lastChunkGenerationPosition = Vector3.zero; // Initialize this to ensure generation happens
+            Debug.Log($"Initial viewer chunk: {viewerChunk}");
+            CreateChunkAt(viewerChunk); // Force creation of the initial chunk
+
+            Debug.Log($"ChunkManager Start completed. Initial viewer position: {(viewer != null ? viewer.position.ToString() : "No viewer")}");
+        }
+
+        /// <summary>
+        /// A more robust coroutine that waits multiple frames and verifies the viewer position
+        /// before generating any chunks
+        /// </summary>
+        private IEnumerator RobustDelayedChunkGeneration()
+        {
+            // Wait for 3 frames to ensure more complete initialization
+            for (int i = 0; i < 3; i++)
+            {
+                yield return null;
+            }
+
+            // Force update the viewer position
+            if (viewer != null)
+            {
+                // Update both position trackers
+                viewerPosition = viewer.position;
+                lastViewerPosition = viewer.position;
+
+                Debug.Log($"Delayed chunk generation - Viewer position: {viewerPosition}");
+
+                // Verify we have a non-zero position
+                if (viewerPosition.magnitude < 0.001f)
+                {
+                    Debug.LogWarning("Player position is still at or near origin. Waiting longer...");
+                    yield return new WaitForSeconds(0.5f);
+                    viewerPosition = viewer.position;
+                    lastViewerPosition = viewer.position;
+                }
+            }
+            else
+            {
+                Debug.LogError("No viewer reference found before generating chunks!");
+                yield break;
+            }
+
+            // Clear any existing chunks (especially at origin)
+            foreach (var chunkPos in loadedChunks.Keys.ToList())
+            {
+                // Skip if it's a chunk around the player
+                if (Vector3.Distance(
+                    new Vector3(chunkPos.x * ChunkSize, chunkPos.y * ChunkSize, chunkPos.z * ChunkSize),
+                    viewerPosition) < ChunkSize * 5)
+                {
+                    continue;
+                }
+
+                // Otherwise, unload it
+                Debug.Log($"Removing unwanted chunk at {chunkPos}");
+                UnloadChunk(chunkPos);
+            }
+
+            // Now generate chunks around the player
+            Debug.Log($"Generating chunks around player at position: {viewerPosition}");
+            CreateChunksAroundPlayer();
+        }
+
+        private void InitializeReferences()
+        {
+            if (viewer == null)
+                viewer = Camera.main?.transform;
+
+            if (viewer == null)
+            {
+                Debug.LogError("ChunkManager: No viewer reference found. Please assign a viewer transform.");
+                enabled = false;
+                return;
+            }
+
+            viewerPosition = viewer.position;
+            lastViewerPosition = viewerPosition;
+
+            // Find required components if not assigned
+            if (wfcGenerator == null)
+                wfcGenerator = FindAnyObjectByType<WFCGenerator>();
+
+            if (meshGenerator == null)
+                meshGenerator = FindAnyObjectByType<MeshGenerator>();
+
+            if (performanceMonitor == null)
+                performanceMonitor = FindAnyObjectByType<PerformanceMonitor>();
 
             // Get hierarchical constraint system reference
             if (wfcGenerator != null)
             {
                 hierarchicalConstraints = wfcGenerator.GetHierarchicalConstraintSystem();
             }
-
-            if (useParallelProcessing && wfcGenerator != null)
-            {
-                // Create processor with WFC algorithm reference and thread count from config
-                parallelProcessor = new ParallelWFCProcessor(adapter, activeConfig.Performance.maxThreads);
-                parallelProcessor.Start();
-            }
-
-            // Start adaptive strategy coroutine
-            StartCoroutine(AdaptiveStrategyUpdateCoroutine());
         }
+
+        private void InitializeWFCAdapter()
+        {
+            if (!useParallelProcessing || wfcGenerator == null)
+                return;
+
+            var adapter = new WFCAlgorithmAdapter(wfcGenerator);
+
+            // Create processor with WFC algorithm reference and thread count from config
+            parallelProcessor = new ParallelWFCProcessor(adapter, activeConfig.Performance.maxThreads);
+            parallelProcessor.Start();
+
+            Debug.Log("Parallel WFC processor initialized with " + activeConfig.Performance.maxThreads + " threads");
+        }
+
+        #endregion
+
+        #region Update Loop
 
         private void Update()
         {
-            // Update viewer position and velocity
+            UpdateViewerData();
+
+            // Check if player has moved far enough to generate new chunks
+            if (Vector3.Distance(viewerPosition, lastChunkGenerationPosition) > chunkGenerationDistance)
+            {
+                CreateChunksAroundPlayer();
+                lastChunkGenerationPosition = viewerPosition;
+                Debug.Log($"Player moved to {viewerPosition}, generating new chunks");
+            }
+
+
+            // Calculate predicted position using advanced prediction
+            predictedViewerPosition = PredictFuturePosition(predictionTime);
+
+            // Update chunk priorities
+            UpdateChunkPriorities();
+
+            // Assign LOD levels based on distance
+            AssignLODLevels();
+
+            // Manage chunks (load/unload)
+            ManageChunks();
+
+            // Process chunk tasks
+            ProcessChunkTasks();
+
+            // Optimize memory for inactive chunks
+            OptimizeInactiveChunks();
+
+            // Periodically clean up chunk states
+            CleanupStaleChunkStates();
+
+            Debug.Log($"Viewer position: {viewerPosition}, Predicted: {predictedViewerPosition}, Chunk: {new Vector3Int(Mathf.FloorToInt(viewerPosition.x / ChunkSize), Mathf.FloorToInt(viewerPosition.y / ChunkSize), Mathf.FloorToInt(viewerPosition.z / ChunkSize))}");
+            if (Input.GetKeyDown(KeyCode.P))
+            {
+                CreateChunksAroundPlayer();
+            }
+
+        }
+
+        /// <summary>
+        /// Gets a read-only dictionary of all loaded chunks
+        /// </summary>
+        public IReadOnlyDictionary<Vector3Int, Chunk> GetLoadedChunks()
+        {
+            return loadedChunks;
+        }
+
+        private void UpdateViewerData()
+        {
             viewerPosition = viewer.position;
             Vector3 newVelocity = (viewerPosition - lastViewerPosition) / Time.deltaTime;
             viewerAcceleration = (newVelocity - viewerVelocity) / Time.deltaTime;
@@ -132,126 +327,168 @@ namespace WFC.Chunking
                 movementHistory.Dequeue();
 
             movementHistory.Enqueue(new MovementSample(viewerPosition, viewerVelocity, Time.time));
-
-            // Calculate predicted position using advanced prediction
-            predictedViewerPosition = PredictFuturePosition(predictionTime);
-
-            // Update chunk priorities using the improved prediction
-            UpdateChunkPriorities();
-
-            // NEW: Assign LOD levels based on distance
-            AssignLODLevels();
-
-            // Manage chunks (load/unload)
-            ManageChunks();
-
-            // Process chunk tasks
-            ProcessChunkTasks();
-
-            // Optimize memory for inactive chunks
-            OptimizeInactiveChunks();
         }
 
-        // Add this method to ChunkManager.cs
-        private void AssignLODLevels()
+        #endregion
+
+        #region Chunk State Management
+
+        /// <summary>
+        /// Represents the possible states in a chunk's lifecycle
+        /// </summary>
+        public enum ChunkLifecycleState
         {
-            if (performanceMonitor != null)
-                performanceMonitor.StartComponentTiming("AssignLODLevels");
+            None,           // No state (not yet tracked)
+            Pending,        // Creation task has been queued but not processed
+            Loading,        // Currently being created/initialized
+            Active,         // Fully loaded and ready
+            Collapsing,     // WFC algorithm is running on this chunk
+            GeneratingMesh, // Mesh is being generated
+            Unloading,      // Being removed from active chunks
+            Error           // An error occurred during processing
+        }
 
-            foreach (var chunk in loadedChunks.Values)
+        /// <summary>
+        /// Holds state and timing information for a chunk
+        /// </summary>
+        private class ChunkState
+        {
+            public ChunkLifecycleState State { get; set; } = ChunkLifecycleState.None;
+            public float LastStateChangeTime { get; set; }
+            public float CreationTime { get; set; }
+            public int ProcessingAttempts { get; set; } = 0;
+            public string LastError { get; set; }
+
+            public ChunkState()
             {
-                // Calculate distance from viewer
-                Vector3 chunkWorldPos = GetChunkWorldPosition(chunk.Position);
-                float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
+                LastStateChangeTime = Time.time;
+                CreationTime = Time.time;
+            }
 
-                // Determine LOD level based on distance
-                int lodLevel = 0; // Default to highest detail
+            public void TransitionTo(ChunkLifecycleState newState)
+            {
+                State = newState;
+                LastStateChangeTime = Time.time;
+            }
 
-                for (int i = 0; i < activeConfig.Performance.lodSettings.lodDistanceThresholds.Length; i++)
+            public float GetTimeInCurrentState()
+            {
+                return Time.time - LastStateChangeTime;
+            }
+        }
+
+        /// <summary>
+        /// Updates the state of a chunk and triggers any necessary events
+        /// </summary>
+        private void UpdateChunkState(Vector3Int chunkPos, ChunkLifecycleState newState)
+        {
+            ChunkLifecycleState oldState = ChunkLifecycleState.None;
+
+            // Get or create the chunk state
+            if (!chunkStates.TryGetValue(chunkPos, out ChunkState state))
+            {
+                state = new ChunkState();
+                chunkStates[chunkPos] = state;
+            }
+            else
+            {
+                oldState = state.State;
+            }
+
+            // Update the state
+            state.TransitionTo(newState);
+
+            // Debug.Log state change if debug logging is enabled
+            if (enableDebugLogging)
+            {
+                Debug.Log($"Chunk {chunkPos} state changed: {oldState} -> {newState}");
+            }
+
+            // Trigger events
+            OnChunkStateChanged?.Invoke(chunkPos, oldState, newState);
+        }
+
+        /// <summary>
+        /// Gets the current state of a chunk
+        /// </summary>
+        public ChunkLifecycleState GetChunkState(Vector3Int chunkPos)
+        {
+            if (chunkStates.TryGetValue(chunkPos, out ChunkState state))
+            {
+                return state.State;
+            }
+
+            return ChunkLifecycleState.None;
+        }
+
+        /// <summary>
+        /// Cleanup stale chunk states to prevent memory leaks
+        /// </summary>
+        private void CleanupStaleChunkStates()
+        {
+            // Only run periodically
+            if (Time.time - lastChunkStateCleanupTime < 30f)
+                return;
+
+            lastChunkStateCleanupTime = Time.time;
+
+            List<Vector3Int> stateKeysToRemove = new List<Vector3Int>();
+
+            foreach (var entry in chunkStates)
+            {
+                Vector3Int chunkPos = entry.Key;
+                ChunkState state = entry.Value;
+
+                // Remove states for chunks that have been unloaded for more than 60 seconds
+                if (state.State == ChunkLifecycleState.Unloading &&
+                    state.GetTimeInCurrentState() > 60f)
                 {
-                    if (distance > activeConfig.Performance.lodSettings.lodDistanceThresholds[i])
+                    stateKeysToRemove.Add(chunkPos);
+                }
+
+                // Reset chunks that have been stuck in Pending or Loading state for too long
+                if ((state.State == ChunkLifecycleState.Pending ||
+                     state.State == ChunkLifecycleState.Loading) &&
+                     state.GetTimeInCurrentState() > 30f)
+                {
+                    if (state.ProcessingAttempts < 3)
                     {
-                        lodLevel = i + 1;
+                        // Retry up to 3 times
+                        state.ProcessingAttempts++;
+                        state.TransitionTo(ChunkLifecycleState.None);
+
+                        Debug.Log($"Resetting stuck chunk {chunkPos} (Attempt {state.ProcessingAttempts})");
                     }
                     else
                     {
-                        break;
+                        // After 3 attempts, mark as error
+                        state.TransitionTo(ChunkLifecycleState.Error);
+                        state.LastError = "Exceeded maximum processing attempts";
+                        Debug.LogWarning($"Chunk {chunkPos} failed to load after {state.ProcessingAttempts} attempts");
                     }
                 }
 
-                // Only update if LOD level changed
-                if (chunk.LODLevel != lodLevel)
+                // Clean up error states after a while
+                if (state.State == ChunkLifecycleState.Error &&
+                    state.GetTimeInCurrentState() > 120f)
                 {
-                    chunk.LODLevel = lodLevel;
-                    ApplyLODSettings(chunk);
+                    stateKeysToRemove.Add(chunkPos);
                 }
             }
 
-            if (performanceMonitor != null)
-                performanceMonitor.EndComponentTiming("AssignLODLevels");
-        }
-
-        private void ApplyLODSettings(Chunk chunk)
-        {
-            // Get LOD-specific settings
-            int lodLevel = chunk.LODLevel;
-            int maxIterations;
-            float constraintInfluence;
-
-            // Get max iterations for this LOD level
-            if (lodLevel < activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length)
+            // Remove the states
+            foreach (var key in stateKeysToRemove)
             {
-                maxIterations = activeConfig.Performance.lodSettings.maxIterationsPerLOD[lodLevel];
-            }
-            else if (activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length > 0)
-            {
-                // Use the last defined value
-                maxIterations = activeConfig.Performance.lodSettings.maxIterationsPerLOD[
-                    activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length - 1];
-            }
-            else
-            {
-                // Fallback to default
-                maxIterations = activeConfig.Algorithm.maxIterationsPerChunk;
+                chunkStates.Remove(key);
             }
 
-            // Get constraint influence for this LOD level
-            if (lodLevel < activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length)
+            if (stateKeysToRemove.Count > 0)
             {
-                constraintInfluence = activeConfig.Performance.lodSettings.constraintInfluencePerLOD[lodLevel];
-            }
-            else if (activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length > 0)
-            {
-                // Use the last defined value
-                constraintInfluence = activeConfig.Performance.lodSettings.constraintInfluencePerLOD[
-                    activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length - 1];
-            }
-            else
-            {
-                // Fallback to full influence
-                constraintInfluence = 1.0f;
-            }
-
-            // Apply the settings to the chunk
-            chunk.MaxIterations = maxIterations;
-            chunk.ConstraintInfluence = constraintInfluence;
-
-            // Mark for mesh update if needed
-            if (chunk.IsFullyCollapsed && chunk.IsDirty == false)
-            {
-                chunk.IsDirty = true;
+                Debug.Log($"Cleaned up {stateKeysToRemove.Count} stale chunk states");
             }
         }
 
-        // Helper method to get chunk world position
-        private Vector3 GetChunkWorldPosition(Vector3Int chunkPos)
-        {
-            return new Vector3(
-                chunkPos.x * ChunkSize,
-                chunkPos.y * ChunkSize,
-                chunkPos.z * ChunkSize
-            );
-        }
+        #endregion
 
         #region Advanced Movement Prediction
 
@@ -494,15 +731,6 @@ namespace WFC.Chunking
             return (float)collapsedCells / sampleSize;
         }
 
-        //private Vector3 GetChunkWorldPosition(Vector3Int chunkPos)
-        //{
-        //    return new Vector3(
-        //        chunkPos.x * ChunkSize,
-        //        chunkPos.y * ChunkSize,
-        //        chunkPos.z * ChunkSize
-        //    );
-        //}
-
         #endregion
 
         #region Adaptive Chunk Generation Strategy
@@ -559,11 +787,11 @@ namespace WFC.Chunking
 
             maxConcurrentChunks = Mathf.Clamp(newConcurrentChunks, 4, 32);
 
-            // Log strategy updates (once in a while)
+            // Debug.Log strategy updates (once in a while)
             if (Time.frameCount % 300 == 0)
             {
                 Debug.Log($"Adaptive strategy update: Prediction={predictionTime:F1}s, " +
-                          $"LoadDistance={currentLoadDistance:F1}, MaxChunks={maxConcurrentChunks}");
+                    $"LoadDistance={currentLoadDistance:F1}, MaxChunks={maxConcurrentChunks}");
             }
         }
 
@@ -606,17 +834,113 @@ namespace WFC.Chunking
 
         private void OptimizeChunkMemory(Chunk chunk)
         {
-            // This would be implemented in the Chunk class
+            // This is implemented in the Chunk class
             chunk.OptimizeMemory();
         }
 
         private void RestoreChunkFromOptimized(Chunk chunk)
         {
-            // This would be implemented in the Chunk class
+            // This is implemented in the Chunk class
             chunk.RestoreFromOptimized();
         }
 
         #endregion
+
+        #region LOD Management
+
+        private void AssignLODLevels()
+        {
+            if (performanceMonitor != null)
+                performanceMonitor.StartComponentTiming("AssignLODLevels");
+
+            foreach (var chunk in loadedChunks.Values)
+            {
+                // Calculate distance from viewer
+                Vector3 chunkWorldPos = GetChunkWorldPosition(chunk.Position);
+                float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
+
+                // Determine LOD level based on distance
+                int lodLevel = 0; // Default to highest detail
+
+                for (int i = 0; i < activeConfig.Performance.lodSettings.lodDistanceThresholds.Length; i++)
+                {
+                    if (distance > activeConfig.Performance.lodSettings.lodDistanceThresholds[i])
+                    {
+                        lodLevel = i + 1;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+
+                // Only update if LOD level changed
+                if (chunk.LODLevel != lodLevel)
+                {
+                    chunk.LODLevel = lodLevel;
+                    ApplyLODSettings(chunk);
+                }
+            }
+
+            if (performanceMonitor != null)
+                performanceMonitor.EndComponentTiming("AssignLODLevels");
+        }
+
+        private void ApplyLODSettings(Chunk chunk)
+        {
+            // Get LOD-specific settings
+            int lodLevel = chunk.LODLevel;
+            int maxIterations;
+            float constraintInfluence;
+
+            // Get max iterations for this LOD level
+            if (lodLevel < activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length)
+            {
+                maxIterations = activeConfig.Performance.lodSettings.maxIterationsPerLOD[lodLevel];
+            }
+            else if (activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length > 0)
+            {
+                // Use the last defined value
+                maxIterations = activeConfig.Performance.lodSettings.maxIterationsPerLOD[
+                    activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length - 1];
+            }
+            else
+            {
+                // Fallback to default
+                maxIterations = activeConfig.Algorithm.maxIterationsPerChunk;
+            }
+
+            // Get constraint influence for this LOD level
+            if (lodLevel < activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length)
+            {
+                constraintInfluence = activeConfig.Performance.lodSettings.constraintInfluencePerLOD[lodLevel];
+            }
+            else if (activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length > 0)
+            {
+                // Use the last defined value
+                constraintInfluence = activeConfig.Performance.lodSettings.constraintInfluencePerLOD[
+                    activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length - 1];
+            }
+            else
+            {
+                // Fallback to full influence
+                constraintInfluence = 1.0f;
+            }
+
+            // Apply the settings to the chunk
+            chunk.MaxIterations = maxIterations;
+            chunk.ConstraintInfluence = constraintInfluence;
+
+            // Mark for mesh update if needed
+            if (chunk.IsFullyCollapsed && chunk.IsDirty == false)
+            {
+                chunk.IsDirty = true;
+            }
+        }
+
+        #endregion
+
+        #region Chunk Priority Management
 
         private void UpdateChunkPriorities()
         {
@@ -635,11 +959,7 @@ namespace WFC.Chunking
         private float CalculateChunkPriority(Chunk chunk)
         {
             // Convert chunk position to world position
-            Vector3 chunkWorldPos = new Vector3(
-                chunk.Position.x * ChunkSize,
-                chunk.Position.y * ChunkSize,
-                chunk.Position.z * ChunkSize
-            );
+            Vector3 chunkWorldPos = GetChunkWorldPosition(chunk.Position);
 
             // Distance from viewer
             float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
@@ -670,14 +990,27 @@ namespace WFC.Chunking
             return priority;
         }
 
+        #endregion
+
+        #region Chunk Management
+
         private void ManageChunks()
         {
             // Get chunks to load
             List<Vector3Int> chunksToLoad = GetChunksToLoad();
 
+            if (enableDebugLogging)
+            {
+                Debug.Log($"Found {chunksToLoad.Count} chunks to load");
+            }
+
             foreach (var chunkPos in chunksToLoad)
             {
-                if (!loadedChunks.ContainsKey(chunkPos))
+                ChunkLifecycleState currentState = GetChunkState(chunkPos);
+
+                // Only create chunks that are not already being processed
+                if (currentState == ChunkLifecycleState.None ||
+                    currentState == ChunkLifecycleState.Error)
                 {
                     // Create chunk load task
                     ChunkTask task = new ChunkTask
@@ -687,7 +1020,16 @@ namespace WFC.Chunking
                         Priority = CalculateLoadPriority(chunkPos)
                     };
 
+                    // Enqueue the task
                     chunkTasks.Enqueue(task, task.Priority);
+
+                    // Update chunk state
+                    UpdateChunkState(chunkPos, ChunkLifecycleState.Pending);
+
+                    if (enableDebugLogging)
+                    {
+                        Debug.Log($"Queued chunk creation at {chunkPos}");
+                    }
                 }
             }
 
@@ -698,18 +1040,81 @@ namespace WFC.Chunking
             {
                 if (loadedChunks.ContainsKey(chunkPos))
                 {
-                    // Create chunk unload task
-                    ChunkTask task = new ChunkTask
-                    {
-                        Type = ChunkTaskType.Unload,
-                        Position = chunkPos,
-                        Chunk = loadedChunks[chunkPos],
-                        Priority = -1f // Low priority
-                    };
+                    ChunkLifecycleState currentState = GetChunkState(chunkPos);
 
-                    chunkTasks.Enqueue(task, task.Priority);
+                    // Only unload chunks that are active (not being processed)
+                    if (currentState == ChunkLifecycleState.Active)
+                    {
+                        // Create chunk unload task
+                        ChunkTask task = new ChunkTask
+                        {
+                            Type = ChunkTaskType.Unload,
+                            Position = chunkPos,
+                            Chunk = loadedChunks[chunkPos],
+                            Priority = -1f // Low priority
+                        };
+
+                        chunkTasks.Enqueue(task, task.Priority);
+
+                        // Update chunk state
+                        UpdateChunkState(chunkPos, ChunkLifecycleState.Unloading);
+
+                        if (enableDebugLogging)
+                        {
+                            Debug.Log($"Queued chunk unload at {chunkPos}");
+                        }
+                    }
                 }
             }
+        }
+
+        public void ForceGenerateInitialChunks()
+        {
+            // Force create chunks around the starting position
+            Vector3Int viewerChunk = new Vector3Int(
+                Mathf.FloorToInt(viewerPosition.x / ChunkSize),
+                Mathf.FloorToInt(viewerPosition.y / ChunkSize),
+                Mathf.FloorToInt(viewerPosition.z / ChunkSize)
+            );
+
+            Debug.Log($"Generating initial chunks around viewer at {viewerChunk}");
+
+            // Create a 3x3x3 grid of chunks around the player
+            for (int x = -1; x <= 1; x++)
+            {
+                for (int y = -1; y <= 1; y++)
+                {
+                    for (int z = -1; z <= 1; z++)
+                    {
+                        Vector3Int chunkPos = new Vector3Int(
+                            viewerChunk.x + x,
+                            viewerChunk.y + y,
+                            viewerChunk.z + z
+                        );
+
+                        // Skip if already loaded or pending
+                        ChunkLifecycleState currentState = GetChunkState(chunkPos);
+                        if (currentState != ChunkLifecycleState.None &&
+                            currentState != ChunkLifecycleState.Error)
+                            continue;
+
+                        // Create task to generate this chunk
+                        ChunkTask task = new ChunkTask
+                        {
+                            Type = ChunkTaskType.Create,
+                            Position = chunkPos,
+                            Priority = 100f // High priority
+                        };
+
+                        chunkTasks.Enqueue(task, task.Priority);
+
+                        // Update chunk state
+                        UpdateChunkState(chunkPos, ChunkLifecycleState.Pending);
+                    }
+                }
+            }
+
+            Debug.Log("Forced creation of initial chunks around player");
         }
 
         private List<Vector3Int> GetChunksToLoad()
@@ -721,15 +1126,8 @@ namespace WFC.Chunking
                 Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
 
-            // Calculate predicted position
-            Vector3Int predictedChunk = new Vector3Int(
-                Mathf.FloorToInt(predictedViewerPosition.x / ChunkSize),
-                Mathf.FloorToInt(predictedViewerPosition.y / ChunkSize),
-                Mathf.FloorToInt(predictedViewerPosition.z / ChunkSize)
-            );
-
-            // Calculate load distance in chunks
-            int loadChunks = Mathf.CeilToInt(LoadDistance / ChunkSize);
+            // Calculate load distance in chunks - ensure it's at least 2 for a minimum surrounding grid
+            int loadChunks = Mathf.Max(2, Mathf.CeilToInt(LoadDistance / ChunkSize));
 
             // Find all chunk positions within load distance
             List<Vector3Int> chunksToLoad = new List<Vector3Int>();
@@ -746,12 +1144,40 @@ namespace WFC.Chunking
                         if (loadedChunks.ContainsKey(pos))
                             continue;
 
-                        // Check if within load distance
-                        Vector3 chunkWorldPos = new Vector3(x * ChunkSize, y * ChunkSize, z * ChunkSize);
+                        // Check if within load distance (with a buffer)
+                        Vector3 chunkWorldPos = GetChunkWorldPosition(pos);
                         float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
 
-                        if (distance <= LoadDistance)
+                        if (distance <= LoadDistance * 1.2f) // 20% buffer to ensure we get enough chunks
                         {
+                            chunksToLoad.Add(pos);
+                        }
+                    }
+                }
+            }
+
+            // If no chunks found, create a 3x3x3 grid around the player
+            if (chunksToLoad.Count == 0)
+            {
+                Debug.LogWarning("No chunks to load found! Creating a grid around the viewer.");
+
+                // Create a 3x3x3 grid of chunks around the player
+                for (int x = -1; x <= 1; x++)
+                {
+                    for (int y = -1; y <= 1; y++)
+                    {
+                        for (int z = -1; z <= 1; z++)
+                        {
+                            Vector3Int pos = new Vector3Int(
+                                viewerChunk.x + x,
+                                viewerChunk.y + y,
+                                viewerChunk.z + z
+                            );
+
+                            // Skip if already loaded
+                            if (loadedChunks.ContainsKey(pos))
+                                continue;
+
                             chunksToLoad.Add(pos);
                         }
                     }
@@ -768,8 +1194,8 @@ namespace WFC.Chunking
                     return interestB.CompareTo(interestA);
 
                 // Secondary sort by distance to predicted position
-                Vector3 posA = new Vector3(a.x * ChunkSize, a.y * ChunkSize, a.z * ChunkSize);
-                Vector3 posB = new Vector3(b.x * ChunkSize, b.y * ChunkSize, b.z * ChunkSize);
+                Vector3 posA = GetChunkWorldPosition(a);
+                Vector3 posB = GetChunkWorldPosition(b);
 
                 float distA = Vector3.Distance(posA, predictedViewerPosition);
                 float distB = Vector3.Distance(posB, predictedViewerPosition);
@@ -790,11 +1216,7 @@ namespace WFC.Chunking
         {
             // Find chunks that are too far from both current and predicted positions
             return loadedChunks.Keys.Where(chunkPos => {
-                Vector3 chunkWorldPos = new Vector3(
-                    chunkPos.x * ChunkSize,
-                    chunkPos.y * ChunkSize,
-                    chunkPos.z * ChunkSize
-                );
+                Vector3 chunkWorldPos = GetChunkWorldPosition(chunkPos);
 
                 float distToCurrent = Vector3.Distance(chunkWorldPos, viewerPosition);
                 float distToPredicted = Vector3.Distance(chunkWorldPos, predictedViewerPosition);
@@ -806,11 +1228,7 @@ namespace WFC.Chunking
         private float CalculateLoadPriority(Vector3Int chunkPos)
         {
             // Convert to world position
-            Vector3 chunkWorldPos = new Vector3(
-                chunkPos.x * ChunkSize,
-                chunkPos.y * ChunkSize,
-                chunkPos.z * ChunkSize
-            );
+            Vector3 chunkWorldPos = GetChunkWorldPosition(chunkPos);
 
             // Calculate interest factor
             float interestFactor = CalculateChunkInterest(chunkPos);
@@ -837,14 +1255,12 @@ namespace WFC.Chunking
             float priority = interestFactor * 0.4f +
                             (distanceFactor * 0.2f + predictedFactor * 0.3f) * alignmentFactor;
 
-            // Add a bonus if the chunk is partially collapsed (gives priority to finishing work already started)
-            if (loadedChunks.TryGetValue(chunkPos, out Chunk chunk) && !chunk.IsFullyCollapsed)
-            {
-                priority *= 1.5f;
-            }
-
             return priority;
         }
+
+        #endregion
+
+        #region Task Processing
 
         private void ProcessChunkTasks()
         {
@@ -856,120 +1272,1108 @@ namespace WFC.Chunking
             {
                 ChunkTask task = chunkTasks.Dequeue();
 
-                // Use parallel processing if enabled
-                if (parallelProcessor != null)
+                try
                 {
-                    bool queued = false;
-
-                    switch (task.Type)
+                    // Use parallel processing if available
+                    if (parallelProcessor != null)
                     {
-                        case ChunkTaskType.Collapse:
-                            // Queue for parallel processing
-                            queued = parallelProcessor.QueueChunkForProcessing(
-                                task.Chunk,
-                                WFCJobType.Collapse,
-                                task.MaxIterations,
-                                task.Priority);
-                            break;
+                        bool queued = false;
 
-                        case ChunkTaskType.GenerateMesh:
-                            queued = parallelProcessor.QueueChunkForProcessing(
-                                task.Chunk,
-                                WFCJobType.GenerateMesh,
-                                100,
-                                task.Priority);
-                            break;
-                    }
+                        switch (task.Type)
+                        {
+                            case ChunkTaskType.Create:
+                                // This still needs to be handled normally
+                                CreateChunk(task.Position);
+                                break;
 
-                    // If queuing failed, add back to our queue
-                    if (!queued && (task.Type == ChunkTaskType.Collapse || task.Type == ChunkTaskType.GenerateMesh))
-                    {
-                        chunkTasks.Enqueue(task, task.Priority);
-                        break; // Don't count this as processed
+                            case ChunkTaskType.Unload:
+                                // Unload needs to be handled normally
+                                UnloadChunk(task.Position);
+                                break;
+
+                            case ChunkTaskType.Collapse:
+                                // Queue for parallel processing
+                                queued = parallelProcessor.QueueChunkForProcessing(
+                                    task.Chunk,
+                                    WFCJobType.Collapse,
+                                    task.MaxIterations,
+                                    task.Priority);
+
+                                if (queued)
+                                {
+                                    UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.Collapsing);
+                                }
+                                break;
+
+                            case ChunkTaskType.GenerateMesh:
+                                queued = parallelProcessor.QueueChunkForProcessing(
+                                    task.Chunk,
+                                    WFCJobType.GenerateMesh,
+                                    100,
+                                    task.Priority);
+
+                                if (queued)
+                                {
+                                    UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.GeneratingMesh);
+                                }
+                                break;
+                        }
+
+                        // If queuing failed, add back to our queue with lower priority
+                        if (!queued && (task.Type == ChunkTaskType.Collapse || task.Type == ChunkTaskType.GenerateMesh))
+                        {
+                            // Reduce priority to avoid getting stuck on one difficult task
+                            task.Priority *= 0.9f;
+                            chunkTasks.Enqueue(task, task.Priority);
+                            break; // Don't count this as processed
+                        }
+
+                        // Count as processed for both parallel and non-parallel cases
+                        tasksProcessed++;
+
+                        // Continue to next task if already processed via parallel
+                        if ((task.Type == ChunkTaskType.Collapse || task.Type == ChunkTaskType.GenerateMesh) && queued)
+                        {
+                            continue;
+                        }
                     }
                     else
                     {
-                        // Successfully queued for parallel processing
+                        // Original non-parallel processing
+                        switch (task.Type)
+                        {
+                            case ChunkTaskType.Create:
+                                CreateChunk(task.Position);
+                                break;
+
+                            case ChunkTaskType.Unload:
+                                UnloadChunk(task.Position);
+                                break;
+
+                            case ChunkTaskType.Collapse:
+                                UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.Collapsing);
+                                CollapseChunk(task.Chunk, task.MaxIterations);
+                                break;
+
+                            case ChunkTaskType.GenerateMesh:
+                                UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.GeneratingMesh);
+                                GenerateChunkMesh(task.Chunk);
+                                break;
+                        }
+
+                        // Count task as processed
                         tasksProcessed++;
-                        continue;
                     }
                 }
-                else
+                catch (Exception e)
                 {
-                    // Original non-parallel processing
-                    switch (task.Type)
+                    Debug.LogError($"Error in {task.Type} task at {task.Position}: {e.Message}");
+
+                    // Update chunk state to error
+                    if (task.Type == ChunkTaskType.Create)
                     {
-                        case ChunkTaskType.Create:
-                            CreateChunk(task.Position);
-                            break;
+                        // Update error information
+                        if (chunkStates.TryGetValue(task.Position, out ChunkState state))
+                        {
+                            state.LastError = e.Message;
+                        }
 
-                        case ChunkTaskType.Unload:
-                            UnloadChunk(task.Position);
-                            break;
-
-                        case ChunkTaskType.Collapse:
-                            CollapseChunk(task.Chunk, task.MaxIterations);
-                            break;
-
-                        case ChunkTaskType.GenerateMesh:
-                            GenerateChunkMesh(task.Chunk);
-                            break;
+                        UpdateChunkState(task.Position, ChunkLifecycleState.Error);
                     }
-                    //tasksProcessed++;
-                }
 
-                tasksProcessed++;
+                    // Increment even on error to avoid getting stuck
+                    tasksProcessed++;
+                }
             }
+
+            // Process events from the parallel processor
             if (parallelProcessor != null)
             {
                 parallelProcessor.ProcessMainThreadEvents();
             }
         }
 
-        private void CreateChunk(Vector3Int position)
+        #endregion
+
+        #region Chunk Operations
+
+        public void CreateChunk(Vector3Int position)
         {
-            // Create new chunk
-            Chunk chunk = new Chunk(position, ChunkSize);
+            // Update chunk state to loading
+            UpdateChunkState(position, ChunkLifecycleState.Loading);
 
-            // Add to loaded chunks
-            loadedChunks[position] = chunk;
-
-            // Connect to neighbors
-            ConnectChunkNeighbors(chunk);
-
-            // Initialize boundary buffers
-            InitializeBoundaryBuffers(chunk);
-
-            // Create collapse task
-            ChunkTask task = new ChunkTask
+            if (enableDebugLogging)
             {
-                Type = ChunkTaskType.Collapse,
-                Chunk = chunk,
-                MaxIterations = activeConfig.Algorithm.maxIterationsPerChunk, // Use config value
-                Priority = chunk.Priority
-            };
+                Debug.Log($"Creating chunk at {position}");
+            }
 
-            chunkTasks.Enqueue(task, task.Priority);
+            // Check if chunk already exists
+            if (loadedChunks.ContainsKey(position))
+            {
+                Debug.LogWarning($"Chunk at {position} already exists! Skipping creation.");
+
+                // Update chunk state to active
+                UpdateChunkState(position, ChunkLifecycleState.Active);
+                return;
+            }
+
+            try
+            {
+                // Create new chunk with the configured size
+                Chunk chunk = new Chunk(position, ChunkSize);
+
+                // Add to loaded chunks dictionary
+                loadedChunks[position] = chunk;
+
+                // Connect to existing neighbors
+                ConnectChunkNeighbors(chunk);
+
+                // Initialize boundary buffers
+                InitializeBoundaryBuffers(chunk);
+
+                // Get WFC generator reference if not already set
+                if (wfcGenerator == null)
+                {
+                    wfcGenerator = FindObjectOfType<WFCGenerator>();
+                }
+
+                // Initialize cells with possible states
+                if (wfcGenerator != null)
+                {
+                    // Access the WFCGenerator to get possible states
+                    var possibleStates = Enumerable.Range(0, WFCConfigManager.Config.World.maxStates);
+                    chunk.InitializeCells(possibleStates);
+
+                    // Apply initial constraints based on chunk position
+                    int chunkSeed = GenerateChunkSeed(position);
+                    System.Random random = new System.Random(chunkSeed);
+                    ApplyInitialConstraints(chunk, random);
+                }
+                else
+                {
+                    // Default initialization with all possible states
+                    var allStates = Enumerable.Range(0, activeConfig.World.maxStates);
+                    chunk.InitializeCells(allStates);
+                }
+
+                // Set dirty flag to ensure mesh gets generated
+                chunk.IsDirty = true;
+
+                // Create a task to collapse the chunk
+                ChunkTask task = new ChunkTask
+                {
+                    Type = ChunkTaskType.Collapse,
+                    Chunk = chunk,
+                    MaxIterations = activeConfig.Algorithm.maxIterationsPerChunk,
+                    Priority = chunk.Priority
+                };
+
+                chunkTasks.Enqueue(task, task.Priority);
+
+                // Update chunk state
+                UpdateChunkState(position, ChunkLifecycleState.Active);
+
+                Debug.Log($"Chunk creation completed for {position}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error creating chunk at {position}: {e.Message}");
+
+                // Update chunk state to error
+                if (chunkStates.TryGetValue(position, out ChunkState state))
+                {
+                    state.LastError = e.Message;
+                }
+
+                UpdateChunkState(position, ChunkLifecycleState.Error);
+                throw; // Re-throw to allow the task processing system to handle it
+            }
         }
 
         private void UnloadChunk(Vector3Int position)
         {
-            if (loadedChunks.TryGetValue(position, out Chunk chunk))
-            {
-                // Clean up any resources
+            // Update chunk state
+            UpdateChunkState(position, ChunkLifecycleState.Unloading);
 
-                // Remove from loaded chunks
-                loadedChunks.Remove(position);
+            if (enableDebugLogging)
+            {
+                Debug.Log($"Unloading chunk at {position}");
+            }
+
+            try
+            {
+                if (loadedChunks.TryGetValue(position, out Chunk chunk))
+                {
+                    // Disconnect from neighbors
+                    foreach (var neighborEntry in chunk.Neighbors.ToList())
+                    {
+                        Direction direction = neighborEntry.Key;
+                        Chunk neighbor = neighborEntry.Value;
+
+                        // Find and remove reverse connections
+                        Direction oppositeDir = direction.GetOpposite();
+                        if (neighbor != null && neighbor.Neighbors.ContainsKey(oppositeDir))
+                        {
+                            neighbor.Neighbors.Remove(oppositeDir);
+                        }
+                    }
+
+                    // Clear neighbors and boundary buffers
+                    chunk.Neighbors.Clear();
+                    chunk.BoundaryBuffers.Clear();
+
+                    // Remove any associated mesh or game objects
+                    RemoveChunkMeshObject(position);
+
+                    // Remove from loaded chunks dictionary
+                    loadedChunks.Remove(position);
+
+                    Debug.Log($"Chunk at {position} unloaded successfully");
+                }
+                else
+                {
+                    Debug.LogWarning($"Tried to unload non-existent chunk at {position}");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error unloading chunk at {position}: {e.Message}");
+                throw; // Re-throw to allow the task processing system to handle it
             }
         }
 
-        private void OnDestroy()
+        private void RemoveChunkMeshObject(Vector3Int position)
         {
-            // Stop parallel processor
-            if (parallelProcessor != null)
+            // Find mesh objects with matching position
+            string chunkName = $"Terrain_Chunk_{position.x}_{position.y}_{position.z}";
+            GameObject meshObject = GameObject.Find(chunkName);
+
+            if (meshObject != null)
             {
-                parallelProcessor.Stop();
-                parallelProcessor = null;
+                if (Application.isPlaying)
+                    Destroy(meshObject);
+                else
+                    DestroyImmediate(meshObject);
+
+                Debug.Log($"Removed mesh object for chunk at {position}");
+            }
+        }
+
+        private void CollapseChunk(Chunk chunk, int maxIterations)
+        {
+            if (performanceMonitor != null)
+                performanceMonitor.StartComponentTiming("ChunkCollapse");
+
+            // Update chunk state
+            UpdateChunkState(chunk.Position, ChunkLifecycleState.Collapsing);
+
+            try
+            {
+                // If using parallel processing, try to queue for parallel execution
+                if (parallelProcessor != null)
+                {
+                    bool queued = parallelProcessor.QueueChunkForProcessing(
+                        chunk,
+                        WFCJobType.Collapse,
+                        maxIterations,
+                        chunk.Priority);
+
+                    if (queued)
+                    {
+                        if (performanceMonitor != null)
+                            performanceMonitor.EndComponentTiming("ChunkCollapse");
+                        return;
+                    }
+                }
+
+                // Fallback to direct processing if parallel processing is unavailable or queue is full
+                bool madeProgress = true;
+                int iterations = 0;
+
+                // Main WFC algorithm loop
+                while (madeProgress && iterations < maxIterations && !chunk.IsFullyCollapsed)
+                {
+                    madeProgress = CollapseNextCell(chunk);
+                    iterations++;
+                }
+
+                // Mark as fully collapsed if no more progress can be made
+                if (!madeProgress || iterations >= maxIterations)
+                {
+                    chunk.IsFullyCollapsed = true;
+                }
+
+                // Queue mesh generation task after collapse
+                ChunkTask meshTask = new ChunkTask
+                {
+                    Type = ChunkTaskType.GenerateMesh,
+                    Chunk = chunk,
+                    Priority = chunk.Priority * 0.9f // Slightly lower priority than collapse
+                };
+
+                chunkTasks.Enqueue(meshTask, meshTask.Priority);
+
+                // Update chunk state
+                UpdateChunkState(chunk.Position, ChunkLifecycleState.Active);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error collapsing chunk at {chunk.Position}: {e.Message}");
+
+                // Update chunk state to error
+                if (chunkStates.TryGetValue(chunk.Position, out ChunkState state))
+                {
+                    state.LastError = e.Message;
+                }
+
+                UpdateChunkState(chunk.Position, ChunkLifecycleState.Error);
+                throw; // Re-throw to allow the task processing system to handle it
+            }
+            finally
+            {
+                if (performanceMonitor != null)
+                    performanceMonitor.EndComponentTiming("ChunkCollapse");
+            }
+        }
+
+        private bool CollapseNextCell(Chunk chunk)
+        {
+            // Find the cell with lowest entropy
+            Cell cellToCollapse = null;
+            int lowestEntropy = int.MaxValue;
+            float closestDistance = float.MaxValue;
+
+            // Apply hierarchical constraints if available
+            if (hierarchicalConstraints != null)
+            {
+                hierarchicalConstraints.PrecomputeChunkConstraints(chunk, WFCConfigManager.Config.World.maxStates);
+            }
+
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int y = 0; y < chunk.Size; y++)
+                {
+                    for (int z = 0; z < chunk.Size; z++)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+
+                        // Skip already collapsed cells
+                        if (cell.CollapsedState.HasValue)
+                            continue;
+
+                        // Skip cells with only one state (will be collapsed in propagation)
+                        if (cell.PossibleStates.Count <= 1)
+                            continue;
+
+                        // Apply constraints to calculate effective entropy
+                        int effectiveEntropy = cell.Entropy;
+
+                        // Apply constraints if available
+                        if (hierarchicalConstraints != null)
+                        {
+                            Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
+                                cell, chunk, WFCConfigManager.Config.World.maxStates);
+
+                            if (biases.Count > 0)
+                            {
+                                float maxBias = biases.Values.Max(Mathf.Abs);
+
+                                // Strong bias reduces effective entropy
+                                if (maxBias > 0.7f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.4f);
+                                else if (maxBias > 0.4f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.6f);
+                                else if (maxBias > 0.2f)
+                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.8f);
+                            }
+                        }
+
+                        // First priority: Lowest entropy
+                        if (effectiveEntropy < lowestEntropy)
+                        {
+                            lowestEntropy = effectiveEntropy;
+                            cellToCollapse = cell;
+
+                            // Recalculate distance for the new candidate
+                            Vector3 cellWorldPos = new Vector3(
+                                chunk.Position.x * chunk.Size + cell.Position.x,
+                                chunk.Position.y * chunk.Size + cell.Position.y,
+                                chunk.Position.z * chunk.Size + cell.Position.z
+                            );
+                            closestDistance = Vector3.Distance(cellWorldPos, viewerPosition);
+                        }
+                        // Tie-breaking: Same entropy but closer to viewer
+                        else if (effectiveEntropy == lowestEntropy)
+                        {
+                            Vector3 cellWorldPos = new Vector3(
+                                chunk.Position.x * chunk.Size + cell.Position.x,
+                                chunk.Position.y * chunk.Size + cell.Position.y,
+                                chunk.Position.z * chunk.Size + cell.Position.z
+                            );
+                            float distanceToViewer = Vector3.Distance(cellWorldPos, viewerPosition);
+
+                            if (distanceToViewer < closestDistance)
+                            {
+                                cellToCollapse = cell;
+                                closestDistance = distanceToViewer;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If found a cell, collapse it
+            if (cellToCollapse != null)
+            {
+                // Choose a state based on constraints if available
+                int[] possibleStates = cellToCollapse.PossibleStates.ToArray();
+                int chosenState;
+
+                if (hierarchicalConstraints != null && possibleStates.Length > 1)
+                {
+                    Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
+                        cellToCollapse, chunk, WFCConfigManager.Config.World.maxStates);
+
+                    // Create weighted selection based on biases
+                    float[] weights = new float[possibleStates.Length];
+                    float totalWeight = 0;
+
+                    for (int i = 0; i < possibleStates.Length; i++)
+                    {
+                        int state = possibleStates[i];
+                        weights[i] = 1.0f; // Base weight
+
+                        // Apply bias if available
+                        if (biases.TryGetValue(state, out float bias))
+                        {
+                            // Convert bias (-1 to 1) to weight multiplier (0.25 to 4)
+                            float multiplier = Mathf.Pow(2, bias * 2);
+                            weights[i] *= multiplier;
+                        }
+
+                        // Ensure weight is positive
+                        weights[i] = Mathf.Max(0.1f, weights[i]);
+                        totalWeight += weights[i];
+                    }
+
+                    // Random selection based on weights
+                    float randomValue = UnityEngine.Random.Range(0, totalWeight);
+                    float cumulativeWeight = 0;
+
+                    chosenState = possibleStates[0]; // Default to first state
+
+                    for (int i = 0; i < possibleStates.Length; i++)
+                    {
+                        cumulativeWeight += weights[i];
+                        if (randomValue <= cumulativeWeight)
+                        {
+                            chosenState = possibleStates[i];
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    // No significant biases, use standard random selection
+                    chosenState = possibleStates[UnityEngine.Random.Range(0, possibleStates.Length)];
+                }
+
+                // Collapse to chosen state
+                cellToCollapse.Collapse(chosenState);
+
+                // Create propagation event
+                PropagationEvent evt = new PropagationEvent(
+                    cellToCollapse,
+                    chunk,
+                    new HashSet<int>(cellToCollapse.PossibleStates),
+                    new HashSet<int> { chosenState },
+                    cellToCollapse.IsBoundary
+                );
+
+                // Propagate to neighbors - this requires a proper propagation handler
+                if (wfcGenerator != null)
+                {
+                    wfcGenerator.AddPropagationEvent(evt);
+                }
+                else
+                {
+                    // Local propagation for standalone usage
+                    PropagateCollapse(cellToCollapse, chunk);
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private void PropagateCollapse(Cell cell, Chunk chunk)
+        {
+            // Find cell position in chunk
+            Vector3Int cellPos = cell.Position;
+
+            // For each neighboring cell direction
+            foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
+            {
+                // Calculate neighbor position
+                Vector3Int offset = dir.ToVector3Int();
+                Vector3Int neighborPos = cellPos + offset;
+
+                // Check if within this chunk
+                if (neighborPos.x >= 0 && neighborPos.x < chunk.Size &&
+                    neighborPos.y >= 0 && neighborPos.y < chunk.Size &&
+                    neighborPos.z >= 0 && neighborPos.z < chunk.Size)
+                {
+                    Cell neighbor = chunk.GetCell(neighborPos.x, neighborPos.y, neighborPos.z);
+                    ApplyConstraintToNeighbor(cell, neighbor, dir, chunk);
+                }
+                // Check if in adjacent chunk
+                else if (chunk.Neighbors.TryGetValue(dir, out Chunk adjacentChunk))
+                {
+                    // Convert to position in adjacent chunk
+                    Vector3Int adjacentChunkPos = new Vector3Int(
+                        (neighborPos.x + chunk.Size) % chunk.Size,
+                        (neighborPos.y + chunk.Size) % chunk.Size,
+                        (neighborPos.z + chunk.Size) % chunk.Size
+                    );
+
+                    Cell neighbor = adjacentChunk.GetCell(adjacentChunkPos.x, adjacentChunkPos.y, adjacentChunkPos.z);
+                    if (neighbor != null)
+                    {
+                        ApplyConstraintToNeighbor(cell, neighbor, dir, adjacentChunk);
+                    }
+                }
+            }
+        }
+
+        private void ApplyConstraintToNeighbor(Cell source, Cell target, Direction direction, Chunk targetChunk)
+        {
+            // Skip if target already collapsed
+            if (target.CollapsedState.HasValue || source.CollapsedState == null)
+                return;
+
+            // Store old states for propagation
+            HashSet<int> oldStates = new HashSet<int>(target.PossibleStates);
+
+            // Find compatible states based on adjacency rules
+            HashSet<int> compatibleStates = new HashSet<int>();
+
+            foreach (int targetState in target.PossibleStates)
+            {
+                // Check if this state can be adjacent to the source state
+                // This requires access to adjacency rules which would be in WFCGenerator
+                bool isCompatible = true;
+
+                if (wfcGenerator != null)
+                {
+                    isCompatible = wfcGenerator.AreStatesCompatible(targetState, source.CollapsedState.Value, direction);
+                }
+                else
+                {
+                    // Simple compatibility rule: states can be adjacent to themselves and neighbors
+                    isCompatible = Mathf.Abs(targetState - source.CollapsedState.Value) <= 1;
+                }
+
+                if (isCompatible)
+                {
+                    compatibleStates.Add(targetState);
+                }
+            }
+
+            // Update target's possible states if needed
+            if (compatibleStates.Count > 0 && !compatibleStates.SetEquals(oldStates))
+            {
+                bool changed = target.SetPossibleStates(compatibleStates);
+
+                // If changed, propagate further
+                if (changed)
+                {
+                    PropagateCollapse(target, targetChunk);
+                }
+            }
+        }
+
+        private void GenerateChunkMesh(Chunk chunk)
+        {
+            if (performanceMonitor != null)
+                performanceMonitor.StartComponentTiming("MeshGeneration");
+
+            // Update chunk state
+            UpdateChunkState(chunk.Position, ChunkLifecycleState.GeneratingMesh);
+
+            try
+            {
+                // Find mesh generator in the scene
+                if (meshGenerator == null)
+                {
+                    meshGenerator = FindObjectOfType<MeshGenerator>();
+                }
+
+                if (meshGenerator != null)
+                {
+                    // Call the mesh generator to create or update the chunk mesh
+                    meshGenerator.GenerateChunkMesh(chunk.Position, chunk);
+                }
+                else
+                {
+                    // Create the mesh directly as a fallback
+                    GenerateFallbackMesh(chunk);
+                }
+
+                // Mark chunk as processed
+                chunk.IsDirty = false;
+
+                // Update chunk state
+                UpdateChunkState(chunk.Position, ChunkLifecycleState.Active);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error generating mesh for chunk at {chunk.Position}: {e.Message}");
+
+                // Update chunk state to error
+                if (chunkStates.TryGetValue(chunk.Position, out ChunkState state))
+                {
+                    state.LastError = e.Message;
+                }
+
+                UpdateChunkState(chunk.Position, ChunkLifecycleState.Error);
+                throw; // Re-throw to allow the task processing system to handle it
+            }
+            finally
+            {
+                if (performanceMonitor != null)
+                    performanceMonitor.EndComponentTiming("MeshGeneration");
+            }
+        }
+
+        private void GenerateFallbackMesh(Chunk chunk)
+        {
+            // Fallback - create a simple mesh directly
+            // Step 1: Create a density field generator
+            var densityGenerator = new WFC.MarchingCubes.DensityFieldGenerator();
+
+            // Step 2: Generate a density field from the chunk
+            float[,,] densityField = densityGenerator.GenerateDensityField(chunk);
+
+            // Step 3: Create a marching cubes generator
+            var marchingCubes = new WFC.MarchingCubes.MarchingCubesGenerator();
+
+            // Step 4: Generate mesh using appropriate LOD level
+            Mesh mesh = marchingCubes.GenerateMesh(densityField, chunk.LODLevel);
+
+            // Step 5: Create or update the GameObject for this chunk
+            string chunkName = $"Terrain_Chunk_{chunk.Position.x}_{chunk.Position.y}_{chunk.Position.z}";
+            GameObject meshObject = GameObject.Find(chunkName);
+
+            if (meshObject == null)
+            {
+                meshObject = new GameObject(chunkName);
+                meshObject.transform.position = GetChunkWorldPosition(chunk.Position);
+                meshObject.AddComponent<MeshFilter>();
+                meshObject.AddComponent<MeshRenderer>();
+
+                // Parent to this object
+                meshObject.transform.parent = transform;
+            }
+
+            // Step 6: Assign the mesh and material
+            MeshFilter meshFilter = meshObject.GetComponent<MeshFilter>();
+            meshFilter.mesh = mesh;
+
+            // Find and assign a material
+            MeshRenderer meshRenderer = meshObject.GetComponent<MeshRenderer>();
+
+            Material terrainMat = null;
+
+            // Try to get materials from WFCGenerator
+            if (wfcGenerator != null)
+            {
+                Material[] stateMaterials = wfcGenerator.GetStateMaterials();
+
+                if (stateMaterials != null && stateMaterials.Length > 0)
+                {
+                    int dominantState = GetDominantState(chunk);
+
+                    if (dominantState >= 0 && dominantState < stateMaterials.Length)
+                    {
+                        terrainMat = stateMaterials[dominantState];
+                    }
+                }
+            }
+
+            // If no material found, try resources or create default
+            if (terrainMat == null)
+            {
+                terrainMat = Resources.Load<Material>("TerrainMaterial");
+
+                if (terrainMat == null)
+                {
+                    // Fallback to a default material
+                    terrainMat = new Material(Shader.Find("Standard"));
+                    terrainMat.color = new Color(0.5f, 0.5f, 0.5f);
+                }
+            }
+
+            meshRenderer.material = terrainMat;
+        }
+
+        // Helper method to determine the dominant state in a chunk
+        private int GetDominantState(Chunk chunk)
+        {
+            if (chunk == null) return 1; // Default to ground
+
+            Dictionary<int, int> stateCounts = new Dictionary<int, int>();
+            int totalCells = 0;
+
+            // Sample cells to estimate state distribution
+            int sampleSize = Mathf.Min(27, chunk.Size * chunk.Size * chunk.Size);
+            int samplesPerDimension = Mathf.CeilToInt(Mathf.Pow(sampleSize, 1f / 3f));
+            float step = chunk.Size / (float)samplesPerDimension;
+
+            for (int x = 0; x < samplesPerDimension; x++)
+            {
+                for (int y = 0; y < samplesPerDimension; y++)
+                {
+                    for (int z = 0; z < samplesPerDimension; z++)
+                    {
+                        int sampleX = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(x * step));
+                        int sampleY = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(y * step));
+                        int sampleZ = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(z * step));
+
+                        Cell cell = chunk.GetCell(sampleX, sampleY, sampleZ);
+                        if (cell != null && cell.CollapsedState.HasValue)
+                        {
+                            int state = cell.CollapsedState.Value;
+
+                            // Skip empty/air state for material determination
+                            if (state != 0)
+                            {
+                                if (!stateCounts.ContainsKey(state))
+                                    stateCounts[state] = 0;
+
+                                stateCounts[state]++;
+                                totalCells++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Find the dominant state (skip air/state 0)
+            int maxCount = 0;
+            int dominantState = 1; // Default to ground
+
+            foreach (var pair in stateCounts)
+            {
+                if (pair.Value > maxCount)
+                {
+                    maxCount = pair.Value;
+                    dominantState = pair.Key;
+                }
+            }
+
+            return dominantState;
+        }
+
+        #endregion
+
+        #region Helper Methods
+
+        /// <summary>
+        /// Applies initial terrain constraints to a chunk before running the WFC algorithm.
+        /// This creates a foundation for the terrain by setting certain cells to specific states
+        /// based on height, noise patterns, and other factors.
+        /// </summary>
+        private void ApplyInitialConstraints(Chunk chunk, System.Random random)
+        {
+            // Constants that control terrain generation characteristics
+            float baseHeightScale = 0.01f;    // Controls how gradually height changes (smaller = more gradual)
+            float detailScale = 0.05f;        // Controls small terrain details
+            float featureScale = 0.025f;      // Controls medium terrain features
+            float materialNoiseScale = 0.08f; // Controls how materials are distributed
+
+            // Base ground level - adjust as needed for your world
+            int baseGroundLevel = chunk.Size / 2;
+
+            // Noise offsets to create different patterns
+            float heightOffset = 0;
+            float detailOffset = 500;
+            float materialOffset = 1000;
+            float featureOffset = 2000;
+            float waterOffset = 3000;
+
+            // Initialize terrain heights across the chunk
+            float[,] heightMap = new float[chunk.Size, chunk.Size];
+            float minHeight = float.MaxValue;
+            float maxHeight = float.MinValue;
+
+            // Step 1: Generate base height map using global coordinates for consistency across chunks
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Calculate world coordinates for consistent noise sampling
+                    float worldX = (chunk.Position.x * chunk.Size + x);
+                    float worldZ = (chunk.Position.z * chunk.Size + z);
+
+                    // Sample multiple noise octaves for natural-looking terrain
+                    float baseNoise = Mathf.PerlinNoise(
+                        worldX * baseHeightScale + heightOffset,
+                        worldZ * baseHeightScale + heightOffset
+                    );
+
+                    float detailNoise = Mathf.PerlinNoise(
+                        worldX * detailScale + detailOffset,
+                        worldZ * detailScale + detailOffset
+                    ) * 0.25f; // Reduced strength for detail noise
+
+                    float featureNoise = Mathf.PerlinNoise(
+                        worldX * featureScale + featureOffset,
+                        worldZ * featureScale + featureOffset
+                    ) * 0.5f; // Medium strength for feature noise
+
+                    // Combine noise for final height
+                    float combinedNoise = baseNoise * 0.6f + detailNoise + featureNoise * 0.4f;
+
+                    // Store normalized height (0-1 range)
+                    heightMap[x, z] = combinedNoise;
+
+                    // Track min and max heights for normalization
+                    minHeight = Mathf.Min(minHeight, combinedNoise);
+                    maxHeight = Mathf.Max(maxHeight, combinedNoise);
+                }
+            }
+
+            // Step 2: Normalize heights and convert to actual terrain heights
+            float heightRange = maxHeight - minHeight;
+            if (heightRange < 0.001f) heightRange = 1.0f; // Avoid division by zero
+
+            int[,] terrainHeight = new int[chunk.Size, chunk.Size];
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Normalize to 0-1 range
+                    float normalizedHeight = (heightMap[x, z] - minHeight) / heightRange;
+
+                    // Apply curve to create more flat areas and steeper mountains
+                    normalizedHeight = Mathf.Pow(normalizedHeight, 1.5f);
+
+                    // Convert to actual height in cells
+                    int height = Mathf.FloorToInt(baseGroundLevel + normalizedHeight * chunk.Size * 0.6f);
+
+                    // Ensure height is in bounds
+                    terrainHeight[x, z] = Mathf.Clamp(height, 1, chunk.Size - 1);
+                }
+            }
+
+            // Step 3: Apply water level determination - consistent across chunks
+            float waterNoise = Mathf.PerlinNoise(
+                chunk.Position.x * baseHeightScale * 5 + waterOffset,
+                chunk.Position.z * baseHeightScale * 5 + waterOffset
+            );
+
+            int waterLevel = (waterNoise > 0.6f) ?
+                baseGroundLevel - Mathf.FloorToInt((waterNoise - 0.6f) * 10) :
+                -1; // No water
+
+            // Step 4: Assign states to cells based on terrain height and material patterns
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Get world coordinates for material selection
+                    float worldX = (chunk.Position.x * chunk.Size + x);
+                    float worldZ = (chunk.Position.z * chunk.Size + z);
+
+                    // Material variation noise
+                    float materialNoise = Mathf.PerlinNoise(
+                        worldX * materialNoiseScale + materialOffset,
+                        worldZ * materialNoiseScale + materialOffset
+                    );
+
+                    // Additional noise for specific features
+                    float specialFeatureNoise = Mathf.PerlinNoise(
+                        worldX * (materialNoiseScale * 2) + featureOffset,
+                        worldZ * (materialNoiseScale * 2) + featureOffset
+                    );
+
+                    // Get target height for this column
+                    int height = terrainHeight[x, z];
+
+                    // Iterate through all cells in this vertical column
+                    for (int y = 0; y < chunk.Size; y++)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+                        if (cell == null) continue;
+
+                        // Water layer check - must happen first
+                        if (waterLevel > 0 && y <= waterLevel)
+                        {
+                            cell.Collapse(3); // Water state
+                            continue;
+                        }
+
+                        // Deep underground - always solid ground
+                        if (y < height - 3)
+                        {
+                            cell.Collapse(1); // Ground state
+                        }
+                        // Underground near surface
+                        else if (y < height - 1)
+                        {
+                            // Some rock veins underground
+                            if (materialNoise > 0.7f)
+                            {
+                                cell.Collapse(4); // Rock state
+                            }
+                            else
+                            {
+                                cell.Collapse(1); // Ground state
+                            }
+                        }
+                        // Surface layer
+                        else if (y == height - 1)
+                        {
+                            // Create varied surface types
+                            if (waterLevel > 0 && y <= waterLevel + 1)
+                            {
+                                // Near water - create beaches
+                                cell.Collapse(5); // Sand
+                            }
+                            else if (materialNoise < 0.3f)
+                            {
+                                // Sandy areas
+                                cell.Collapse(5); // Sand
+                            }
+                            else if (materialNoise < 0.7f)
+                            {
+                                // Grassy areas (most common)
+                                cell.Collapse(2); // Grass
+                            }
+                            else if (materialNoise < 0.9f)
+                            {
+                                // Rocky outcrops
+                                cell.Collapse(4); // Rock
+                            }
+                            else
+                            {
+                                // Occasional dirt patches
+                                cell.Collapse(1); // Ground
+                            }
+                        }
+                        // Surface features
+                        else if (y == height)
+                        {
+                            // Only add features in non-water areas
+                            if (waterLevel < 0 || y > waterLevel)
+                            {
+                                // Occasionally add trees - more likely in grassy areas
+                                if (specialFeatureNoise > 0.8f && materialNoise > 0.4f && materialNoise < 0.8f)
+                                {
+                                    cell.Collapse(6); // Tree
+                                }
+                                else
+                                {
+                                    cell.Collapse(0); // Air
+                                }
+                            }
+                            else
+                            {
+                                cell.Collapse(3); // Water near surface
+                            }
+                        }
+                        // Above surface - air
+                        else
+                        {
+                            cell.Collapse(0); // Air
+                        }
+                    }
+                }
+            }
+
+            // Step 5: Smooth edges at chunk boundaries
+            SmoothChunkBoundaries(chunk, terrainHeight);
+        }
+
+        private void SmoothChunkBoundaries(Chunk chunk, int[,] terrainHeight)
+        {
+            // Check each direction for neighbors
+            foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
+            {
+                // Skip if no neighbor in this direction
+                if (!chunk.Neighbors.TryGetValue(dir, out Chunk neighbor))
+                    continue;
+
+                // We only need to smooth X and Z boundaries for height
+                if (dir != Direction.Left && dir != Direction.Right &&
+                    dir != Direction.Forward && dir != Direction.Back)
+                    continue;
+
+                // Process cells at the boundary
+                switch (dir)
+                {
+                    case Direction.Left: // X = 0 boundary
+                        for (int z = 0; z < chunk.Size; z++)
+                        {
+                            // Make boundary heights match with some random variation
+                            int thisHeight = terrainHeight[0, z];
+                            Cell boundaryCell = chunk.GetCell(0, thisHeight, z);
+
+                            // See if there's already a cell from the neighboring chunk we should match
+                            Cell neighborCell = GetNeighborBoundaryCell(chunk, neighbor, dir, z);
+
+                            if (neighborCell != null && neighborCell.CollapsedState.HasValue)
+                            {
+                                // Match state with neighbor for consistency
+                                if (boundaryCell != null)
+                                {
+                                    boundaryCell.Collapse(neighborCell.CollapsedState.Value);
+                                }
+                            }
+                        }
+                        break;
+
+                    case Direction.Right: // X = Size-1 boundary
+                        // Similar logic for right boundary
+                        break;
+
+                    case Direction.Back: // Z = 0 boundary
+                        // Similar logic for back boundary
+                        break;
+
+                    case Direction.Forward: // Z = Size-1 boundary
+                        // Similar logic for forward boundary
+                        break;
+                }
+            }
+        }
+
+        private Cell GetNeighborBoundaryCell(Chunk chunk, Chunk neighbor, Direction dir, int index)
+        {
+            // Convert boundary position to neighbor's coordinate system
+            switch (dir)
+            {
+                case Direction.Left:
+                    return neighbor.GetCell(neighbor.Size - 1, 0, index); // Right edge of neighbor
+
+                case Direction.Right:
+                    return neighbor.GetCell(0, 0, index); // Left edge of neighbor
+
+                case Direction.Down:
+                    return neighbor.GetCell(index, neighbor.Size - 1, 0); // Top edge of neighbor
+
+                case Direction.Up:
+                    return neighbor.GetCell(index, 0, 0); // Bottom edge of neighbor
+
+                case Direction.Back:
+                    return neighbor.GetCell(index, 0, neighbor.Size - 1); // Front edge of neighbor
+
+                case Direction.Forward:
+                    return neighbor.GetCell(index, 0, 0); // Back edge of neighbor
+
+                default:
+                    return null;
             }
         }
 
@@ -992,23 +2396,110 @@ namespace WFC.Chunking
 
         private void InitializeBoundaryBuffers(Chunk chunk)
         {
-            // TODO: Implement boundary buffer initialization
-            // This should be similar to the WFCGenerator implementation
+            foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
+            {
+                if (!chunk.Neighbors.ContainsKey(dir))
+                    continue;
+
+                Chunk neighbor = chunk.Neighbors[dir];
+
+                // Create buffer for this boundary
+                BoundaryBuffer buffer = new BoundaryBuffer(dir, chunk);
+                buffer.AdjacentChunk = neighbor;
+
+                // Get cells at this boundary
+                List<Cell> boundaryCells = GetBoundaryCells(chunk, dir);
+                buffer.BoundaryCells = boundaryCells;
+
+                // Create buffer cells to mirror neighbor
+                List<Cell> bufferCells = new List<Cell>();
+                for (int i = 0; i < boundaryCells.Count; i++)
+                {
+                    Cell bufferCell = new Cell(new Vector3Int(-1, -1, -1), new int[0]);
+                    bufferCells.Add(bufferCell);
+                }
+                buffer.BufferCells = bufferCells;
+
+                // Add to chunk's boundary buffers
+                chunk.BoundaryBuffers[dir] = buffer;
+            }
         }
 
-        private void CollapseChunk(Chunk chunk, int maxIterations)
+        private List<Cell> GetBoundaryCells(Chunk chunk, Direction direction)
         {
-            // TODO: Implement WFC collapse
-            // This would call into the WFCGenerator to execute WFC on this chunk
+            List<Cell> cells = new List<Cell>();
+            int size = chunk.Size;
+
+            // Based on direction, get cells at the boundary face
+            switch (direction)
+            {
+                case Direction.Left: // X = 0
+                    for (int y = 0; y < size; y++)
+                        for (int z = 0; z < size; z++)
+                            cells.Add(chunk.GetCell(0, y, z));
+                    break;
+
+                case Direction.Right: // X = size-1
+                    for (int y = 0; y < size; y++)
+                        for (int z = 0; z < size; z++)
+                            cells.Add(chunk.GetCell(size - 1, y, z));
+                    break;
+
+                case Direction.Down: // Y = 0
+                    for (int x = 0; x < size; x++)
+                        for (int z = 0; z < size; z++)
+                            cells.Add(chunk.GetCell(x, 0, z));
+                    break;
+
+                case Direction.Up: // Y = size-1
+                    for (int x = 0; x < size; x++)
+                        for (int z = 0; z < size; z++)
+                            cells.Add(chunk.GetCell(x, size - 1, z));
+                    break;
+
+                case Direction.Back: // Z = 0
+                    for (int x = 0; x < size; x++)
+                        for (int y = 0; y < size; y++)
+                            cells.Add(chunk.GetCell(x, y, 0));
+                    break;
+
+                case Direction.Forward: // Z = size-1
+                    for (int x = 0; x < size; x++)
+                        for (int y = 0; y < size; y++)
+                            cells.Add(chunk.GetCell(x, y, size - 1));
+                    break;
+            }
+
+            return cells;
         }
 
-        private void GenerateChunkMesh(Chunk chunk)
+        // Helper method to calculate world position of the chunk
+        private Vector3 GetChunkWorldPosition(Vector3Int chunkPos)
         {
-            // TODO: Implement mesh generation
-            // This would connect to your Marching Cubes implementation
+            return new Vector3(
+                chunkPos.x * ChunkSize,
+                chunkPos.y * ChunkSize,
+                chunkPos.z * ChunkSize
+            );
         }
 
-        // Method to update configuration at runtime
+        // Helper method to generate a consistent seed based on chunk position
+        private int GenerateChunkSeed(Vector3Int chunkPos)
+        {
+            int baseSeed = activeConfig.World.randomSeed;
+            return baseSeed +
+                   chunkPos.x * 73856093 ^
+                   chunkPos.y * 19349663 ^
+                   chunkPos.z * 83492791;
+        }
+
+        #endregion
+
+        #region Public API
+
+        /// <summary>
+        /// Method to update configuration at runtime
+        /// </summary>
         public void UpdateConfiguration(WFCConfiguration newConfig)
         {
             if (newConfig == null)
@@ -1044,6 +2535,110 @@ namespace WFC.Chunking
             }
         }
 
+        /// <summary>
+        /// Reset the chunk system completely
+        /// </summary>
+        public void ResetChunkSystem()
+        {
+            // Stop processing while we reset
+            StopAllCoroutines();
+
+            // Clear the task queue
+            while (chunkTasks.Count > 0)
+                chunkTasks.Dequeue();
+
+            // Remove all mesh objects
+            foreach (var chunkPos in loadedChunks.Keys.ToList())
+            {
+                RemoveChunkMeshObject(chunkPos);
+            }
+
+            // Clear chunk collections
+            loadedChunks.Clear();
+            chunkStates.Clear();
+
+            Debug.Log("Chunk system reset complete");
+
+            // Restart
+            StartCoroutine(AdaptiveStrategyUpdateCoroutine());
+            ForceGenerateInitialChunks();
+        }
+
+        /// <summary>
+        /// Force creation of a chunk at a specific position
+        /// </summary>
+        public void CreateChunkAt(Vector3Int position)
+        {
+            // Skip if already loaded or in the process of loading
+            ChunkLifecycleState currentState = GetChunkState(position);
+            if (currentState != ChunkLifecycleState.None &&
+                currentState != ChunkLifecycleState.Error)
+            {
+                Debug.Log($"Chunk at {position} is already being handled (state: {currentState})");
+                return;
+            }
+
+            // Create the chunk with high priority
+            ChunkTask task = new ChunkTask
+            {
+                Type = ChunkTaskType.Create,
+                Position = position,
+                Priority = 100f // High priority
+            };
+
+            chunkTasks.Enqueue(task, task.Priority);
+            UpdateChunkState(position, ChunkLifecycleState.Pending);
+
+            Debug.Log($"Forced creation of chunk at {position}");
+
+            // Update chunk state to active
+            UpdateChunkState(position, ChunkLifecycleState.Active);
+
+            // Add this line to directly request mesh generation
+            if (meshGenerator != null)
+            {
+                meshGenerator.GenerateChunkMesh(position, loadedChunks[position]);
+                Debug.Log($"Requested mesh generation for chunk at {position}");
+            }
+            else
+            {
+                Debug.LogWarning("Cannot generate mesh - MeshGenerator reference is missing");
+            }
+        }
+
+        /// <summary>
+        /// Force generation of a mesh for a specific chunk
+        /// </summary>
+        public void GenerateMeshForChunkAt(Vector3Int position)
+        {
+            if (!loadedChunks.TryGetValue(position, out Chunk chunk))
+            {
+                Debug.LogWarning($"Cannot generate mesh - no chunk at {position}");
+                return;
+            }
+
+            // Skip if already generating
+            ChunkLifecycleState currentState = GetChunkState(position);
+            if (currentState == ChunkLifecycleState.GeneratingMesh)
+            {
+                Debug.Log($"Already generating mesh for chunk at {position}");
+                return;
+            }
+
+            // Queue the task
+            ChunkTask task = new ChunkTask
+            {
+                Type = ChunkTaskType.GenerateMesh,
+                Chunk = chunk,
+                Priority = 100f // High priority
+            };
+
+            chunkTasks.Enqueue(task, task.Priority);
+            Debug.Log($"Queued mesh generation for chunk at {position}");
+        }
+
+        #endregion
+
         // Helper class for chunk tasks
         private class ChunkTask
         {
@@ -1053,13 +2648,36 @@ namespace WFC.Chunking
             public int MaxIterations { get; set; }
             public float Priority { get; set; }
         }
-
         private enum ChunkTaskType
         {
             Create,
             Unload,
             Collapse,
             GenerateMesh
+        }
+
+        // ----------------------------------------------------------------------------------------
+        public void CreateChunksAroundPlayer()
+        {
+            Vector3Int viewerChunk = new Vector3Int(
+                Mathf.FloorToInt(viewer.position.x / ChunkSize),
+                Mathf.FloorToInt(viewer.position.y / ChunkSize),
+                Mathf.FloorToInt(viewer.position.z / ChunkSize)
+            );
+
+            Debug.Log($"Creating chunks around player at chunk {viewerChunk}");
+
+            for (int x = -2; x <= 2; x++)
+            {
+                for (int y = -2; y <= 2; y++)
+                {
+                    for (int z = -2; z <= 2; z++)
+                    {
+                        Vector3Int chunkPos = viewerChunk + new Vector3Int(x, y, z);
+                        CreateChunkAt(chunkPos);
+                    }
+                }
+            }
         }
     }
 }

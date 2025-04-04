@@ -263,7 +263,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &226482518
 Transform:
   m_ObjectHideFlags: 0
@@ -348,6 +348,7 @@ MonoBehaviour:
   wfcGenerator: {fileID: 1124905181}
   wfcVisualizer: {fileID: 1314112788}
   meshGenerator: {fileID: 1411155122}
+  chunkGenerator: {fileID: 1218634540}
   showCellVisualization: 1
   showMeshVisualization: 1
   stepKey: 282
@@ -829,6 +830,7 @@ MonoBehaviour:
   wfcGenerator: {fileID: 0}
   wfcVisualizer: {fileID: 0}
   meshGenerator: {fileID: 0}
+  chunkGenerator: {fileID: 0}
   showCellVisualization: 1
   showMeshVisualization: 1
   stepKey: 49
@@ -853,7 +855,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &948878866
 Transform:
   m_ObjectHideFlags: 0
@@ -902,7 +904,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8b54efc3c76410d44bb34c34eaa46314, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  configOverride: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
+  configOverride: {fileID: 11400000, guid: aaf51bcb0d7d2eb48b1ecc29400aed7b, type: 2}
   stateMaterials:
   - {fileID: 2100000, guid: 105f66618763aec48b8615d33caa874c, type: 2}
   - {fileID: 2100000, guid: db34227cb6dd4f147852853b4dd8b878, type: 2}
@@ -927,7 +929,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &983494138
 Transform:
   m_ObjectHideFlags: 0
@@ -955,7 +957,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 853ef69f7726ba943866ca02bb5f3f2a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  configAsset: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
+  configAsset: {fileID: 11400000, guid: aaf51bcb0d7d2eb48b1ecc29400aed7b, type: 2}
 --- !u!1 &1124905179
 GameObject:
   m_ObjectHideFlags: 0
@@ -985,7 +987,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8b54efc3c76410d44bb34c34eaa46314, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  configOverride: {fileID: 11400000, guid: 02c71a408f41d5d429ad910dd726f312, type: 2}
+  configOverride: {fileID: 0}
   stateMaterials:
   - {fileID: 2100000, guid: 105f66618763aec48b8615d33caa874c, type: 2}
   - {fileID: 2100000, guid: db34227cb6dd4f147852853b4dd8b878, type: 2}
@@ -1038,12 +1040,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e3de55c86fae7f54b9a6e5cfc87fb427, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  configOverride: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
-  viewer: {fileID: 1693266745}
+  configOverride: {fileID: 0}
+  viewer: {fileID: 480418799}
   wfcGenerator: {fileID: 1124905181}
-  performanceMonitor: {fileID: 0}
+  performanceMonitor: {fileID: 1408270512}
+  meshGenerator: {fileID: 1411155122}
   movementHistorySize: 60
   basePredictionTime: 2
+  enableDebugLogging: 1
+  visualizeChunkStates: 1
 --- !u!4 &1218634541
 Transform:
   m_ObjectHideFlags: 0
@@ -1075,7 +1080,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1229439649
 Transform:
   m_ObjectHideFlags: 0
@@ -1103,7 +1108,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 853ef69f7726ba943866ca02bb5f3f2a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  configAsset: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
+  configAsset: {fileID: 11400000, guid: aaf51bcb0d7d2eb48b1ecc29400aed7b, type: 2}
 --- !u!1 &1314112786
 GameObject:
   m_ObjectHideFlags: 0
@@ -1120,7 +1125,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1314112787
 Transform:
   m_ObjectHideFlags: 0
@@ -1148,7 +1153,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a8079f73c214c42ad54ea6a5ff6656, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcGenerator: {fileID: 0}
+  wfcGenerator: {fileID: 1124905181}
   maxCellStates: 7
   showBoundaries: 1
   showUncollapsedCells: 1
@@ -1241,12 +1246,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   wfcGenerator: {fileID: 1124905181}
+  performanceMonitor: {fileID: 1408270512}
   terrainMaterial: {fileID: 2100000, guid: f9086f3ea36bc714383439f31aee5bbf, type: 2}
   autoUpdate: 1
   cellSize: 1
   surfaceLevel: 0.5
   forceTerrainSurface: 1
   showDebugInfo: 1
+  enableDetailedLogging: 0
   gizmoColor: {r: 0, g: 1, b: 0, a: 0.5}
   useUnityLODSystem: 0
   lodDistanceThresholds:
@@ -1294,19 +1301,19 @@ Transform:
   m_GameObject: {fileID: 1450287013}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -2.0020137, y: 3.7124605, z: -5.919634}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1124905182}
   - {fileID: 1218634541}
   - {fileID: 1411155123}
-  - {fileID: 983494138}
   - {fileID: 93430297}
   - {fileID: 1408270511}
   - {fileID: 1703491498}
   - {fileID: 948878866}
   - {fileID: 226482518}
+  - {fileID: 983494138}
   - {fileID: 1314112787}
   - {fileID: 1229439649}
   m_Father: {fileID: 0}
@@ -1331,7 +1338,7 @@ MonoBehaviour:
   chunkManager: {fileID: 1218634540}
   meshGenerator: {fileID: 1411155122}
   perfMonitor: {fileID: 1408270512}
-  initDelayBetweenSteps: 0.1
+  initDelayBetweenSteps: 0.5
   debugLogging: 1
 --- !u!1 &1466852793
 GameObject:
@@ -1861,7 +1868,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1703491498
 Transform:
   m_ObjectHideFlags: 0
@@ -1889,7 +1896,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 47d6f693de2b4b54abb66b6219cc80e6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcGenerator: {fileID: 0}
+  wfcGenerator: {fileID: 1124905181}
   createMountainRange: 1
   createRiver: 1
   createForest: 1

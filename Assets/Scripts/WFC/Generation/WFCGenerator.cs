@@ -7,6 +7,8 @@ using WFC.Boundary;
 using System.Linq;
 using Utils;
 using WFC.Configuration;
+using System.Collections;
+using WFC.Chunking;
 
 namespace WFC.Generation
 {
@@ -72,7 +74,42 @@ namespace WFC.Generation
                 Debug.LogWarning("WFCGenerator: Using configuration with validation issues.");
             }
 
-            InitializeWorld();
+            //InitializeWorld();
+            StartCoroutine(DelayedInitialization());
+
+        }
+
+        private IEnumerator DelayedInitialization()
+        {
+            // Wait for ChunkManager to initialize first
+            yield return new WaitForSeconds(0.1f);
+
+            // Check if a ChunkManager exists - if so, don't create our own chunks
+            ChunkManager chunkManager = FindObjectOfType<ChunkManager>();
+            if (chunkManager == null)
+            {
+                Debug.Log("No ChunkManager found, initializing WFC grid at origin");
+                InitializeWorld();
+            }
+            else
+            {
+                Debug.Log("ChunkManager found, skipping automatic grid initialization");
+                // Just initialize systems without creating chunks
+                InitializeRulesOnly();
+            }
+        }
+
+        // New method that initializes rules without creating chunks
+        private void InitializeRulesOnly()
+        {
+            // Initialize adjacency rules but don't create chunks
+            adjacencyRules = new bool[MaxCellStates, MaxCellStates, 6];
+            SetupAdjacencyRules();
+
+            // Create boundary manager
+            boundaryManager = new BoundaryBufferManager((IWFCAlgorithm)this);
+
+            InitializeHierarchicalConstraints();
         }
 
         private void Update()
@@ -222,6 +259,7 @@ namespace WFC.Generation
             }
         }
 
+        // creating chunks at 0,0,0 position
         private void InitializeWorld()
         {
             // Initialize adjacency rules
@@ -1443,6 +1481,11 @@ namespace WFC.Generation
             }
 
             Debug.Log("WFC generation reset");
+        }
+
+        public Material[] GetStateMaterials()
+        {
+            return stateMaterials;
         }
     }
 }

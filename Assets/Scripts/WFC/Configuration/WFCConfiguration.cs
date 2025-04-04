@@ -10,7 +10,7 @@ public class WFCConfiguration : ScriptableObject
         public int worldSizeX = 2;
         public int worldSizeY = 2;
         public int worldSizeZ = 1;
-        public int chunkSize = 8;
+        public int chunkSize = 16;
         public int maxStates = 7;
         public int randomSeed = 0;
     }
@@ -39,7 +39,7 @@ public class WFCConfiguration : ScriptableObject
         public int maxThreads = 4;
         public int meshGenerationPriority = 50;
         public int cacheSizeLimit = 100;
-        public float loadDistance = 100f;
+        public float loadDistance = 50f;
         public float unloadDistance = 150f;
         public int maxConcurrentChunks = 16;
 

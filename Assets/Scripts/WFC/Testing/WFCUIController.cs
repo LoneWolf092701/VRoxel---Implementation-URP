@@ -1,6 +1,7 @@
 using UnityEngine;
 using WFC.MarchingCubes;
 using WFC.Generation;
+using WFC.Chunking;
 
 public class WFCUIController : MonoBehaviour
 {
@@ -8,6 +9,7 @@ public class WFCUIController : MonoBehaviour
     [SerializeField] private WFCGenerator wfcGenerator;
     [SerializeField] private WFCVisualizer wfcVisualizer;
     [SerializeField] private MeshGenerator meshGenerator;
+    [SerializeField] private ChunkManager chunkGenerator;
 
     [Header("Visualization")]
     [SerializeField] private bool showCellVisualization = true;
@@ -88,6 +90,25 @@ public class WFCUIController : MonoBehaviour
         if (Input.GetKeyDown(toggleMeshKey))
         {
             ToggleMeshVisibility();
+        }
+        if (Input.GetKeyDown(KeyCode.K))
+        {
+            ForceCreateChunk();
+        }
+
+        // In WFCUIController's Update method
+        if (Input.GetKeyDown(KeyCode.M))
+        {
+            Debug.Log("Manual mesh generation triggered");
+            if (meshGenerator != null)
+            {
+                var chunks = wfcGenerator.GetChunks();
+                Debug.Log($"Generating meshes for {chunks.Count} chunks");
+                foreach (var chunkEntry in chunks)
+                {
+                    meshGenerator.GenerateChunkMesh(chunkEntry.Key, chunkEntry.Value);
+                }
+            }
         }
     }
 
@@ -197,5 +218,11 @@ public class WFCUIController : MonoBehaviour
         {
             Debug.LogWarning("Mesh Generator reference is missing");
         }
+    }
+    [ContextMenu("Force Generation Chunk")]
+    public void ForceCreateChunk()
+    {
+        chunkGenerator.CreateChunk(Vector3Int.zero);
+        Debug.Log("Manually created chunk at (0,0,0)");
     }
 }

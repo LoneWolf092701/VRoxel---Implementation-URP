@@ -136,6 +136,26 @@ public class WFCInitializer : MonoBehaviour
         }
         yield return new WaitForSeconds(initDelayBetweenSteps);
 
+        LogInitialization("6.5 Explicitly creating initial chunks");
+        yield return new WaitForSeconds(1.0f); // Allow more time for systems to initialize
+        if (chunkManager != null)
+        {
+            // Force initial position capture
+            if (chunkManager.viewer != null)
+            {
+                Vector3 viewerPos = chunkManager.viewer.position;
+                LogInitialization($"Player position: {viewerPos}");
+
+                // Force chunk creation at player position regardless of distance check
+                chunkManager.ForceGenerateInitialChunks();
+                LogInitialization("Force-generated initial chunks");
+            }
+            else
+            {
+                LogError("No viewer found for chunk generation!");
+            }
+        }
+
         // Step 7: MeshGenerator
         LogInitialization("7. Initializing MeshGenerator");
         if (meshGenerator != null)
@@ -147,13 +167,18 @@ public class WFCInitializer : MonoBehaviour
                 meshGenerator.wfcGenerator = wfcGenerator;
             }
 
+            // Add this code to set ChunkManager reference
+            var meshGenType = meshGenerator.GetType();
+            var chunkManagerField = meshGenType.GetField("chunkManager", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+            if (chunkManagerField != null && chunkManager != null)
+            {
+                LogInitialization("   Setting ChunkManager reference on MeshGenerator");
+                chunkManagerField.SetValue(meshGenerator, chunkManager);
+            }
+
             // Generate initial meshes
             LogInitialization("   Generating initial meshes");
             meshGenerator.GenerateAllMeshes();
-        }
-        else
-        {
-            LogError("MeshGenerator component is missing!");
         }
         yield return new WaitForSeconds(initDelayBetweenSteps);
 
@@ -166,6 +191,46 @@ public class WFCInitializer : MonoBehaviour
             {
                 LogInitialization("   Setting ChunkManager reference on PerformanceMonitor");
                 perfMonitor.chunkManager = chunkManager;
+            }
+        }
+
+        // Add a delay to ensure all systems are fully initialized
+        yield return new WaitForSeconds(1.0f);
+
+        // Explicitly force chunk generation around player
+        LogInitialization("9. Forcing initial chunk generation");
+        if (chunkManager != null)
+        {
+            chunkManager.CreateChunksAroundPlayer();
+            LogInitialization("   Chunks created around player position");
+        }
+
+        // Wait for chunk processing
+        yield return new WaitForSeconds(0.5f);
+
+        // Force mesh generation
+        LogInitialization("10. Forcing initial mesh generation");
+        if (meshGenerator != null)
+        {
+            meshGenerator.GenerateAllMeshes();
+            LogInitialization("   Meshes generated for all chunks");
+        }
+
+        // In InitializeWFCSystem coroutine
+        yield return new WaitForSeconds(2.0f); // Give more time for chunks to be created and processed
+
+        // Force mesh generation
+        LogInitialization("10. Forcing mesh generation for all chunks");
+        if (meshGenerator != null && wfcGenerator != null)
+        {
+            var chunks = wfcGenerator.GetChunks();
+            LogInitialization($"WFC has {chunks.Count} chunks available");
+
+            // Force generation for every chunk individually
+            foreach (var chunkEntry in chunks)
+            {
+                meshGenerator.GenerateChunkMesh(chunkEntry.Key, chunkEntry.Value);
+                LogInitialization($"Generated mesh for chunk {chunkEntry.Key}");
             }
         }
 
