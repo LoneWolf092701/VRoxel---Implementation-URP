@@ -1246,12 +1246,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   wfcGenerator: {fileID: 1124905181}
+  chunkManager: {fileID: 1218634540}
   performanceMonitor: {fileID: 1408270512}
   terrainMaterial: {fileID: 2100000, guid: f9086f3ea36bc714383439f31aee5bbf, type: 2}
   autoUpdate: 1
   cellSize: 1
   surfaceLevel: 0.5
-  forceTerrainSurface: 1
   showDebugInfo: 1
   enableDetailedLogging: 0
   gizmoColor: {r: 0, g: 1, b: 0, a: 0.5}
@@ -1337,7 +1337,7 @@ MonoBehaviour:
   parallelManager: {fileID: 93430298}
   chunkManager: {fileID: 1218634540}
   meshGenerator: {fileID: 1411155122}
-  perfMonitor: {fileID: 1408270512}
+  performanceMonitor: {fileID: 0}
   initDelayBetweenSteps: 0.5
   debugLogging: 1
 --- !u!1 &1466852793
