@@ -1335,11 +1335,13 @@ MonoBehaviour:
   constraintInitializer: {fileID: 1703491499}
   wfcGenerator: {fileID: 1124905181}
   parallelManager: {fileID: 93430298}
+  performanceMonitor: {fileID: 1408270512}
   chunkManager: {fileID: 1218634540}
   meshGenerator: {fileID: 1411155122}
-  performanceMonitor: {fileID: 0}
   initDelayBetweenSteps: 0.5
   debugLogging: 1
+  chunkProcessingDelay: 5
+  maxInitRetries: 3
 --- !u!1 &1466852793
 GameObject:
   m_ObjectHideFlags: 0

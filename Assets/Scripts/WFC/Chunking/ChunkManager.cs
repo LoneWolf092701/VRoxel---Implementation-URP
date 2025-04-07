@@ -153,6 +153,8 @@ namespace WFC.Chunking
             Debug.Log($"Initial viewer chunk: {viewerChunk}");
             CreateChunkAt(viewerChunk); // Force creation of the initial chunk
 
+            lastChunkGenerationPosition = Vector3.zero; // Initialize this to ensure the generation happens
+
             Debug.Log($"ChunkManager Start completed. Initial viewer position: {(viewer != null ? viewer.position.ToString() : "No viewer")}");
         }
 
@@ -275,7 +277,6 @@ namespace WFC.Chunking
                 Debug.Log($"Player moved to {viewerPosition}, generating new chunks");
             }
 
-
             // Calculate predicted position using advanced prediction
             predictedViewerPosition = PredictFuturePosition(predictionTime);
 
@@ -291,18 +292,62 @@ namespace WFC.Chunking
             // Process chunk tasks
             ProcessChunkTasks();
 
+            // Process dirty chunks that need mesh generation
+            ProcessDirtyChunks();
+
+            // Process events from parallel processor if available
+            if (parallelProcessor != null)
+            {
+                parallelProcessor.ProcessMainThreadEvents();
+            }
+
             // Optimize memory for inactive chunks
             OptimizeInactiveChunks();
 
             // Periodically clean up chunk states
             CleanupStaleChunkStates();
 
+            // Debug output
             Debug.Log($"Viewer position: {viewerPosition}, Predicted: {predictedViewerPosition}, Chunk: {new Vector3Int(Mathf.FloorToInt(viewerPosition.x / ChunkSize), Mathf.FloorToInt(viewerPosition.y / ChunkSize), Mathf.FloorToInt(viewerPosition.z / ChunkSize))}");
             if (Input.GetKeyDown(KeyCode.P))
             {
                 CreateChunksAroundPlayer();
             }
+        }
 
+        private void ProcessDirtyChunks()
+        {
+            // Find chunks that need mesh generation
+            foreach (var chunkEntry in loadedChunks)
+            {
+                Vector3Int chunkPos = chunkEntry.Key;
+                Chunk chunk = chunkEntry.Value;
+
+                // Check if chunk needs mesh generation
+                if (chunk.IsDirty &&
+                    (GetChunkState(chunkPos) == ChunkLifecycleState.Active ||
+                     GetChunkState(chunkPos) == ChunkLifecycleState.Collapsing))
+                {
+                    // Queue mesh generation task
+                    ChunkTask meshTask = new ChunkTask
+                    {
+                        Type = ChunkTaskType.GenerateMesh,
+                        Chunk = chunk,
+                        Position = chunkPos,
+                        Priority = chunk.Priority * 0.9f
+                    };
+
+                    chunkTasks.Enqueue(meshTask, meshTask.Priority);
+
+                    // Mark as not dirty to prevent duplicate tasks
+                    chunk.IsDirty = false;
+
+                    if (enableDebugLogging)
+                    {
+                        Debug.Log($"Queued mesh generation for dirty chunk at {chunkPos}");
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -1126,11 +1171,11 @@ namespace WFC.Chunking
                 Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
 
-            // Calculate load distance in chunks - ensure it's at least 2 for a minimum surrounding grid
-            int loadChunks = Mathf.Max(2, Mathf.CeilToInt(LoadDistance / ChunkSize));
-
             // Find all chunk positions within load distance
             List<Vector3Int> chunksToLoad = new List<Vector3Int>();
+
+            // Calculate load distance in chunks - ensure it's at least 2 for a minimum surrounding grid
+            int loadChunks = Mathf.Max(2, Mathf.CeilToInt(LoadDistance / ChunkSize));
 
             for (int x = viewerChunk.x - loadChunks; x <= viewerChunk.x + loadChunks; x++)
             {
@@ -1274,122 +1319,67 @@ namespace WFC.Chunking
 
                 try
                 {
-                    // Use parallel processing if available
-                    if (parallelProcessor != null)
+                    // Only use parallel processing for collapse tasks, not mesh generation
+                    if (parallelProcessor != null && task.Type == ChunkTaskType.Collapse)
                     {
-                        bool queued = false;
+                        bool queued = parallelProcessor.QueueChunkForProcessing(
+                            task.Chunk,
+                            WFCJobType.Collapse,
+                            task.MaxIterations,
+                            task.Priority);
 
-                        switch (task.Type)
+                        if (queued)
                         {
-                            case ChunkTaskType.Create:
-                                // This still needs to be handled normally
-                                CreateChunk(task.Position);
-                                break;
-
-                            case ChunkTaskType.Unload:
-                                // Unload needs to be handled normally
-                                UnloadChunk(task.Position);
-                                break;
-
-                            case ChunkTaskType.Collapse:
-                                // Queue for parallel processing
-                                queued = parallelProcessor.QueueChunkForProcessing(
-                                    task.Chunk,
-                                    WFCJobType.Collapse,
-                                    task.MaxIterations,
-                                    task.Priority);
-
-                                if (queued)
-                                {
-                                    UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.Collapsing);
-                                }
-                                break;
-
-                            case ChunkTaskType.GenerateMesh:
-                                queued = parallelProcessor.QueueChunkForProcessing(
-                                    task.Chunk,
-                                    WFCJobType.GenerateMesh,
-                                    100,
-                                    task.Priority);
-
-                                if (queued)
-                                {
-                                    UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.GeneratingMesh);
-                                }
-                                break;
+                            UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.Collapsing);
+                            tasksProcessed++;
+                            continue;
                         }
-
-                        // If queuing failed, add back to our queue with lower priority
-                        if (!queued && (task.Type == ChunkTaskType.Collapse || task.Type == ChunkTaskType.GenerateMesh))
+                        else
                         {
-                            // Reduce priority to avoid getting stuck on one difficult task
+                            // Requeue with lower priority if couldn't be processed
                             task.Priority *= 0.9f;
                             chunkTasks.Enqueue(task, task.Priority);
-                            break; // Don't count this as processed
-                        }
-
-                        // Count as processed for both parallel and non-parallel cases
-                        tasksProcessed++;
-
-                        // Continue to next task if already processed via parallel
-                        if ((task.Type == ChunkTaskType.Collapse || task.Type == ChunkTaskType.GenerateMesh) && queued)
-                        {
                             continue;
                         }
                     }
-                    else
+
+                    // Handle tasks directly
+                    switch (task.Type)
                     {
-                        // Original non-parallel processing
-                        switch (task.Type)
-                        {
-                            case ChunkTaskType.Create:
-                                CreateChunk(task.Position);
-                                break;
+                        case ChunkTaskType.Create:
+                            CreateChunk(task.Position);
+                            break;
 
-                            case ChunkTaskType.Unload:
-                                UnloadChunk(task.Position);
-                                break;
+                        case ChunkTaskType.Unload:
+                            UnloadChunk(task.Position);
+                            break;
 
-                            case ChunkTaskType.Collapse:
-                                UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.Collapsing);
-                                CollapseChunk(task.Chunk, task.MaxIterations);
-                                break;
+                        case ChunkTaskType.Collapse:
+                            UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.Collapsing);
+                            CollapseChunk(task.Chunk, task.MaxIterations);
+                            break;
 
-                            case ChunkTaskType.GenerateMesh:
-                                UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.GeneratingMesh);
-                                GenerateChunkMesh(task.Chunk);
-                                break;
-                        }
-
-                        // Count task as processed
-                        tasksProcessed++;
+                        case ChunkTaskType.GenerateMesh:
+                            UpdateChunkState(task.Chunk.Position, ChunkLifecycleState.GeneratingMesh);
+                            GenerateChunkMesh(task.Chunk);
+                            break;
                     }
+
+                    tasksProcessed++;
                 }
                 catch (Exception e)
                 {
                     Debug.LogError($"Error in {task.Type} task at {task.Position}: {e.Message}");
-
-                    // Update chunk state to error
                     if (task.Type == ChunkTaskType.Create)
                     {
-                        // Update error information
                         if (chunkStates.TryGetValue(task.Position, out ChunkState state))
                         {
                             state.LastError = e.Message;
                         }
-
                         UpdateChunkState(task.Position, ChunkLifecycleState.Error);
                     }
-
-                    // Increment even on error to avoid getting stuck
                     tasksProcessed++;
                 }
-            }
-
-            // Process events from the parallel processor
-            if (parallelProcessor != null)
-            {
-                parallelProcessor.ProcessMainThreadEvents();
             }
         }
 
@@ -2591,19 +2581,8 @@ namespace WFC.Chunking
 
             Debug.Log($"Forced creation of chunk at {position}");
 
-            // Update chunk state to active
-            UpdateChunkState(position, ChunkLifecycleState.Active);
+            //StartCoroutine(QueueChunkProcessingAfterCreation(position));
 
-            // Add this line to directly request mesh generation
-            if (meshGenerator != null)
-            {
-                meshGenerator.GenerateChunkMesh(position, loadedChunks[position]);
-                Debug.Log($"Requested mesh generation for chunk at {position}");
-            }
-            else
-            {
-                Debug.LogWarning("Cannot generate mesh - MeshGenerator reference is missing");
-            }
         }
 
         /// <summary>
@@ -2667,14 +2646,29 @@ namespace WFC.Chunking
 
             Debug.Log($"Creating chunks around player at chunk {viewerChunk}");
 
+            // Start with just creating the immediate chunk first
+            CreateChunkAt(viewerChunk);
+
+            // Then queue others to be created over time
+            StartCoroutine(GradualChunkCreation(viewerChunk));
+        }
+
+        private IEnumerator GradualChunkCreation(Vector3Int centerChunk)
+        {
             for (int x = -2; x <= 2; x++)
             {
                 for (int y = -2; y <= 2; y++)
                 {
                     for (int z = -2; z <= 2; z++)
                     {
-                        Vector3Int chunkPos = viewerChunk + new Vector3Int(x, y, z);
+                        // Skip the center chunk - already created
+                        if (x == 0 && y == 0 && z == 0) continue;
+
+                        Vector3Int chunkPos = centerChunk + new Vector3Int(x, y, z);
                         CreateChunkAt(chunkPos);
+
+                        // Wait a frame between chunks to prevent freezing
+                        yield return null;
                     }
                 }
             }

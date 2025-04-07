@@ -46,6 +46,9 @@ namespace WFC.Boundary
         private IBoundaryCompatibilityChecker compatibilityChecker;
         private IPropagationHandler propagationHandler;
         private IChunkProvider chunkProvider;
+        private Dictionary<Vector3Int, int> propagationCount = new Dictionary<Vector3Int, int>();
+        private const int MaxPropagationCount = 10;
+
 
         /// <summary>
         /// Constructor using individual interfaces
@@ -79,6 +82,19 @@ namespace WFC.Boundary
             // If cell is not a boundary cell, nothing to do
             if (!cell.IsBoundary || !cell.BoundaryDirection.HasValue)
                 return;
+
+            // Check propagation limit
+            Vector3Int chunkPos = chunk.Position;
+            if (!propagationCount.ContainsKey(chunkPos))
+                propagationCount[chunkPos] = 0;
+
+            propagationCount[chunkPos]++;
+            if (propagationCount[chunkPos] > MaxPropagationCount)
+            {
+                Debug.LogWarning($"Maximum propagation count reached for chunk {chunkPos}");
+                propagationCount[chunkPos] = 0;
+                return;
+            }
 
             Direction direction = cell.BoundaryDirection.Value;
 

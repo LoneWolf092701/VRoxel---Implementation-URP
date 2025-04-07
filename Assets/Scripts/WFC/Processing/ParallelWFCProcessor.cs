@@ -182,7 +182,7 @@ namespace WFC.Processing
                     else
                     {
                         // No jobs, wait for notification
-                        Monitor.Wait(queueLock);
+                        Monitor.Wait(queueLock, 1000); // 1 second timeout
                         continue;
                     }
                 }

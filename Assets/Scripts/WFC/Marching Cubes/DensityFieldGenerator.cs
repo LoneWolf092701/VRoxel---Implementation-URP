@@ -77,7 +77,7 @@ namespace WFC.MarchingCubes
         /// <summary>
         /// Generate a density field for a chunk
         /// </summary>
-        public float[,,] GenerateDensityField(Chunk chunk)
+        public float[,,] GenerateDensityField(Chunk chunk, int recursionDepth = 0)
         {
             chunkSize = chunk.Size;
 
@@ -181,7 +181,7 @@ namespace WFC.MarchingCubes
             }
 
             // Handle boundaries to ensure seamless meshes - but only AFTER we've calculated the main density field
-            SmoothBoundaries(densityField, chunk);
+            SmoothBoundaries(densityField, chunk, recursionDepth);
 
             // Handle corner points where multiple chunks meet
             SmoothCorners(densityField, chunk);
@@ -516,7 +516,7 @@ namespace WFC.MarchingCubes
         /// <summary>
         /// Smooth boundaries between chunks to ensure seamless meshes
         /// </summary>
-        private void SmoothBoundaries(float[,,] densityField, Chunk chunk)
+        private void SmoothBoundaries(float[,,] densityField, Chunk chunk, int recursionDepth = 0)
         {
             // Get chunk size
             int size = chunk.Size;
@@ -539,7 +539,7 @@ namespace WFC.MarchingCubes
                 try
                 {
                     // Safely get or generate neighbor's density field
-                    float[,,] neighborDensity = GetNeighborDensityField(neighbor);
+                    float[,,] neighborDensity = GetNeighborDensityField(neighbor, recursionDepth);
 
                     // Smoothing logic varies by direction
                     switch (dir)
@@ -766,8 +766,14 @@ namespace WFC.MarchingCubes
         /// <summary>
         /// Get or create a field for a neighbor with continuation from existing chunks
         /// </summary>
-        private float[,,] GetNeighborDensityField(Chunk neighbor)
+        private float[,,] GetNeighborDensityField(Chunk neighbor, int recursionDepth=0)
         {
+            if (recursionDepth > 3)
+            {
+                Debug.LogWarning($"Recursion depth exceeded for chunk {neighbor.Position}");
+                return CreateContinuationField(neighbor);
+            }
+
             // Get or generate neighbor density field safely
             if (densityFieldCache.TryGetValue(neighbor.Position, out float[,,] cachedField))
                 return cachedField;
@@ -779,7 +785,7 @@ namespace WFC.MarchingCubes
                 return CreateContinuationField(neighbor);
             }
 
-            return GenerateDensityField(neighbor);
+            return GenerateDensityField(neighbor, recursionDepth + 1);
         }
 
 

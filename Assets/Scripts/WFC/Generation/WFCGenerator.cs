@@ -36,7 +36,9 @@ namespace WFC.Generation
 
         // Cache for config access
         private WFCConfiguration activeConfig;
-       
+
+        private int frameSkipCounter = 0;
+
         // Properties that now use the configuration
         public int MaxCellStates => activeConfig.World.maxStates;
         public int ChunkSize => activeConfig.World.chunkSize;
@@ -81,22 +83,27 @@ namespace WFC.Generation
 
         private IEnumerator DelayedInitialization()
         {
-            // Wait for ChunkManager to initialize first
-            yield return new WaitForSeconds(0.1f);
+            int maxRetries = 5;
+            int retryCount = 0;
 
-            // Check if a ChunkManager exists - if so, don't create our own chunks
-            ChunkManager chunkManager = FindObjectOfType<ChunkManager>();
-            if (chunkManager == null)
+            while (retryCount < maxRetries)
             {
-                Debug.Log("No ChunkManager found, initializing WFC grid at origin");
-                InitializeWorld();
+                yield return new WaitForSeconds(0.2f * (retryCount + 1));
+
+                ChunkManager chunkManager = FindObjectOfType<ChunkManager>();
+                if (chunkManager != null)
+                {
+                    Debug.Log("ChunkManager found, initializing rules only");
+                    InitializeRulesOnly();
+                    yield break;
+                }
+
+                retryCount++;
+                Debug.Log($"ChunkManager not found, retry {retryCount}/{maxRetries}");
             }
-            else
-            {
-                Debug.Log("ChunkManager found, skipping automatic grid initialization");
-                // Just initialize systems without creating chunks
-                InitializeRulesOnly();
-            }
+
+            Debug.Log("No ChunkManager found after retries, initializing WFC grid at origin");
+            InitializeWorld();
         }
 
         // New method that initializes rules without creating chunks
@@ -114,6 +121,11 @@ namespace WFC.Generation
 
         private void Update()
         {
+            // Skip frames for heavy operations
+            frameSkipCounter++;
+            if (frameSkipCounter % 3 != 0) // Only process every 3rd frame
+                return;
+
             // Process propagation queue
             ProcessPropagationQueue();
 

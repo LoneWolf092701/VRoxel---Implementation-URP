@@ -27,19 +27,6 @@ namespace WFC.Processing
             this.useTestController = false;
         }
 
-        // Since we're removing the WFCTestController dependency, 
-        // we can remove this constructor entirely
-        /*
-        /// <summary>
-        /// Create an adapter for a WFCTestController
-        /// </summary>
-        public WFCAlgorithmAdapter(WFCTestController testController)
-        {
-            this.wfcTestController = testController;
-            this.useTestController = true;
-        }
-        */
-
         /// <summary>
         /// Check if two states are compatible in a given direction
         /// </summary>
