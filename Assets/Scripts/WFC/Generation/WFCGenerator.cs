@@ -859,31 +859,14 @@ namespace WFC.Generation
 
             // Define rules based on the configuration or hardcoded rules
             // For example: empty(0) can only be next to empty
-            SetAdjacentAll(0, 0, true);
-
-            // Ground(1) can be next to most things
-            SetAdjacentAll(1, 1, true);
-            SetAdjacentAll(1, 2, true);
-            SetAdjacentAll(1, 4, true);
-
-            // Grass(2) adjacent rules
-            SetAdjacentAll(2, 2, true);
-            SetAdjacentAll(2, 3, true);
-            SetAdjacentAll(2, 5, true);
-            SetAdjacentAll(2, 6, true);
-
-            // Water(3) adjacent rules
-            SetAdjacentAll(3, 3, true);
-            SetAdjacentAll(3, 5, true);
-
-            // Rock(4) adjacent rules
-            SetAdjacentAll(4, 4, true);
-
-            // Sand(5) adjacent rules
-            SetAdjacentAll(5, 5, true);
-
-            // Tree(6) adjacent rules
-            SetAdjacentAll(6, 6, true);
+            SetAdjacentAll(1, 3, true);  // Ground next to water
+            SetAdjacentAll(1, 5, true);  // Ground next to sand
+            SetAdjacentAll(1, 6, true);  // Ground next to tree
+            SetAdjacentAll(3, 4, true);  // Water next to rock
+            SetAdjacentAll(4, 5, true);  // Rock next to sand
+            SetAdjacentAll(4, 2, true);  // Rock next to grass
+            SetAdjacentAll(4, 6, true);  // Rock next to tree
+            SetAdjacentAll(5, 6, true);  // Sand next to tree
         }
 
         private void SetAdjacentAll(int stateA, int stateB, bool canBeAdjacent)

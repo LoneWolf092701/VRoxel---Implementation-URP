@@ -38,7 +38,7 @@ namespace WFC.MarchingCubes
             stateDensityValues.Add(0, 0.2f);   // Empty (air)
             stateDensityValues.Add(1, 0.7f);   // Ground (solid)
             stateDensityValues.Add(2, 0.65f);  // Grass (make closer to ground)
-            stateDensityValues.Add(3, 0.4f);   // Water (slightly more solid)
+            stateDensityValues.Add(3, 0.6f);   // Water (slightly more solid)
             stateDensityValues.Add(4, 0.8f);   // Rock (solid)
             stateDensityValues.Add(5, 0.6f);   // Sand (less extreme difference)
             stateDensityValues.Add(6, 0.7f);   // Tree (closer to ground)
@@ -618,7 +618,7 @@ namespace WFC.MarchingCubes
                     // Also smooth adjacent cells with a falloff gradient
                     if (index1 > 0 && index1 < densityField1.GetLength(1) - 1)
                     {
-                        float blendFactor = 0.7f; // Less influence as we move away from boundary
+                        float blendFactor = 0.9f; // Less influence as we move away from boundary
                         int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
                         densityField1[x, inwardIndex, z] = Mathf.Lerp(
                             densityField1[x, inwardIndex, z],
@@ -680,7 +680,7 @@ namespace WFC.MarchingCubes
                     // Also smooth adjacent cells with a falloff gradient
                     if (index1 > 0 && index1 < densityField1.GetLength(0) - 1)
                     {
-                        float blendFactor = 0.7f;
+                        float blendFactor = 0.9f;
                         int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
                         densityField1[inwardIndex, y, z] = Mathf.Lerp(
                             densityField1[inwardIndex, y, z],
@@ -742,7 +742,7 @@ namespace WFC.MarchingCubes
                     // Also smooth adjacent cells with a falloff gradient
                     if (index1 > 0 && index1 < densityField1.GetLength(2) - 1)
                     {
-                        float blendFactor = 0.7f;
+                        float blendFactor = 0.9f;
                         int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
                         densityField1[x, y, inwardIndex] = Mathf.Lerp(
                             densityField1[x, y, inwardIndex],
