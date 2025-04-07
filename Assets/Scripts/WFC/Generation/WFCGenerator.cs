@@ -149,7 +149,7 @@ namespace WFC.Generation
         private void ProcessPropagationQueue()
         {
             // Process a fixed number of events per frame
-            int maxEventsPerFrame = 20; // This could be a configuration setting
+            int maxEventsPerFrame = 20;
             int processedEvents = 0;
 
             while (propagationQueue.Count > 0 && processedEvents < maxEventsPerFrame)
@@ -452,8 +452,6 @@ namespace WFC.Generation
 
             hierarchicalConstraints.AddGlobalConstraint(waterConstraint);
         }
-
-        // Replace the ApplyMountainConstraints method with this improved version
         private void ApplyMountainConstraints(Chunk chunk, float intensity, System.Random random)
         {
             // Create a mountain constraint with improved blending
@@ -467,15 +465,15 @@ namespace WFC.Generation
                     chunk.Position.z * ChunkSize + ChunkSize / 2
                 ),
                 WorldSize = new Vector3(ChunkSize, ChunkSize, ChunkSize),
-                BlendRadius = ChunkSize * 2.0f, // Increased blend radius for smoother transitions
+                BlendRadius = ChunkSize * 2.0f,
                 Strength = 0.7f + intensity * 0.3f,
                 MinHeight = chunk.Position.y * ChunkSize,
                 MaxHeight = (chunk.Position.y + 1) * ChunkSize,
-                NoiseScale = 0.08f // Added noise scale for terrain variation
+                NoiseScale = 0.08f
             };
 
             // Add biases for mountain terrain
-            mountainConstraint.StateBiases[0] = -0.9f; // Strongly discourage empty
+            mountainConstraint.StateBiases[0] = -0.9f; // Strongly discourage empty below surface
             mountainConstraint.StateBiases[4] = 0.8f;  // Strongly encourage rock
 
             // Create varied mountain terrain with gradual slopes
@@ -504,9 +502,9 @@ namespace WFC.Generation
                         Cell cell = chunk.GetCell(x, y, z);
                         if (!cell.CollapsedState.HasValue)
                         {
-                            // Higher elevations have more rock
                             if (y <= peakHeight)
                             {
+                                // Terrain below or at the height level
                                 float heightRatio = (float)y / peakHeight;
 
                                 // Bottom layers are ground/rock mix, top is mostly rock
@@ -519,6 +517,11 @@ namespace WFC.Generation
                                     cell.Collapse(1); // Ground for lower elevations
                                 }
                             }
+                            else
+                            {
+                                // Important: Set cells above terrain height to empty/air
+                                cell.Collapse(0); // Air/empty above the terrain
+                            }
                         }
                     }
                 }
@@ -526,8 +529,6 @@ namespace WFC.Generation
 
             hierarchicalConstraints.AddGlobalConstraint(mountainConstraint);
         }
-
-        // Modify the ApplyForestConstraints method for smoother transitions
         private void ApplyForestConstraints(Chunk chunk, float intensity, System.Random random)
         {
             GlobalConstraint forestConstraint = new GlobalConstraint
@@ -562,19 +563,12 @@ namespace WFC.Generation
                     int terrainHeight = Mathf.FloorToInt(chunk.Size * 0.4f * terrainNoise);
 
                     // Create layered ground/grass terrain
-                    for (int y = 0; y <= terrainHeight; y++)
+                    for (int y = terrainHeight + 1; y < chunk.Size; y++)
                     {
                         Cell cell = chunk.GetCell(x, y, z);
                         if (!cell.CollapsedState.HasValue)
                         {
-                            if (y == terrainHeight)
-                            {
-                                cell.Collapse(2); // Grass top layer
-                            }
-                            else
-                            {
-                                cell.Collapse(1); // Ground beneath
-                            }
+                            cell.Collapse(0); // Air/empty above the terrain
                         }
                     }
 
@@ -603,8 +597,6 @@ namespace WFC.Generation
 
             hierarchicalConstraints.AddGlobalConstraint(forestConstraint);
         }
-
-        // Modify the ApplyPlainsConstraints method for better terrain variation
         private void ApplyPlainsConstraints(Chunk chunk, float elevation, float moisture, System.Random random)
         {
             GlobalConstraint plainsConstraint = new GlobalConstraint
@@ -646,20 +638,12 @@ namespace WFC.Generation
                     int terrainHeight = Mathf.FloorToInt(chunk.Size * 0.4f * combinedHeight);
 
                     // Create layered terrain
-                    for (int y = 0; y <= terrainHeight; y++)
+                    for (int y = terrainHeight + 1; y < chunk.Size; y++)
                     {
                         Cell cell = chunk.GetCell(x, y, z);
                         if (!cell.CollapsedState.HasValue)
                         {
-                            // Top layer is grass, lower layers are ground
-                            if (y == terrainHeight)
-                            {
-                                cell.Collapse(2); // Grass
-                            }
-                            else
-                            {
-                                cell.Collapse(1); // Ground
-                            }
+                            cell.Collapse(0); // Air/empty above the terrain
                         }
                     }
 
@@ -687,8 +671,6 @@ namespace WFC.Generation
 
             hierarchicalConstraints.AddGlobalConstraint(plainsConstraint);
         }
-
-        // Modify the ApplyDesertConstraints method for better terrain variation
         private void ApplyDesertConstraints(Chunk chunk, float intensity, System.Random random)
         {
             GlobalConstraint desertConstraint = new GlobalConstraint
@@ -761,8 +743,6 @@ namespace WFC.Generation
 
             hierarchicalConstraints.AddGlobalConstraint(desertConstraint);
         }
-
-        // Add this new helper function to create smoother biome transitions
         private void CreateBiomeTransition(Vector3Int chunkPos, Direction direction, int sourceState, int targetState)
         {
             // Create a transition constraint between biomes
@@ -867,16 +847,43 @@ namespace WFC.Generation
                 }
             }
 
-            // Define rules based on the configuration or hardcoded rules
-            // For example: empty(0) can only be next to empty
+            // Define what can be adjacent to air (state 0)
+            SetAdjacentAll(0, 0, true);  // Air next to air
+            SetAdjacentAll(0, 2, true);  // Air next to grass (top surface)
+            SetAdjacentAll(0, 3, true);  // Air next to water (water surface)
+            SetAdjacentAll(0, 6, true);  // Air next to tree
+
+            // Ground (1) rules
+            SetAdjacentAll(1, 1, true);  // Ground next to ground
+            SetAdjacentAll(1, 2, true);  // Ground next to grass
             SetAdjacentAll(1, 3, true);  // Ground next to water
+            SetAdjacentAll(1, 4, true);  // Ground next to rock
             SetAdjacentAll(1, 5, true);  // Ground next to sand
             SetAdjacentAll(1, 6, true);  // Ground next to tree
+
+            // Grass (2) rules
+            SetAdjacentAll(2, 2, true);  // Grass next to grass
+            SetAdjacentAll(2, 3, true);  // Grass next to water
+            SetAdjacentAll(2, 5, true);  // Grass next to sand
+            SetAdjacentAll(2, 6, true);  // Grass next to tree
+
+            // Water (3) rules
+            SetAdjacentAll(3, 3, true);  // Water next to water
             SetAdjacentAll(3, 4, true);  // Water next to rock
+            SetAdjacentAll(3, 5, true);  // Water next to sand
+
+            // Rock (4) rules
+            SetAdjacentAll(4, 4, true);  // Rock next to rock
             SetAdjacentAll(4, 5, true);  // Rock next to sand
             SetAdjacentAll(4, 2, true);  // Rock next to grass
             SetAdjacentAll(4, 6, true);  // Rock next to tree
+
+            // Sand (5) rules
+            SetAdjacentAll(5, 5, true);  // Sand next to sand
             SetAdjacentAll(5, 6, true);  // Sand next to tree
+
+            // Tree (6) rules
+            SetAdjacentAll(6, 6, true);  // Tree next to tree
         }
 
         private void SetAdjacentAll(int stateA, int stateB, bool canBeAdjacent)

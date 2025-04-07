@@ -42,7 +42,6 @@ namespace WFC.Chunking
 
         [Header("Debug Settings")]
         [SerializeField] private bool enableDebugLogging = false;
-        [SerializeField] private bool visualizeChunkStates = false;
 
         #endregion
 
@@ -428,7 +427,7 @@ namespace WFC.Chunking
             state.TransitionTo(newState);
 
             // Debug.Log state change if debug logging is enabled
-            if (enableDebugLogging)
+            if (enableDebugLogging && (newState == ChunkLifecycleState.Error || oldState == ChunkLifecycleState.Error))
             {
                 Debug.Log($"Chunk {chunkPos} state changed: {oldState} -> {newState}");
             }
@@ -780,12 +779,11 @@ namespace WFC.Chunking
 
             // 1. Adjust prediction time based on viewer speed
             float viewerSpeed = viewerVelocity.magnitude;
-            predictionTime = Mathf.Lerp(basePredictionTime, basePredictionTime * 2.5f,
-                                        Mathf.Clamp01(viewerSpeed / 20f));
+            predictionTime = Mathf.Lerp(basePredictionTime, basePredictionTime * 2.5f, Mathf.Clamp01(viewerSpeed / 20f));
 
             // 2. Adjust generation radius based on performance
             float fps = 1f / Time.smoothDeltaTime;
-            float targetFps = 60f;
+            float targetFps = 90f;
 
             if (fps > targetFps * 1.2f) // Performance is good, can increase load distance
             {
@@ -801,27 +799,10 @@ namespace WFC.Chunking
             }
 
             // 3. Adjust max concurrent chunks based on performance
-            float systemLoadFactor = 1.0f;
-
-            // Estimate system load based on frame time
-            if (fps < 30)
-                systemLoadFactor = 0.6f;
-            else if (fps < 45)
-                systemLoadFactor = 0.8f;
-            else if (fps > 100)
-                systemLoadFactor = 1.2f;
-
-            int newConcurrentChunks = Mathf.FloorToInt(
-                activeConfig.Performance.maxConcurrentChunks * systemLoadFactor);
-
-            maxConcurrentChunks = Mathf.Clamp(newConcurrentChunks, 4, 32);
-
-            // Debug.Log strategy updates (once in a while)
-            if (Time.frameCount % 300 == 0)
-            {
-                Debug.Log($"Adaptive strategy update: Prediction={predictionTime:F1}s, " +
-                    $"LoadDistance={currentLoadDistance:F1}, MaxChunks={maxConcurrentChunks}");
-            }
+            float systemLoadFactor = fps < 30 ? 0.6f : fps < 45 ? 0.8f : fps > 100 ? 1.2f : 1.0f;
+            maxConcurrentChunks = Mathf.Clamp(
+                Mathf.FloorToInt(activeConfig.Performance.maxConcurrentChunks * systemLoadFactor),
+                4, 32);
         }
 
         private void OptimizeInactiveChunks()

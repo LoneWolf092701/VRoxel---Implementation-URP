@@ -10,8 +10,7 @@ namespace WFC.MarchingCubes
     {
         // Configuration
         private float surfaceLevel = 0.5f;
-        private float smoothingFactor = 1.0f;
-        private int chunkSize = 8;
+        private int chunkSize = 16;
 
         // Default density range for cells without states
         private float defaultEmptyDensity = 0.1f;  // For empty/air (below surface)
@@ -27,23 +26,18 @@ namespace WFC.MarchingCubes
         // Cache management
         private int maxCacheSize = 100; // Adjust based on expected world size
         private Queue<Vector3Int> cacheEvictionQueue = new Queue<Vector3Int>();
-
-        private Dictionary<Vector3Int, Dictionary<Vector3Int, Vector3>> boundaryVertexCache = new Dictionary<Vector3Int, Dictionary<Vector3Int, Vector3>>();
-
-
         public DensityFieldGenerator()
         {
-            // Set more extreme density values to ensure there's a clear surface
-            // Values below 0.5 are "air", values above 0.5 are "solid"
-            stateDensityValues.Add(0, 0.2f);   // Empty (air)
-            stateDensityValues.Add(1, 0.7f);   // Ground (solid)
-            stateDensityValues.Add(2, 0.65f);  // Grass (make closer to ground)
-            stateDensityValues.Add(3, 0.6f);   // Water (slightly more solid)
-            stateDensityValues.Add(4, 0.8f);   // Rock (solid)
-            stateDensityValues.Add(5, 0.6f);   // Sand (less extreme difference)
-            stateDensityValues.Add(6, 0.7f);   // Tree (closer to ground)
+            // Make more extreme density values to ensure clearer terrain boundaries
+            stateDensityValues.Add(0, 0.1f);   // Empty (air) - more clearly below surface
+            stateDensityValues.Add(1, 0.8f);   // Ground (solid) - more clearly above surface
+            stateDensityValues.Add(2, 0.75f);  // Grass (solid)
+            stateDensityValues.Add(3, 0.6f);   // Water
+            stateDensityValues.Add(4, 0.85f);  // Rock (very solid)
+            stateDensityValues.Add(5, 0.7f);   // Sand
+            stateDensityValues.Add(6, 0.75f);  // Tree
 
-            chunkSize = 8;
+            chunkSize = 16;
         }
 
         /// <summary>
@@ -99,7 +93,7 @@ namespace WFC.MarchingCubes
                 return tempField;
             }
 
-            // Check if we've already computed this field (belt-and-suspenders check)
+            // Check if system already computed this field
             if (densityFieldCache.TryGetValue(chunk.Position, out float[,,] cachedField))
             {
                 return cachedField;

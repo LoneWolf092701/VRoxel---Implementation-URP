@@ -11,8 +11,9 @@ namespace WFC.MarchingCubes
         private float surfaceLevel = 0.5f;
 
         // Debug info
-        public bool enableDebugInfo = true;
-        // New properties for LOD system
+        [SerializeField] public bool enableDebugInfo = false;
+
+        // Properties for LOD system
         private bool simplifyMesh = false;
         private float simplificationFactor = 0.0f;
         private float[] meshSimplificationFactors = new float[] { 0.0f, 0.4f, 0.7f };

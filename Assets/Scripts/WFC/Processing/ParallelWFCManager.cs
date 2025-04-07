@@ -22,9 +22,8 @@ namespace WFC.Processing
         [Header("Settings")]
         [SerializeField] private bool enableParallelProcessing = true;
         [SerializeField] private int maxThreads = 0; // 0 = auto
-        [SerializeField] private bool showDebugInfo = true;
+        [SerializeField] private bool showDebugInfo = false;
 
-        // Parallel processor
         private ParallelWFCProcessor parallelProcessor;
 
         // Performance stats
@@ -93,10 +92,6 @@ namespace WFC.Processing
             avgProcessingTime = parallelProcessor.AverageJobTime;
             completedJobs = parallelProcessor.TotalProcessedJobs;
 
-            // Check if chunks need processing
-            // This would require accessing the ChunkManager's task queue
-            // For now, let's assume you modify ChunkManager to expose a method
-            // CheckForParallelProcessingTasks();
         }
 
         // expose the processor for other scripts
@@ -132,12 +127,7 @@ namespace WFC.Processing
                 return;
 
             // Show basic stats on screen
-            GUILayout.BeginArea(new Rect(10, Screen.height - 100, 250, 90));
-            GUILayout.Label("<b>Parallel WFC Stats</b>");
-            GUILayout.Label($"Active Threads: {activeThreads}");
-            GUILayout.Label($"Avg. Processing Time: {avgProcessingTime * 1000:F2}ms");
-            GUILayout.Label($"Completed Jobs: {completedJobs}");
-            GUILayout.EndArea();
+            GUI.Label(new Rect(10, Screen.height - 60, 200, 20), $"Parallel: {parallelProcessor.ActiveThreads} threads, {parallelProcessor.AverageJobTime * 1000:F1}ms/job");
         }
     }
 }

@@ -206,9 +206,6 @@ namespace WFC.Performance
                     sb.AppendLine($"  {componentName}: {totalTime * 1000:F2}ms total, {avgTime * 1000:F2}ms avg ({calls} calls)");
                 }
             }
-
-            // Log the complete report
-            //Debug.Log(sb.ToString());
         }
 
         private void OnGUI()
