@@ -9,6 +9,7 @@ using Utils;
 using WFC.Configuration;
 using System.Collections;
 using WFC.Chunking;
+using WFC.Processing;
 
 namespace WFC.Generation
 {
@@ -36,6 +37,8 @@ namespace WFC.Generation
 
         // Cache for config access
         private WFCConfiguration activeConfig;
+        private ParallelWFCProcessor parallelProcessor;
+
 
         private int frameSkipCounter = 0;
 
@@ -128,6 +131,13 @@ namespace WFC.Generation
 
             // Process propagation queue
             ProcessPropagationQueue();
+
+            // NEW: Process parallel processor events
+            if (parallelProcessor != null)
+            {
+                parallelProcessor.ProcessMainThreadEvents();
+            }
+
 
             // Check if we need to collapse more cells
             if (propagationQueue.Count == 0)

@@ -132,9 +132,6 @@ namespace WFC.Chunking
             currentLoadDistance = activeConfig.Performance.loadDistance;
             maxConcurrentChunks = activeConfig.Performance.maxConcurrentChunks;
 
-            // Initialize WFC algorithm adapter
-            InitializeWFCAdapter();
-
             // Start adaptive strategy coroutine
             StartCoroutine(AdaptiveStrategyUpdateCoroutine());
 
@@ -247,20 +244,6 @@ namespace WFC.Chunking
             }
         }
 
-        private void InitializeWFCAdapter()
-        {
-            if (!useParallelProcessing || wfcGenerator == null)
-                return;
-
-            var adapter = new WFCAlgorithmAdapter(wfcGenerator);
-
-            // Create processor with WFC algorithm reference and thread count from config
-            parallelProcessor = new ParallelWFCProcessor(adapter, activeConfig.Performance.maxThreads);
-            parallelProcessor.Start();
-
-            Debug.Log("Parallel WFC processor initialized with " + activeConfig.Performance.maxThreads + " threads");
-        }
-
         #endregion
 
         #region Update Loop
@@ -295,10 +278,11 @@ namespace WFC.Chunking
             // Process dirty chunks that need mesh generation
             ProcessDirtyChunks();
 
-            // Process events from parallel processor if available
-            if (parallelProcessor != null)
+            ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
+            if (parallelManager != null && parallelProcessor == null)
             {
-                parallelProcessor.ProcessMainThreadEvents();
+                parallelProcessor = parallelManager.GetParallelProcessor();
+                Debug.Log("Connected to ParallelWFCManager for parallel processing");
             }
 
             // Optimize memory for inactive chunks

@@ -434,11 +434,11 @@ namespace WFC.MarchingCubes
             int sampleCount = 0;
 
             // Sample from all adjacent cells (up to 8 for interior points)
-            for (int dx = -1; dx < 1; dx++)
+            for (int dx = -1; dx <= 1; dx++)
             {
-                for (int dy = -1; dy < 1; dy++)
+                for (int dy = -1; dy <= 1; dy++)
                 {
-                    for (int dz = -1; dz < 1; dz++)
+                    for (int dz = -1; dz <= 1; dz++)
                     {
                         int sampleX = x + dx;
                         int sampleY = y + dy;

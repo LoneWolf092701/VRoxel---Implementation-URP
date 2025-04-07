@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
-//using WFC.Testing;
 using WFC.Generation;
 
 namespace WFC.Presets
@@ -15,7 +14,6 @@ namespace WFC.Presets
     {
         [Header("WFC References")]
         [SerializeField] public WFCGenerator wfcGenerator;
-        //[SerializeField] public WFCTestController wfcTestController;
 
         [Header("Presets")]
         [SerializeField] public TerrainConstraintPreset defaultPreset;      // changed
@@ -76,13 +74,6 @@ namespace WFC.Presets
         /// </summary>
         public void RegenerateWorld()
         {
-            // Handle regeneration based on which WFC system we're using
-            //if (wfcTestController != null)
-            //{
-            //    wfcTestController.ResetGeneration();
-            //    Debug.Log("Regenerating world with WFCTestController");
-            //}
-            //else
             if (wfcGenerator != null)
             {
                 // This would need a method like ResetGeneration on WFCGenerator
@@ -99,11 +90,6 @@ namespace WFC.Presets
         /// </summary>
         private HierarchicalConstraintSystem GetConstraintSystem()
         {
-            //if (wfcTestController != null)
-            //{
-            //    return wfcTestController.GetHierarchicalConstraintSystem();
-            //}
-            //else 
             if (wfcGenerator != null)
             {
                 return wfcGenerator.GetHierarchicalConstraintSystem();
@@ -116,20 +102,7 @@ namespace WFC.Presets
         /// Get the current world size
         /// </summary>
         private Vector3Int GetWorldSize()
-        {
-            //if (wfcTestController != null)
-            //{
-            //    // This would need access to worldSizeX/Y/Z fields in WFCTestController
-            //    // For now, let's use reflection as a workaround
-            //    System.Type type = wfcTestController.GetType();
-
-            //    int x = (int)type.GetField("worldSizeX", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(wfcTestController);
-            //    int y = (int)type.GetField("worldSizeY", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(wfcTestController);
-            //    int z = (int)type.GetField("worldSizeZ", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(wfcTestController);
-
-            //    return new Vector3Int(x, y, z);
-            //}
-            //else 
+        { 
             if (wfcGenerator != null)
             {
                 return wfcGenerator.WorldSize;
@@ -143,11 +116,6 @@ namespace WFC.Presets
         /// </summary>
         private int GetChunkSize()
         {
-            //if (wfcTestController != null)
-            //{
-            //    return wfcTestController.ChunkSize;
-            //}
-            //else 
             if (wfcGenerator != null)
             {
                 return wfcGenerator.ChunkSize;

@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
 using WFC.Generation;
-//using WFC.Testing;
 using WFC.Boundary;
 
 namespace WFC.Processing
@@ -19,7 +18,6 @@ namespace WFC.Processing
         [Header("References")]
         [SerializeField] public WFCGenerator wfcGenerator;      // changed
         [SerializeField] private WFC.Chunking.ChunkManager chunkManager;
-        //[SerializeField] private WFCTestController wfcTestController;     // not needed for now
 
         [Header("Settings")]
         [SerializeField] private bool enableParallelProcessing = true;
@@ -46,10 +44,8 @@ namespace WFC.Processing
             if (chunkManager == null)
                 chunkManager = FindAnyObjectByType<WFC.Chunking.ChunkManager>();
 
-            //if (wfcGenerator == null && wfcTestController == null)
             if (wfcGenerator == null)
             {
-                // Try to find WFCTestController if WFCGenerator not found
                 wfcGenerator = FindAnyObjectByType<WFCGenerator>();
 
                 if (wfcGenerator == null)
@@ -69,9 +65,9 @@ namespace WFC.Processing
             }
             else
             {
-                //algorithmAdapter = new WFCAlgorithmAdapter(wfcTestController);
-                algorithmAdapter = null;
-                Debug.Log("Using WFCTestController for parallel processing");
+                Debug.LogError("ParallelWFCManager: WFCGenerator is required but not found!");
+                enabled = false;
+                return;
             }
 
             // Initialize the parallel processor with the adapter

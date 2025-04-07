@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
 using WFC.Generation;
-//using WFC.Testing;
 
 namespace Visualization
 {
@@ -34,7 +33,6 @@ namespace Visualization
             generator = GetComponent<WFCGenerator>();
             if (generator == null)
             {
-                //var testController = GetComponent<WFCTestController>();
                 var testController = GetComponent<WFCGenerator>();
                 if (testController != null)
                 {
@@ -57,7 +55,6 @@ namespace Visualization
                     constraintSystem = generator.GetHierarchicalConstraintSystem();
                 else
                 {
-                    //var testController = GetComponent<WFCTestController>();
                     var testController = GetComponent<WFCGenerator>();
 
                     if (testController != null)

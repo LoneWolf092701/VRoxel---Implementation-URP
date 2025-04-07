@@ -345,7 +345,6 @@ namespace WFC.Editor
 
                     // Try to find WFC components
                     presetManager.wfcGenerator = Object.FindObjectOfType<WFC.Generation.WFCGenerator>();
-                    //presetManager.wfcTestController = Object.FindObjectOfType<WFC.Testing.WFCTestController>();
 
                     // Apply the preset
                     presetManager.ApplyPreset(preset);

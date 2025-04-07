@@ -48,8 +48,16 @@ namespace WFC.Processing
         public ParallelWFCProcessor(IWFCAlgorithm algorithm, int maxThreads = 0)
         {
             this.wfcAlgorithm = algorithm;
-            //this.maxThreads = maxThreads > 0 ? maxThreads : Mathf.Max(1, Environment.ProcessorCount - 1);
-            this.maxThreads = maxThreads > 0 ? maxThreads : Mathf.Clamp(SystemInfo.processorCount - 1, 1, 8);   // new one
+            if (algorithm == null)
+            {
+                UnityEngine.Debug.LogError("ParallelWFCProcessor: Algorithm cannot be null!");
+                return;
+            }
+
+            this.wfcAlgorithm = algorithm;
+
+            // Ensure at least 1 thread
+            this.maxThreads = maxThreads > 0 ? maxThreads : Mathf.Max(1, SystemInfo.processorCount - 1);
 
             // Initialize thread-local random generators
             threadLocalRandom = new ThreadLocal<System.Random>(() =>
@@ -65,6 +73,12 @@ namespace WFC.Processing
         {
             if (isRunning)
                 return;
+
+            if (wfcAlgorithm == null)
+            {
+                UnityEngine.Debug.LogError("Cannot start parallel processor - no algorithm provided!");
+                return;
+            }
 
             isRunning = true;
 

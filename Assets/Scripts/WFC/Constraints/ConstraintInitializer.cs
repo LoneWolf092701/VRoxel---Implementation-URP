@@ -1,6 +1,5 @@
 using UnityEngine;
 using WFC.Core;
-//using WFC.Testing;
 using WFC.Generation;
 using System.Collections.Generic;
 using System.Collections;
@@ -178,7 +177,6 @@ public class ConstraintInitializer : MonoBehaviour
         // Try to extract values from the test controller
         Vector3Int size = new Vector3Int();
 
-        // Safe way to get world sizes - check if your WFCTestController has any of these methods
         size.x = TryGetWorldSizeX() ?? fallbackWorldSizeX;
         size.y = TryGetWorldSizeY() ?? fallbackWorldSizeY;
         size.z = TryGetWorldSizeZ() ?? fallbackWorldSizeZ;
@@ -189,15 +187,11 @@ public class ConstraintInitializer : MonoBehaviour
     // Safe accessor methods that check for available methods
     private int? TryGetWorldSizeX()
     {
-        // Check if WFCTestController has a public GetWorldSizeX method
         var method = wfcGenerator.GetType().GetMethod("GetWorldSizeX", System.Type.EmptyTypes);
         if (method != null)
         {
             return (int)method.Invoke(wfcGenerator, null);
         }
-
-        // Your WFCTestController might have different public accessor
-        // For example, it might have a property called WorldSize or similar
         return null;
     }
 

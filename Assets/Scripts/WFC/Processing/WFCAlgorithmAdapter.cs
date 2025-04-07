@@ -4,8 +4,6 @@ using UnityEngine;
 using WFC.Boundary;
 using WFC.Core;
 using WFC.Generation;
-// Remove this import if you're not using it anymore
-//using WFC.Testing;
 
 namespace WFC.Processing
 {
@@ -16,15 +14,12 @@ namespace WFC.Processing
     public class WFCAlgorithmAdapter : IWFCAlgorithm
     {
         private WFCGenerator wfcGenerator;
-        private bool useTestController;
-
         /// <summary>
         /// Create an adapter for a WFCGenerator
         /// </summary>
         public WFCAlgorithmAdapter(WFCGenerator generator)
         {
             this.wfcGenerator = generator;
-            this.useTestController = false;
         }
 
         /// <summary>
