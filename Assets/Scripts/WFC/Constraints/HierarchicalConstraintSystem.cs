@@ -472,15 +472,13 @@ namespace WFC.Core
                 BlendRadius = chunkSize,
                 Strength = 0.8f,
                 MinHeight = 0,
-                MaxHeight = worldSize.y * chunkSize,
+                MaxHeight = chunkSize,    // worldSize.y * chunkSize,
                 NoiseScale = 0.05f
             };
 
             // Add biases for ground constraint
             groundConstraint.StateBiases[0] = -0.8f; // Empty (negative bias)
             groundConstraint.StateBiases[1] = 0.6f;  // Ground (positive bias)
-            groundConstraint.StateBiases[3] = -0.2f; // Water (slight negative bias)
-            groundConstraint.StateBiases[4] = 0.3f;  // Rock (slight positive bias)
 
             AddGlobalConstraint(groundConstraint);
 
@@ -493,8 +491,8 @@ namespace WFC.Core
                 WorldSize = new Vector3(worldSize.x * chunkSize * 0.3f, worldSize.y * chunkSize * 0.7f, worldSize.z * chunkSize * 0.3f),
                 BlendRadius = chunkSize * 2,
                 Strength = 0.7f,
-                MinHeight = worldSize.y * chunkSize * 0.3f,
-                MaxHeight = worldSize.y * chunkSize
+                MinHeight = 0,              // worldSize.y * chunkSize * 0.3f,
+                MaxHeight = chunkSize,      //worldSize.y * chunkSize
             };
 
             // Add biases for mountain constraint
@@ -503,28 +501,6 @@ namespace WFC.Core
             mountainConstraint.StateBiases[4] = 0.7f;  // Rock (strong positive bias)
 
             AddGlobalConstraint(mountainConstraint);
-
-            // Add a river constraint
-            GlobalConstraint riverConstraint = new GlobalConstraint()
-            {
-                Name = "River",
-                Type = ConstraintType.RiverPath,
-                Strength = 0.8f,
-                PathWidth = chunkSize * 0.5f,
-                BlendRadius = chunkSize
-            };
-
-            // Add control points for the river
-            riverConstraint.ControlPoints.Add(new Vector3(0, 2, worldSize.z * chunkSize * 0.3f));
-            riverConstraint.ControlPoints.Add(new Vector3(worldSize.x * chunkSize * 0.3f, 1, worldSize.z * chunkSize * 0.5f));
-            riverConstraint.ControlPoints.Add(new Vector3(worldSize.x * chunkSize * 0.7f, 0, worldSize.z * chunkSize * 0.6f));
-            riverConstraint.ControlPoints.Add(new Vector3(worldSize.x * chunkSize, 0, worldSize.z * chunkSize * 0.7f));
-
-            // Add biases for river constraint
-            riverConstraint.StateBiases[3] = 0.9f;  // Water (strong positive bias)
-            riverConstraint.StateBiases[5] = 0.4f;  // Sand (moderate positive bias)
-
-            AddGlobalConstraint(riverConstraint);
 
             // Add a forest region
             GlobalConstraint forestConstraint = new GlobalConstraint()
@@ -543,38 +519,38 @@ namespace WFC.Core
 
             AddGlobalConstraint(forestConstraint);
 
-            // Add transition regions between biomes
-            // Example: Mountain to Forest transition
-            RegionConstraint mountainForestTransition = new RegionConstraint()
-            {
-                Name = "Mountain-Forest Transition",
-                Type = RegionType.Transition,
-                ChunkPosition = new Vector3Int(1, 1, 0),
-                ChunkSize = new Vector3Int(1, 1, 1),
-                Strength = 0.7f,
-                Gradient = 0.5f,
-                SourceState = 4, // Rock
-                TargetState = 6  // Tree
-            };
+            //// Add transition regions between biomes
+            //// Example: Mountain to Forest transition
+            //RegionConstraint mountainForestTransition = new RegionConstraint()
+            //{
+            //    Name = "Mountain-Forest Transition",
+            //    Type = RegionType.Transition,
+            //    ChunkPosition = new Vector3Int(1, 1, 0),
+            //    ChunkSize = new Vector3Int(1, 1, 1),
+            //    Strength = 0.7f,
+            //    Gradient = 0.5f,
+            //    SourceState = 4, // Rock
+            //    TargetState = 6  // Tree
+            //};
 
-            AddRegionConstraint(mountainForestTransition);
+            //AddRegionConstraint(mountainForestTransition);
 
-            // River to Ground transition
-            RegionConstraint riverGroundTransition = new RegionConstraint()
-            {
-                Name = "River-Ground Transition",
-                Type = RegionType.Transition,
-                ChunkPosition = new Vector3Int(1, 0, 0),
-                ChunkSize = new Vector3Int(1, 1, 2),
-                InternalOrigin = new Vector3(0.3f, 0, 0.3f),
-                InternalSize = new Vector3(0.4f, 1, 0.4f),
-                Strength = 0.6f,
-                Gradient = 0.3f,
-                SourceState = 3, // Water
-                TargetState = 1  // Ground
-            };
+            //// River to Ground transition
+            //RegionConstraint riverGroundTransition = new RegionConstraint()
+            //{
+            //    Name = "River-Ground Transition",
+            //    Type = RegionType.Transition,
+            //    ChunkPosition = new Vector3Int(1, 0, 0),
+            //    ChunkSize = new Vector3Int(1, 1, 2),
+            //    InternalOrigin = new Vector3(0.3f, 0, 0.3f),
+            //    InternalSize = new Vector3(0.4f, 1, 0.4f),
+            //    Strength = 0.6f,
+            //    Gradient = 0.3f,
+            //    SourceState = 3, // Water
+            //    TargetState = 1  // Ground
+            //};
 
-            AddRegionConstraint(riverGroundTransition);
+            //AddRegionConstraint(riverGroundTransition);
         }
 
         /// <summary>

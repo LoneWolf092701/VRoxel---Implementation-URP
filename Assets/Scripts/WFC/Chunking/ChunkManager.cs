@@ -271,6 +271,8 @@ namespace WFC.Chunking
             // Manage chunks (load/unload)
             ManageChunks();
 
+            CleanupNonGroundChunks();
+
             // Process chunk tasks
             ProcessChunkTasks();
 
@@ -1131,9 +1133,9 @@ namespace WFC.Chunking
         {
             // Calculate chunk coordinates of viewer
             Vector3Int viewerChunk = new Vector3Int(
-                Mathf.FloorToInt(viewerPosition.x / ChunkSize),
-                Mathf.FloorToInt(viewerPosition.y / ChunkSize),
-                Mathf.FloorToInt(viewerPosition.z / ChunkSize)
+            Mathf.FloorToInt(viewerPosition.x / ChunkSize),
+            0, // IMPORTANT: Force y=0 to only create ground-level chunks
+            Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
 
             // Find all chunk positions within load distance
@@ -1144,9 +1146,11 @@ namespace WFC.Chunking
 
             for (int x = viewerChunk.x - loadChunks; x <= viewerChunk.x + loadChunks; x++)
             {
-                for (int y = viewerChunk.y - loadChunks; y <= viewerChunk.y + loadChunks; y++)
-                {
-                    for (int z = viewerChunk.z - loadChunks; z <= viewerChunk.z + loadChunks; z++)
+                int y = 0;
+
+                //for (int y = viewerChunk.y - loadChunks; y <= viewerChunk.y + loadChunks; y++)
+                //{
+                for (int z = viewerChunk.z - loadChunks; z <= viewerChunk.z + loadChunks; z++)
                     {
                         Vector3Int pos = new Vector3Int(x, y, z);
 
@@ -1163,7 +1167,7 @@ namespace WFC.Chunking
                             chunksToLoad.Add(pos);
                         }
                     }
-                }
+                //}
             }
 
             // If no chunks found, create a 3x3x3 grid around the player
@@ -1174,13 +1178,14 @@ namespace WFC.Chunking
                 // Create a 3x3x3 grid of chunks around the player
                 for (int x = -1; x <= 1; x++)
                 {
-                    for (int y = -1; y <= 1; y++)
-                    {
+                    //for (int y = -1; y <= 1; y++)
+                    //{
                         for (int z = -1; z <= 1; z++)
                         {
                             Vector3Int pos = new Vector3Int(
                                 viewerChunk.x + x,
-                                viewerChunk.y + y,
+                                0,
+                                //viewerChunk.y + y,
                                 viewerChunk.z + z
                             );
 
@@ -1190,7 +1195,7 @@ namespace WFC.Chunking
 
                             chunksToLoad.Add(pos);
                         }
-                    }
+                    //}
                 }
             }
 
@@ -1224,15 +1229,41 @@ namespace WFC.Chunking
 
         private List<Vector3Int> GetChunksToUnload()
         {
-            // Find chunks that are too far from both current and predicted positions
+            // Get current viewer position
+            Vector3 viewerPos = viewer.position;
+
+            // Find chunks that are too far from current position only
             return loadedChunks.Keys.Where(chunkPos => {
                 Vector3 chunkWorldPos = GetChunkWorldPosition(chunkPos);
+                float distance = Vector3.Distance(chunkWorldPos, viewerPos);
 
-                float distToCurrent = Vector3.Distance(chunkWorldPos, viewerPosition);
-                float distToPredicted = Vector3.Distance(chunkWorldPos, predictedViewerPosition);
+                // Check if chunk Y position is non-zero (above ground)
+                bool isAboveGround = chunkPos.y > 0;
 
-                return distToCurrent > UnloadDistance && distToPredicted > UnloadDistance;
+                // Always unload chunks above ground level (y > 0)
+                // For ground level chunks, only unload if beyond distance threshold
+                return isAboveGround || distance > UnloadDistance;
             }).ToList();
+        }
+
+        private void CleanupNonGroundChunks()
+        {
+            List<Vector3Int> chunksToRemove = new List<Vector3Int>();
+
+            foreach (var chunkPos in loadedChunks.Keys)
+            {
+                // Identify chunks above ground level
+                if (chunkPos.y > 0)
+                {
+                    chunksToRemove.Add(chunkPos);
+                }
+            }
+
+            foreach (var chunkPos in chunksToRemove)
+            {
+                UnloadChunk(chunkPos);
+                Debug.Log($"Forcibly removed above-ground chunk at {chunkPos}");
+            }
         }
 
         private float CalculateLoadPriority(Vector3Int chunkPos)
@@ -2524,6 +2555,9 @@ namespace WFC.Chunking
         /// </summary>
         public void CreateChunkAt(Vector3Int position)
         {
+            // Force position to be at ground level
+            position.y = 0;
+
             // Skip if already loaded or in the process of loading
             ChunkLifecycleState currentState = GetChunkState(position);
             if (currentState != ChunkLifecycleState.None &&
@@ -2545,9 +2579,6 @@ namespace WFC.Chunking
             UpdateChunkState(position, ChunkLifecycleState.Pending);
 
             Debug.Log($"Forced creation of chunk at {position}");
-
-            //StartCoroutine(QueueChunkProcessingAfterCreation(position));
-
         }
 
         /// <summary>
@@ -2605,7 +2636,8 @@ namespace WFC.Chunking
         {
             Vector3Int viewerChunk = new Vector3Int(
                 Mathf.FloorToInt(viewer.position.x / ChunkSize),
-                Mathf.FloorToInt(viewer.position.y / ChunkSize),
+                0,
+                //Mathf.FloorToInt(viewer.position.y / ChunkSize),
                 Mathf.FloorToInt(viewer.position.z / ChunkSize)
             );
 
@@ -2622,21 +2654,26 @@ namespace WFC.Chunking
         {
             for (int x = -2; x <= 2; x++)
             {
-                for (int y = -2; y <= 2; y++)
-                {
-                    for (int z = -2; z <= 2; z++)
+               int y = 0; // Only create in the same Y plane for now
+                          //for (int y = -2; y <= 2; y++)
+                          //{
+                for (int z = -2; z <= 2; z++)
                     {
                         // Skip the center chunk - already created
                         if (x == 0 && y == 0 && z == 0) continue;
 
-                        Vector3Int chunkPos = centerChunk + new Vector3Int(x, y, z);
+                        Vector3Int chunkPos = new Vector3Int(
+                                   centerChunk.x + x,
+                                   y, // Keep at y=0
+                                   centerChunk.z + z
+                               ); 
                         CreateChunkAt(chunkPos);
 
                         // Wait a frame between chunks to prevent freezing
                         yield return null;
                     }
                 }
-            }
+            //}
         }
     }
 }

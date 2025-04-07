@@ -28,14 +28,11 @@ namespace WFC.MarchingCubes
         private Queue<Vector3Int> cacheEvictionQueue = new Queue<Vector3Int>();
         public DensityFieldGenerator()
         {
-            // Make more extreme density values to ensure clearer terrain boundaries
-            stateDensityValues.Add(0, 0.1f);   // Empty (air) - more clearly below surface
-            stateDensityValues.Add(1, 0.8f);   // Ground (solid) - more clearly above surface
-            stateDensityValues.Add(2, 0.75f);  // Grass (solid)
+            // Simplify - keep only essential states
+            stateDensityValues.Add(0, 0.1f);   // Empty (air)
+            stateDensityValues.Add(1, 0.8f);   // Ground 
             stateDensityValues.Add(3, 0.6f);   // Water
-            stateDensityValues.Add(4, 0.85f);  // Rock (very solid)
-            stateDensityValues.Add(5, 0.7f);   // Sand
-            stateDensityValues.Add(6, 0.75f);  // Tree
+            stateDensityValues.Add(4, 0.85f);  // Rock
 
             chunkSize = 16;
         }
@@ -296,51 +293,15 @@ namespace WFC.MarchingCubes
         /// </summary>
         private float ApplyTerrainFeatures(float density, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
         {
-            // Use global coordinates for consistency across chunks
+            // Simplified version - no caves or complex features
+            // Just add minor variation for natural look
             float globalX = chunkPos.x * chunkSize + x;
-            float globalY = chunkPos.y * chunkSize + y;
             float globalZ = chunkPos.z * chunkSize + z;
 
-            // 1. Cross-chunk cave system
-            if (density > 0.6f)
-            {
-                // Use 3D Perlin noise for caves with a scale that ensures they cross chunks
-                float caveNoiseX = Mathf.PerlinNoise(globalX * 0.05f, globalY * 0.05f);
-                float caveNoiseZ = Mathf.PerlinNoise(globalY * 0.05f, globalZ * 0.05f);
-                float caveNoise = (caveNoiseX + caveNoiseZ) * 0.5f;
-
-                // Make caves follow a specific pattern that will visibly cross boundaries
-                float caveTunnel = Mathf.Sin(globalX * 0.1f) * Mathf.Sin(globalZ * 0.1f);
-                caveTunnel = Mathf.Abs(caveTunnel);
-
-                if (caveNoise > 0.6f && caveTunnel < 0.3f)
-                {
-                    density *= 0.3f; // Create more pronounced caves
-                }
-            }
-
-            // 2. Cross-chunk mountain range
-            float mountainRange = Mathf.PerlinNoise(globalX * 0.02f, globalZ * 0.02f);
-            // Create ridge lines that will definitely cross chunk boundaries
-            float ridgeLine = Mathf.Abs(Mathf.Sin(globalX * 0.05f + globalZ * 0.05f));
-
-            if (mountainRange > 0.6f && ridgeLine < 0.2f && y > 3)
-            {
-                density += 0.3f; // Create more pronounced mountain ridges
-            }
-
-            // 3. Cross-chunk river system
-            float riverNoise = Mathf.PerlinNoise(globalX * 0.03f, globalZ * 0.03f);
-            float riverChannel = Mathf.Abs(Mathf.Sin(globalX * 0.02f + globalZ * 0.04f));
-
-            if (riverNoise > 0.5f && riverChannel < 0.1f && y < chunkSize / 2)
-            {
-                density -= 0.3f; // Create river channels
-            }
-
-            return density;
+            // Add slight variation to density
+            float variation = Mathf.PerlinNoise(globalX * 0.05f, globalZ * 0.05f) * 0.1f;
+            return density + variation - 0.05f;
         }
-
         /// <summary>
         /// Smooth corner points where multiple chunks meet
         /// </summary>
@@ -421,18 +382,20 @@ namespace WFC.MarchingCubes
         /// <summary>
         /// Calculate the density value for a grid point based on surrounding cells
         /// </summary>
+        // In DensityFieldGenerator.cs - Update CalculateDensity method
         private float CalculateDensity(Chunk chunk, int x, int y, int z)
         {
-            // Grid points are at corners of cells, so we need to sample from surrounding cells
+            // For grid points, sample from ALL 8 surrounding cells
             float density = 0.0f;
             int sampleCount = 0;
+            float defaultValue = 0.5f; // Use neutral value when no samples
 
             // Sample from all adjacent cells (up to 8 for interior points)
-            for (int dx = -1; dx <= 1; dx++)
+            for (int dx = -1; dx <= 0; dx++)
             {
-                for (int dy = -1; dy <= 1; dy++)
+                for (int dy = -1; dy <= 0; dy++)
                 {
-                    for (int dz = -1; dz <= 1; dz++)
+                    for (int dz = -1; dz <= 0; dz++)
                     {
                         int sampleX = x + dx;
                         int sampleY = y + dy;
@@ -446,65 +409,28 @@ namespace WFC.MarchingCubes
 
                         // Get cell and its state
                         Cell cell = chunk.GetCell(sampleX, sampleY, sampleZ);
-
                         if (cell != null && cell.CollapsedState.HasValue)
                         {
                             int state = cell.CollapsedState.Value;
 
-                            // Get density value for this state
-                            if (stateDensityValues.TryGetValue(state, out float baseDensity))
-                            {
-                                // Add variation based on position
-                                float variation = Mathf.PerlinNoise(
-                                    (chunk.Position.x * chunk.Size + sampleX) * 0.1f,
-                                    (chunk.Position.z * chunk.Size + sampleZ) * 0.1f) * 0.15f;
+                            // CRITICAL: Ensure solid states have consistent density values
+                            float stateDensity;
+                            if (state == 0) // Air
+                                stateDensity = 0.1f;
+                            else if (state == 3) // Water
+                                stateDensity = 0.7f;
+                            else // Ground, rock, etc. - all solid
+                                stateDensity = 0.9f;
 
-                                density += baseDensity + variation;
-                                sampleCount++;
-                            }
-                        }
-                        else if (cell != null)
-                        {
-                            // For uncollapsed cells, use average of possible states
-                            float avgDensity = 0.0f;
-                            foreach (int state in cell.PossibleStates)
-                            {
-                                if (stateDensityValues.TryGetValue(state, out float stateDensity))
-                                {
-                                    avgDensity += stateDensity;
-                                }
-                                else
-                                {
-                                    // Default to solid for unknown states
-                                    avgDensity += defaultSolidDensity;
-                                }
-                            }
-
-                            if (cell.PossibleStates.Count > 0)
-                            {
-                                avgDensity /= cell.PossibleStates.Count;
-                                density += avgDensity;
-                                sampleCount++;
-                            }
-                            else
-                            {
-                                // No possible states? Default to empty
-                                density += defaultEmptyDensity;
-                                sampleCount++;
-                            }
-                        }
-                        else
-                        {
-                            // No cell? Default to empty space
-                            density += defaultEmptyDensity;
+                            density += stateDensity;
                             sampleCount++;
                         }
                     }
                 }
             }
 
-            // Calculate average density from samples
-            return sampleCount > 0 ? density / sampleCount : defaultEmptyDensity;
+            // Calculate average with fallback to default
+            return sampleCount > 0 ? density / sampleCount : defaultValue;
         }
 
         /// <summary>

@@ -6,11 +6,10 @@ using System.Collections;
 
 public class ConstraintInitializer : MonoBehaviour
 {
-    [SerializeField] public WFCGenerator wfcGenerator;        //changed // changed
+    [SerializeField] public WFCGenerator wfcGenerator;
 
     [Header("Global Constraint Settings")]
     [SerializeField] private bool createMountainRange = true;
-    [SerializeField] private bool createRiver = true;
     [SerializeField] private bool createForest = true;
 
     [Header("Region Constraint Settings")]
@@ -30,15 +29,14 @@ public class ConstraintInitializer : MonoBehaviour
         if (wfcGenerator == null)
         {
             // Use the newer API instead of the deprecated FindObjectOfType
-            wfcGenerator = Object.FindAnyObjectByType<WFCGenerator>();     //changed
+            wfcGenerator = Object.FindAnyObjectByType<WFCGenerator>();
             if (wfcGenerator == null)
             {
-                Debug.LogError("ConstraintInitializer: No WFCTestController found!");
+                Debug.LogError("ConstraintInitializer: No WFCGenerator found!");
                 return;
             }
         }
         StartCoroutine(DelayedInitialization());
-
     }
 
     private IEnumerator DelayedInitialization()
@@ -102,9 +100,6 @@ public class ConstraintInitializer : MonoBehaviour
 
         constraintSystem.AddGlobalConstraint(groundConstraint);
 
-        // The rest of your implementation remains the same...
-        // Adding mountain range, river, and forest constraints
-
         // Mountain range implementation
         if (createMountainRange)
         {
@@ -125,30 +120,6 @@ public class ConstraintInitializer : MonoBehaviour
             mountainConstraint.StateBiases[4] = 0.7f;  // Rock (strong positive bias)
 
             constraintSystem.AddGlobalConstraint(mountainConstraint);
-        }
-
-        // River implementation
-        if (createRiver)
-        {
-            GlobalConstraint riverConstraint = new GlobalConstraint
-            {
-                Name = "River",
-                Type = ConstraintType.RiverPath,
-                Strength = 0.8f,
-                PathWidth = wfcGenerator.ChunkSize * 0.5f,
-                BlendRadius = wfcGenerator.ChunkSize
-            };
-
-            // Add control points for the river path
-            riverConstraint.ControlPoints.Add(new Vector3(0, 2, worldZ * 0.3f));
-            riverConstraint.ControlPoints.Add(new Vector3(worldX * 0.3f, 1, worldZ * 0.5f));
-            riverConstraint.ControlPoints.Add(new Vector3(worldX * 0.7f, 0, worldZ * 0.6f));
-            riverConstraint.ControlPoints.Add(new Vector3(worldX, 0, worldZ * 0.7f));
-
-            riverConstraint.StateBiases[3] = 0.9f;  // Water (strong positive bias)
-            riverConstraint.StateBiases[5] = 0.4f;  // Sand (moderate positive bias)
-
-            constraintSystem.AddGlobalConstraint(riverConstraint);
         }
 
         // Forest implementation
@@ -177,6 +148,7 @@ public class ConstraintInitializer : MonoBehaviour
         // Try to extract values from the test controller
         Vector3Int size = new Vector3Int();
 
+        // Safe way to get world sizes - check if your WFCTestController has any of these methods
         size.x = TryGetWorldSizeX() ?? fallbackWorldSizeX;
         size.y = TryGetWorldSizeY() ?? fallbackWorldSizeY;
         size.z = TryGetWorldSizeZ() ?? fallbackWorldSizeZ;
@@ -187,6 +159,7 @@ public class ConstraintInitializer : MonoBehaviour
     // Safe accessor methods that check for available methods
     private int? TryGetWorldSizeX()
     {
+        // Check if WFCTestController has a public GetWorldSizeX method
         var method = wfcGenerator.GetType().GetMethod("GetWorldSizeX", System.Type.EmptyTypes);
         if (method != null)
         {
@@ -197,21 +170,28 @@ public class ConstraintInitializer : MonoBehaviour
 
     private int? TryGetWorldSizeY()
     {
-        // Similar implementation
+        // Check if WFCTestController has a public GetWorldSizeX method
+        var method = wfcGenerator.GetType().GetMethod("GetWorldSizeY", System.Type.EmptyTypes);
+        if (method != null)
+        {
+            return (int)method.Invoke(wfcGenerator, null);
+        }
         return null;
     }
 
     private int? TryGetWorldSizeZ()
     {
-        // Similar implementation
+        // Check if WFCTestController has a public GetWorldSizeX method
+        var method = wfcGenerator.GetType().GetMethod("GetWorldSizeZ", System.Type.EmptyTypes);
+        if (method != null)
+        {
+            return (int)method.Invoke(wfcGenerator, null);
+        }
         return null;
     }
 
     private void CreateRegionConstraints()
     {
-        // Create transition zones between different biomes
-        // Implementation remains the same
-
         // Mountain to Forest transition
         RegionConstraint mountainForestTransition = new RegionConstraint
         {
@@ -227,10 +207,10 @@ public class ConstraintInitializer : MonoBehaviour
 
         constraintSystem.AddRegionConstraint(mountainForestTransition);
 
-        // River to Ground transition
-        RegionConstraint riverGroundTransition = new RegionConstraint
+        // Ground transition
+        RegionConstraint groundTransition = new RegionConstraint
         {
-            Name = "River-Ground Transition",
+            Name = "Ground Transition",
             Type = RegionType.Transition,
             ChunkPosition = new Vector3Int(1, 0, 0),
             ChunkSize = new Vector3Int(1, 1, 1),
@@ -238,10 +218,10 @@ public class ConstraintInitializer : MonoBehaviour
             InternalSize = new Vector3(0.4f, 1, 0.4f),
             Strength = 0.6f,
             Gradient = 0.3f,
-            SourceState = 3, // Water
-            TargetState = 1  // Ground
+            SourceState = 1, // Ground
+            TargetState = 2  // Grass
         };
 
-        constraintSystem.AddRegionConstraint(riverGroundTransition);
+        constraintSystem.AddRegionConstraint(groundTransition);
     }
 }
