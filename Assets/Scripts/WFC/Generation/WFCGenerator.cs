@@ -410,8 +410,8 @@ namespace WFC.Generation
             );
 
             // Use noise functions to determine biome types but NOT height variation
-            float elevationNoise = Mathf.PerlinNoise(worldPos.x * 0.01f, worldPos.z * 0.01f);
-            float moistureNoise = Mathf.PerlinNoise(worldPos.x * 0.02f + 500, worldPos.z * 0.02f + 500);
+            float elevationNoise = Mathf.PerlinNoise(worldPos.x * 0.005f, worldPos.z * 0.005f);
+            float moistureNoise = Mathf.PerlinNoise(worldPos.x * 0.01f + 500, worldPos.z * 0.01f + 500);
 
             // Apply FLAT terrain by default - this ensures a single height layer
             ApplyFlatGroundTerrain(chunk, random);
@@ -480,8 +480,8 @@ namespace WFC.Generation
                 {
                     // Small height variation for natural look, but keep it modest
                     float heightVar = Mathf.PerlinNoise(
-                        (chunk.Position.x * chunk.Size + x) * 0.1f,
-                        (chunk.Position.z * chunk.Size + z) * 0.1f) * 1.5f;
+                        (chunk.Position.x * chunk.Size + x) * 0.05f,
+                        (chunk.Position.z * chunk.Size + z) * 0.05f) * 2.0f;
 
                     int terrainHeight = Mathf.FloorToInt(baseHeight + heightVar);
 
@@ -541,8 +541,8 @@ namespace WFC.Generation
                 {
                     // Use noise for small variations
                     float noise = Mathf.PerlinNoise(
-                        (chunk.Position.x * ChunkSize + x) * 0.05f,
-                        (chunk.Position.z * ChunkSize + z) * 0.05f);
+                        (chunk.Position.x * ChunkSize + x) * 0.025f,
+                        (chunk.Position.z * ChunkSize + z) * 0.025f);
 
                     // Limit vertical height variation
                     int rockHeight = Mathf.FloorToInt(baseHeight + (noise * 3.0f));
@@ -615,8 +615,8 @@ namespace WFC.Generation
 
                     // Apply noise to shore distance
                     float shoreNoise = Mathf.PerlinNoise(
-                        (chunk.Position.x * chunk.Size + x) * 0.2f + 500f,
-                        (chunk.Position.z * chunk.Size + z) * 0.2f + 500f);
+                        (chunk.Position.x * chunk.Size + x) * 0.1f + 500f,
+                        (chunk.Position.z * chunk.Size + z) * 0.1f + 500f);
 
                     float shoreWidth = 2.0f + (shoreNoise * 1.5f);
 

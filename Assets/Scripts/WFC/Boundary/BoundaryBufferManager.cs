@@ -239,7 +239,7 @@ namespace WFC.Boundary
         private bool ApplyBufferConstraints(Cell boundaryCell, Cell bufferCell, Direction direction, int depth = 0)
         {
             // To prevent infinite recursion
-            if (depth > 5) return false;
+            if (depth > 10) return false;
 
             HashSet<int> newPossibleStates = new HashSet<int>();
 
@@ -271,23 +271,13 @@ namespace WFC.Boundary
             }
             else if (boundaryCell.PossibleStates.Count > 0)
             {
-                // We couldn't find any compatible states, but the cell has states
-                // This is a constraint conflict that needs to be handled
                 Debug.LogWarning($"Boundary constraint conflict: No compatible states between boundary and buffer");
 
-                // You might implement conflict resolution here
-                // For now, return true to indicate the situation needs attention
                 return true;
             }
 
             // No change was made
             return false;
-
-            //// if further propagation needed
-            //if (additionalPropagationNeeded)
-            //{
-            //    return PropagateDeeper(chunk, cell, direction, depth + 1);
-            //}
         }
 
         // to check boundary consistancy
