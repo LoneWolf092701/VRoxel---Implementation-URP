@@ -267,8 +267,6 @@ namespace WFC.Processing
                     break;
 
                 case WFCJobType.GenerateMesh:
-                    // This would call into your Marching Cubes system
-                    // For now we'll just mark the chunk as needing a mesh update
                     job.Chunk.IsDirty = true;
                     break;
 

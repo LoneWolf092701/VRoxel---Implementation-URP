@@ -391,7 +391,7 @@ namespace WFC.Core
                 float maxBias = biases.Values.Max(Mathf.Abs);
                 float collapseThreshold = Mathf.Lerp(0.9f, 0.5f, maxBias);
 
-                // Find if we have a highly dominant state
+                // Find if have a highly dominant state
                 foreach (var state in stateWeights.Keys.ToList())
                 {
                     float normalizedWeight = stateWeights[state] / totalWeight;
@@ -401,7 +401,7 @@ namespace WFC.Core
                     {
                         cell.Collapse(state);
                         _statistics.CellsCollapsed++;
-                        return; // Cell is now collapsed, we're done
+                        return; // Cell is now collapsed
                     }
                 }
             }
@@ -1094,7 +1094,7 @@ namespace WFC.Core
                             }
                         }
                         
-                        // Adjust index since we'll increment at the end of the loop
+                        // Adjust index since increment at the end of the loop
                         i--;
                         
                         // Add constraint
@@ -1186,7 +1186,7 @@ namespace WFC.Core
                             }
                         }
                         
-                        // Adjust index since we'll increment at the end of the loop
+                        // Adjust index since increment at the end of the loop
                         i--;
                         
                         // Add constraint

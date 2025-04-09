@@ -131,12 +131,12 @@ public class SimpleCamera : MonoBehaviour
         else  // if gravity is disabled
         {
             verticalMovement.y = 0; // no gravity or jump, so vertical movement is always 0.
-            if (Input.GetKey(KeyCode.Space)) // If you want to add some vertical movement when the gravity is disabled
+            if (Input.GetKey(KeyCode.Space)) // If some vertical movement when the gravity is disabled
             {
                 verticalMovement.y = 2.0f;
             }
 
-            if (Input.GetKey(KeyCode.LeftControl)) // If you want to add some vertical movement when the gravity is disabled
+            if (Input.GetKey(KeyCode.LeftControl)) // If some vertical movement when the gravity is disabled
             {
                 verticalMovement.y = -2.0f;
             }

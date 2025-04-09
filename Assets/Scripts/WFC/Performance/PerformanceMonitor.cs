@@ -372,7 +372,6 @@ namespace WFC.Performance
         /// <param name="componentName">Name of the component to time</param>
         public void StartComponentTiming(string componentName)
         {
-            // Check if we're already timing something else
             if (currentTimingComponent != null)
             {
                 // Automatically end the previous timing
@@ -523,7 +522,6 @@ namespace WFC.Performance
                 sb.AppendLine($"  Cells Collapsed: {totalCollapsedCells}");
             }
 
-            // Add component timings if we have any
             if (componentTimings.Count > 0)
             {
                 sb.AppendLine("\nComponent Timings:");

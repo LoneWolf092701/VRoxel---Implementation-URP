@@ -95,7 +95,7 @@ namespace WFC.MarchingCubes
         {
             chunkSize = chunk.Size;
 
-            // Exit condition for recursion - if we're already processing this chunk
+            // Exit condition for recursion - if already processing this chunk
             if (processingChunks.Contains(chunk.Position))
             {
                 // Return a temporary density field with default values
@@ -126,7 +126,7 @@ namespace WFC.MarchingCubes
             int size = chunk.Size;
             float[,,] densityField = new float[size + 1, size + 1, size + 1];
 
-            // Debug flag to ensure we have a surface
+            // Debug flag to ensure have a surface
             bool hasSolidCells = false;
             bool hasEmptyCells = false;
 
@@ -148,7 +148,7 @@ namespace WFC.MarchingCubes
                 }
             }
 
-            // Debug - if we don't have both solid and empty cells, we won't get a surface
+            // Debug - if don't have both solid and empty cells, won't get a surface
             if (!hasSolidCells || !hasEmptyCells)
             {
                 Debug.LogWarning($"Chunk {chunk.Position} lacks a proper surface: hasSolid={hasSolidCells}, hasEmpty={hasEmptyCells}");
@@ -194,7 +194,7 @@ namespace WFC.MarchingCubes
                 Debug.LogWarning($"Chunk {chunk.Position} still lacks a proper surface after processing: hasSolid={hasSolidCells}, hasEmpty={hasEmptyCells}");
             }
 
-            // Handle boundaries to ensure seamless meshes - but only AFTER we've calculated the main density field
+            // Handle boundaries to ensure seamless meshes - but only AFTER calculated the main density field
             SmoothBoundaries(densityField, chunk, recursionDepth);
 
             // Handle corner points where multiple chunks meet
@@ -214,7 +214,7 @@ namespace WFC.MarchingCubes
         /// </summary>
         private void AddToCache(Vector3Int chunkPos, float[,,] densityField)
         {
-            // If we're at capacity, remove the least recently used item
+            // If at capacity, remove the least recently used item
             if (densityFieldCache.Count >= maxCacheSize && cacheEvictionQueue.Count > 0)
             {
                 Vector3Int oldestChunk = cacheEvictionQueue.Dequeue();
@@ -302,7 +302,7 @@ namespace WFC.MarchingCubes
             // Lower frequency noise creates smoother, more gradual height changes
             float heightMap = Mathf.PerlinNoise(globalX * 0.03f, globalZ * 0.03f);
 
-            // Apply vertical gradient (things get less solid as we go up)
+            // Apply vertical gradient
             // This creates a consistent height basis across all chunks
             float baseHeight = 3.0f + heightMap * 4.0f; // Base height between 3-7 units
             float heightInfluence = Mathf.Clamp01((baseHeight - y) * 0.2f);
@@ -518,7 +518,7 @@ namespace WFC.MarchingCubes
 
                 Chunk neighbor = chunk.Neighbors[dir];
 
-                // Skip if we're already processing this neighbor (prevents infinite recursion)
+                // Skip if already processing this neighbor (prevents infinite recursion)
                 if (processingChunks.Contains(neighbor.Position))
                     continue;
                 try
@@ -603,7 +603,7 @@ namespace WFC.MarchingCubes
                     // Also smooth adjacent cells with a falloff gradient
                     if (index1 > 0 && index1 < densityField1.GetLength(1) - 1)
                     {
-                        float blendFactor = 0.9f; // Less influence as we move away from boundary
+                        float blendFactor = 0.9f; // Less influence as move away from boundary
                         int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
                         densityField1[x, inwardIndex, z] = Mathf.Lerp(
                             densityField1[x, inwardIndex, z],

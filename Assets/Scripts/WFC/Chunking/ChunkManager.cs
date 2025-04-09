@@ -1,5 +1,5 @@
 /*
- * ChunkManager.cs
+ * ChunkManager
  * -----------------------------
  * Manages the dynamic loading, unloading, and processing of terrain chunks.
  * 
@@ -194,7 +194,7 @@ namespace WFC.Chunking
 
                 Debug.Log($"Delayed chunk generation - Viewer position: {viewerPosition}");
 
-                // Verify we have a non-zero position
+                // Verify have a non-zero position
                 if (viewerPosition.magnitude < 0.001f)
                 {
                     Debug.LogWarning("Player position is still at or near origin. Waiting longer...");
@@ -1259,7 +1259,7 @@ namespace WFC.Chunking
                         Vector3 chunkWorldPos = GetChunkWorldPosition(pos);
                         float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
 
-                        if (distance <= LoadDistance * 1.2f) // 20% buffer to ensure we get enough chunks
+                        if (distance <= LoadDistance * 1.2f) // 20% buffer to ensure enough chunks
                         {
                             chunksToLoad.Add(pos);
                         }
@@ -2436,7 +2436,7 @@ namespace WFC.Chunking
                             int thisHeight = terrainHeight[0, z];
                             Cell boundaryCell = chunk.GetCell(0, thisHeight, z);
 
-                            // See if there's already a cell from the neighboring chunk we should match
+                            // See if there's already a cell from the neighboring chunk should match
                             Cell neighborCell = GetNeighborBoundaryCell(chunk, neighbor, dir, z);
 
                             if (neighborCell != null && neighborCell.CollapsedState.HasValue)
@@ -2658,7 +2658,7 @@ namespace WFC.Chunking
         /// </summary>
         public void ResetChunkSystem()
         {
-            // Stop processing while we reset
+            // Stop processing while reset
             StopAllCoroutines();
 
             // Clear the task queue

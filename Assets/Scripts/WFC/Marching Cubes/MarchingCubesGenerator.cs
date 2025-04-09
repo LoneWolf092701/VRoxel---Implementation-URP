@@ -331,7 +331,7 @@ namespace WFC.MarchingCubes
                 int cy = (int)cornerPositions[i].y;
                 int cz = (int)cornerPositions[i].z;
 
-                // Ensure we're within bounds
+                // Ensure bounds
                 if (cx < 0 || cy < 0 || cz < 0 ||
                     cx >= densityField.GetLength(0) ||
                     cy >= densityField.GetLength(1) ||

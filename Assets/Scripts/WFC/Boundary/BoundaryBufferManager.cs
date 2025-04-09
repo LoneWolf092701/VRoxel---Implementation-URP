@@ -211,7 +211,6 @@ namespace WFC.Boundary
             }
 
             // PHASE 2: Backward propagation (adjacent chunk back to this chunk)
-            // Only needed if we're doing recursive propagation at boundaries
             if (index < buffer.BufferCells.Count)
             {
                 // Get the adjacent boundary cell
@@ -227,7 +226,7 @@ namespace WFC.Boundary
                     bool bufferChanged = bufferCell.SetPossibleStates(
                         new HashSet<int>(adjacentBoundaryCell.PossibleStates));
 
-                    // If buffer changed, check if we need to update the original cell
+                    // If buffer changed, check if need to update the original cell
                     if (bufferChanged && !cell.CollapsedState.HasValue)
                     {
                         // Get compatible states between cell and updated buffer
@@ -314,7 +313,7 @@ namespace WFC.Boundary
                 }
             }
 
-            // Update boundary cell if we have valid states
+            // Update boundary cell if have valid states
             if (newPossibleStates.Count > 0)
             {
                 // Store original states to check if they changed
@@ -608,7 +607,7 @@ namespace WFC.Boundary
             int oldState = cell.CollapsedState.Value;
 
             // Reset to initial state set (all possible states)
-            // Since we don't have direct access to maxStates, use reflection to get it
+            // Since don't have direct access to maxStates, use reflection to get it
             int maxStates = GetMaxStates();
             cell.SetPossibleStates(CreateSequentialHashSet(maxStates));
 

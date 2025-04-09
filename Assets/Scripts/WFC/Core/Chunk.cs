@@ -79,7 +79,7 @@ namespace WFC.Core
         // Getters and Setters for cells
         public Cell GetCell(int x, int y, int z)
         {
-            // If memory is optimized and we have compressed states, need to restore cells first
+            // If memory is optimized and compressed states, need to restore cells first
             if (IsMemoryOptimized && cells == null)
             {
                 if (compressedStates != null || sparseCompressedStates != null)

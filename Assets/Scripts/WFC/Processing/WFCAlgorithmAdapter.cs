@@ -26,7 +26,6 @@ namespace WFC.Processing
         /// </summary>
         public bool AreStatesCompatible(int stateA, int stateB, Direction direction)
         {
-            // Since we're only using WFCGenerator now, we can simplify this
             return wfcGenerator.AreStatesCompatible(stateA, stateB, direction);
         }
 
@@ -43,7 +42,6 @@ namespace WFC.Processing
         /// </summary>
         public Dictionary<Vector3Int, Chunk> GetChunks()
         {
-            // Since we're only using WFCGenerator now, we can simplify this
             return wfcGenerator.GetChunks();
         }
     }

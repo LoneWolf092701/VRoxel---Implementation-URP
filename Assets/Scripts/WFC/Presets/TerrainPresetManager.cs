@@ -76,7 +76,6 @@ namespace WFC.Presets
             if (wfcGenerator != null)
             {
                 // This would need a method like ResetGeneration on WFCGenerator
-                // or you could destroy and recreate chunks
                 Debug.Log("Regenerating world with WFCGenerator");
 
                 // For now, just log that full regeneration isn't implemented

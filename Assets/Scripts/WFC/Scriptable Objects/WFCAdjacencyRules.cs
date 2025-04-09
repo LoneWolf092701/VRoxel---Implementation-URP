@@ -440,7 +440,6 @@
 //            }
 
 //            // Add basic terrain adjacency rules
-//            // (This is just a demonstration - you would add actual rules here)
 //            int startIndex = rulesProp.arraySize;
 //            rulesProp.arraySize += 12; // Add 12 new rules
 
@@ -495,9 +494,6 @@
 
 //        private void GenerateRulesDocumentation(WFCAdjacencyRules rulesAsset)
 //        {
-//            // This would generate a human-readable documentation of the rules
-//            // For now, we'll just display a simple report
-
 //            rulesAsset.Initialize(); // Make sure the rule cache is initialized
 
 //            // Get state info
