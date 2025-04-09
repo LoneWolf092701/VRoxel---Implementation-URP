@@ -1,8 +1,8 @@
-// Assets/Scripts/Editor/WFCConfigurationEditor.cs
 using UnityEditor;
 using UnityEngine;
 using WFC.Configuration;
 
+// Debug classes for testing
 namespace WFC.Editor
 {
     /// <summary>

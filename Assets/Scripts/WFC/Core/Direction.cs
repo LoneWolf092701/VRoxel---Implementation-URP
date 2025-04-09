@@ -1,6 +1,8 @@
-// Assets/Scripts/WFC/Core/Direction.cs
 namespace WFC.Core
 {
+    /// <summary>
+    /// Enum representing the six possible directions in 3D space.
+    /// </summary>
     public enum Direction
     {
         Up,     // Y+
@@ -13,6 +15,9 @@ namespace WFC.Core
 
     public static class DirectionExtensions
     {
+        /// <summary>
+        /// Gets the opposite direction of the given direction.
+        /// </summary>
         public static Direction GetOpposite(this Direction direction)
         {
             return direction switch
@@ -26,7 +31,9 @@ namespace WFC.Core
                 _ => throw new System.ArgumentOutOfRangeException(nameof(direction))
             };
         }
-
+        /// <summary>
+        /// Gets the Unity Vector3 representation of the given direction.
+        /// </summary>
         public static UnityEngine.Vector3Int ToVector3Int(this Direction direction)
         {
             return direction switch

@@ -40,7 +40,7 @@ namespace WFC.MarchingCubes
 
         private void Start()
         {
-            // Initialize generators once and reuse them
+            // Initialize generators
             densityGenerator = new DensityFieldGenerator();
             marchingCubes = new MarchingCubesGenerator();
 
@@ -81,6 +81,7 @@ namespace WFC.MarchingCubes
             }
         }
 
+        // 
         private void OnChunkStateChanged(Vector3Int chunkPos, ChunkManager.ChunkLifecycleState oldState, ChunkManager.ChunkLifecycleState newState)
         {
             // Generate mesh when a chunk is fully processed
@@ -97,6 +98,7 @@ namespace WFC.MarchingCubes
             }
         }
 
+        // This method generates all meshes for the loaded chunks
         public void GenerateAllMeshes()
         {
             if (performanceMonitor != null)
@@ -138,6 +140,7 @@ namespace WFC.MarchingCubes
             }
         }
 
+        // This method generates the mesh for a specific chunk
         public void GenerateChunkMesh(Vector3Int chunkPos, Chunk chunk)
         {
             if (performanceMonitor != null)
@@ -183,7 +186,7 @@ namespace WFC.MarchingCubes
                 MeshFilter meshFilter = meshObject.GetComponent<MeshFilter>();
                 meshFilter.mesh = mesh;
 
-                // Get a reference to the renderer
+                // Reference to the renderer
                 MeshRenderer meshRenderer = meshObject.GetComponent<MeshRenderer>();
 
                 // Apply the appropriate material based on dominant state
@@ -233,6 +236,7 @@ namespace WFC.MarchingCubes
             }
         }
 
+        // This method determines the dominant state of a chunk based on the cells within it
         private int GetDominantState(Chunk chunk)
         {
             Dictionary<int, int> stateCounts = new Dictionary<int, int>();
@@ -280,6 +284,7 @@ namespace WFC.MarchingCubes
             return dominantState;
         }
 
+        // This method sets up the Unity LOD group for the mesh object
         private void SetupUnityLODGroup(GameObject meshObject, Chunk chunk)
         {
             LODGroup lodGroup = meshObject.GetComponent<LODGroup>();
@@ -328,31 +333,7 @@ namespace WFC.MarchingCubes
             chunkMeshObjects.Clear();
         }
 
-        public void GenerateMeshForChunk(Vector3Int chunkPos)
-        {
-            try
-            {
-                if (chunkManager == null)
-                {
-                    Debug.LogError("MeshGenerator: ChunkManager reference is missing!");
-                    return;
-                }
-
-                var chunks = chunkManager.GetLoadedChunks();
-                if (!chunks.TryGetValue(chunkPos, out Chunk chunk))
-                {
-                    Debug.LogWarning($"MeshGenerator: Chunk not found at {chunkPos}");
-                    return;
-                }
-
-                GenerateChunkMesh(chunkPos, chunk);
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Error generating mesh for chunk {chunkPos}: {e.Message}");
-            }
-        }
-
+        // Gizmos for debugging
         private void OnDrawGizmos()
         {
             if (!showDebugInfo || chunkManager == null)

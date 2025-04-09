@@ -4,6 +4,9 @@ using WFC.Generation;
 using System.Collections.Generic;
 using System.Collections;
 
+/// <summary>
+/// This class initializes constraints for the Wave Function Collapse (WFC) algorithm.
+/// </summary>
 public class ConstraintInitializer : MonoBehaviour
 {
     [SerializeField] public WFCGenerator wfcGenerator;
@@ -39,6 +42,7 @@ public class ConstraintInitializer : MonoBehaviour
         StartCoroutine(DelayedInitialization());
     }
 
+    // Coroutine to delay initialization until WFCGenerator is ready
     private IEnumerator DelayedInitialization()
     {
         // Wait a few frames to ensure other components are initialized
@@ -72,6 +76,7 @@ public class ConstraintInitializer : MonoBehaviour
         }
     }
 
+    // Create global constraints for the WFC algorithm
     private void CreateGlobalConstraints()
     {
         // Get world dimensions using public properties or methods
@@ -190,6 +195,7 @@ public class ConstraintInitializer : MonoBehaviour
         return null;
     }
 
+    // Create region constraints for specific transitions
     private void CreateRegionConstraints()
     {
         // Mountain to Forest transition

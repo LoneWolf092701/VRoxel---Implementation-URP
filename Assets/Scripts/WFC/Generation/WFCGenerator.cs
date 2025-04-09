@@ -1,3 +1,39 @@
+/*
+# ===================================================================
+# Wave Function Collapse Algorithm Implementation with Hierarchical Constraints
+# ===================================================================
+# Original WFC Algorithm:
+#   - Maxim Gumin (https://github.com/mxgmn/WaveFunctionCollapse)
+#
+# This implementation incorporates elements from:
+#   - Oskar Stålberg's techniques for boundary handling in Townscaper (adopted)
+#   - Martin O'Leary's approaches for constraint-based terrain generation (adopted)
+#   - Claude Shannon's entropy calculation from information theory
+#
+# This code implements a 2D version of WFC with hierarchical constraints,
+# chunking, and boundary management systems for coherent region transitions.
+# ===================================================================
+*/
+/*
+ * WFCGenerator.cs
+ * -----------------------------
+ * Core implementation of the Wave Function Collapse algorithm for 3D terrain generation.
+ * 
+ * Algorithm Overview:
+ * 1. Initialize all cells with all possible states
+ * 2. Repeatedly:
+ *    a. Find the cell with lowest entropy (fewest possible states)
+ *    b. Collapse it to a single state based on weighted probabilities
+ *    c. Propagate constraints to neighboring cells
+ *    d. Continue until all cells are collapsed or no further progress is possible
+ * 
+ * This implementation extends the original WFC with:
+ * - Hierarchical constraints for terrain features
+ * - Chunk-based generation for infinite worlds
+ * - Boundary management for seamless transitions
+ * - Parallel processing for performance optimization
+ *
+ */
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -186,7 +222,25 @@ namespace WFC.Generation
             }
         }
 
-        // Collapse the next cell in the queue
+        /*
+         * PropagateToNeighbors
+         * ----------------------------------------------------------------------------
+         * Propagates constraints from a newly collapsed cell to its neighbors.
+         * 
+         * For each adjacent cell in all six directions:
+         * 1. Determines if the neighbor is within the same chunk or in an adjacent chunk
+         * 2. Applies constraints to in-chunk neighbors directly
+         * 3. For neighbors in adjacent chunks, relies on the boundary system
+         *    to handle the cross-chunk propagation
+         * 
+         * This is a key mechanism in the WFC algorithm that ensures collapsed states
+         * create a ripple effect of constraints, gradually reducing entropy across
+         * the grid in a coherent manner.
+         * 
+         * Parameters:
+         * - cell: The newly collapsed cell that is the source of constraints
+         * - chunk: The chunk containing the cell
+         */
         private void PropagateToNeighbors(Cell cell, Chunk chunk)
         {
             // Find cell position in chunk
@@ -245,7 +299,21 @@ namespace WFC.Generation
                    pos.z >= 0 && pos.z < chunkSize;
         }
 
-        // Apply constraints to a cell based on its collapsed state
+        /*
+         * ApplyConstraint
+         * -----------------------------
+         * Applies constraints from a collapsed cell to a neighboring cell.
+         * 
+         * This is a key part of the constraint propagation system in WFC:
+         * 1. Start with the full set of possible states for the target cell
+         * 2. Filter out states that are incompatible with the source cell's state
+         * 3. Update the target cell's possible states
+         * 4. If the cell's possible states change, queue a new propagation event
+         * 
+         * The compatibility between states is determined by the adjacency rules
+         * defined in the SetupAdjacencyRules method. These rules define which
+         * states can be placed adjacent to each other in each direction.
+         */
         private void ApplyConstraint(Cell cell, int constraintState, Direction direction, Chunk chunk)
         {
             // Skip if already collapsed
@@ -284,10 +352,22 @@ namespace WFC.Generation
             }
         }
 
-        /// <summary>
-        /// Initializes the world grid and adjacent rules.
-        /// Creates the initial structure and rules for the WFC algorithm.
-        /// </summary>
+        /*
+         * InitializeWorld
+         * ----------------------------------------------------------------------------
+         * Initializes the entire world grid and core WFC systems. This function:
+         * 
+         * 1. Sets up the adjacency rules matrix determining which states can be neighbors
+         * 2. Creates all chunks based on configured world dimensions
+         * 3. Initializes cells in each chunk with all possible states
+         * 4. Connects neighboring chunks to establish the world topology
+         * 5. Creates boundary buffers for seamless chunk transitions
+         * 6. Initializes the boundary management system
+         * 7. Sets up the hierarchical constraint system for terrain features
+         * 
+         * This is the foundation of the entire WFC system, establishing the world structure
+         * before any cell collapse or terrain generation begins.
+         */
         private void InitializeWorld()
         {
             // Initialize adjacency rules
@@ -406,6 +486,29 @@ namespace WFC.Generation
             }
         }
 
+        /*
+         * ApplyRegionalConstraints
+         * ----------------------------------------------------------------------------
+         * Applies biome-specific constraints to a chunk based on procedural noise.
+         * 
+         * Process:
+         * 1. Samples different noise functions for elevation, moisture, temperature
+         * 2. Determines which biome type to generate based on noise values
+         * 3. Dispatches to appropriate biome generation functions:
+         *    - Mountains for high elevation
+         *    - Water bodies for high moisture + low elevation
+         *    - Forests for high moisture + moderate temperature
+         *    - Deserts for low moisture + high temperature
+         *    - Plains for other areas
+         * 
+         * Each biome generation method creates appropriate terrain features
+         * and adds constraints to the hierarchical constraint system to
+         * guide the WFC algorithm toward that biome type.
+         * 
+         * Parameters:
+         * - chunk: The chunk to apply constraints to
+         * - random: Seeded random number generator for deterministic generation
+         */
         private void ApplyRegionalConstraints(Chunk chunk, System.Random random)
         {
             // Global coordinates for consistent noise
@@ -658,92 +761,25 @@ namespace WFC.Generation
 
             hierarchicalConstraints.AddGlobalConstraint(waterConstraint);
         }
-        private void CreateBiomeTransitions()
-        {
-            foreach (var chunk in chunks.Values)
-            {
-                foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
-                {
-                    // Skip if no neighbor in this direction
-                    if (!chunk.Neighbors.ContainsKey(dir))
-                        continue;
 
-                    Chunk neighbor = chunk.Neighbors[dir];
-
-                    // Determine chunk biome types and create appropriate transitions
-                    string chunkBiomeName = GetDominantBiome(chunk);
-                    string neighborBiomeName = GetDominantBiome(neighbor);
-
-                    // Only create transitions between different biomes
-                    if (chunkBiomeName != neighborBiomeName)
-                    {
-                        // Define source and target states based on biome types
-                        int sourceState = GetPrimaryStateForBiome(chunkBiomeName);
-                        int targetState = GetPrimaryStateForBiome(neighborBiomeName);
-
-                        // Create a transition constraint
-                        CreateBiomeTransition(chunk.Position, dir, sourceState, targetState);
-                    }
-                }
-            }
-        }
-
-        private void CreateBiomeTransition(Vector3Int chunkPos, Direction direction, int sourceState, int targetState)
-        {
-            // Create a transition constraint between biomes
-            RegionConstraint transitionConstraint = new RegionConstraint
-            {
-                Name = $"Transition_{chunkPos}_{direction}",
-                Type = RegionType.Transition,
-                ChunkPosition = chunkPos,
-                ChunkSize = Vector3Int.one,
-                Strength = 0.7f,
-                Gradient = 0.7f, // Higher gradient for smoother transitions
-                SourceState = sourceState,
-                TargetState = targetState,
-                TransitionDirection = direction.ToVector3Int()
-            };
-
-            // Add the transition to the constraint system
-            hierarchicalConstraints.AddRegionConstraint(transitionConstraint);
-        }
-
-        // Helper methods for biome transitions
-        private string GetDominantBiome(Chunk chunk)
-        {
-            // Check for constraint names to identify biome type
-            foreach (var constraint in hierarchicalConstraints.GetGlobalConstraints())
-            {
-                if (constraint.Name.Contains($"_{chunk.Position}"))
-                {
-                    if (constraint.Name.StartsWith("Mountain_"))
-                        return "Mountain";
-                    else if (constraint.Name.StartsWith("Water_"))
-                        return "Water";
-                    else if (constraint.Name.StartsWith("Forest_"))
-                        return "Forest";
-                    else if (constraint.Name.StartsWith("Desert_"))
-                        return "Desert";
-                    else if (constraint.Name.StartsWith("Plains_"))
-                        return "Plains";
-                }
-            }
-            return "Unknown";
-        }
-
-        private int GetPrimaryStateForBiome(string biomeName)
-        {
-            switch (biomeName)
-            {
-                case "Mountain": return 4; // Rock
-                case "Water": return 3;    // Water
-                case "Forest": return 6;   // Tree
-                case "Desert": return 5;   // Sand
-                case "Plains": return 2;   // Grass
-                default: return 1;         // Ground as default
-            }
-        }
-
+        /*
+         * SetupAdjacencyRules
+         * ----------------------------------------------------------------------------
+         * Defines the adjacency rules that determine which states can be neighbors.
+         * 
+         * The rules are stored in a 3D array [stateA, stateB, direction] where:
+         * - stateA, stateB: The two states being checked for compatibility
+         * - direction: One of six directions (Up, Down, Left, Right, Forward, Back)
+         * 
+         * The rules define the physical constraints of the terrain, such as:
+         * - Air can only be above solid states, not adjacent horizontally
+         * - Ground/rock/sand/grass can all connect to each other
+         * - Water must have solid states beneath and can border other solid states
+         * - Trees can only grow on grass/ground
+         * 
+         * These rules ensure that the generated terrain is physically plausible
+         * and has natural transitions between different elements.
+         */
         private void SetupAdjacencyRules()
         {
             // Initialize all to false
@@ -752,7 +788,7 @@ namespace WFC.Generation
                     for (int d = 0; d < 6; d++)
                         adjacencyRules[i, j, d] = false;
 
-            // CRITICAL: Group solid states (1, 2, 4, 5) - they should all connect
+            // Group solid states (1, 2, 4, 5)
             int[] solidStates = { 1, 2, 4, 5 }; // Ground, grass, rock, sand
 
             // All solid states can connect to each other
@@ -798,6 +834,7 @@ namespace WFC.Generation
             SetAdjacentAll(5, 5, true); // Sand to sand
         }
 
+        // Set adjacency rules for two states in all directions
         private void SetAdjacentAll(int stateA, int stateB, bool canBeAdjacent)
         {
             for (int d = 0; d < 6; d++)
@@ -807,6 +844,7 @@ namespace WFC.Generation
             }
         }
 
+        // Connect chunk neighbors based on adjacency rules
         private void ConnectChunkNeighbors()
         {
             foreach (var chunkEntry in chunks)
@@ -835,7 +873,28 @@ namespace WFC.Generation
             }
         }
 
-        // To strengthen height-based constraints
+        /*
+         * ApplyConstraintsToCell
+         * ----------------------------------------------------------------------------
+         * Applies hierarchical constraints to influence a cell's possible states.
+         * 
+         * This function does several important things:
+         * 1. Checks if cell is already collapsed (exits if so)
+         * 2. Gets the world position of the cell
+         * 3. Gets constraint biases from the hierarchical constraint system
+         * 4. Uses a strong height-based constraint system to eliminate holes:
+         *    - Forces air above certain height
+         *    - Forces solid terrain below certain height
+         * 5. For mid-heights, applies weighted biases to state probabilities
+         * 6. May directly collapse cells if constraint bias is very strong
+         * 
+         * The height-based constraints ensure proper terrain layering vertically,
+         * while preserving horizontal variation guided by the biome constraints.
+         * 
+         * Parameters:
+         * - cell: The cell to apply constraints to
+         * - chunk: The chunk containing the cell
+         */
         private void ApplyConstraintsToCell(Cell cell, Chunk chunk)
         {
             // Skip if constraints are disabled
@@ -973,7 +1032,7 @@ namespace WFC.Generation
                 }
             }
 
-            // Now sync buffer cells with their corresponding boundaries
+            // Sync buffer cells with their corresponding boundaries
             foreach (var chunk in chunks.Values)
             {
                 foreach (var buffer in chunk.BoundaryBuffers.Values)
@@ -983,6 +1042,7 @@ namespace WFC.Generation
             }
         }
 
+        // Get boundary cells based on direction
         private List<Cell> GetBoundaryCells(Chunk chunk, Direction direction)
         {
             List<Cell> cells = new List<Cell>();
@@ -1054,6 +1114,7 @@ namespace WFC.Generation
             return cells;
         }
 
+        // Synchronize buffer cells with their corresponding boundary cells
         private void SynchronizeBuffer(BoundaryBuffer buffer)
         {
             if (buffer.AdjacentChunk == null)
@@ -1074,11 +1135,32 @@ namespace WFC.Generation
             }
         }
 
+        // Check if two states are compatible based on adjacency rules
         public bool AreStatesCompatible(int stateA, int stateB, Direction direction)
         {
             return adjacencyRules[stateA, stateB, (int)direction];
         }
 
+        /*
+         * CollapseNextCell
+         * -----------------------------
+         * Core function of the WFC algorithm that selects and collapses one cell.
+         * 
+         * Algorithm Steps:
+         * 1. Find cell with minimum entropy (fewest possible states)
+         * 2. If multiple cells tie for minimum entropy, select the one closest to viewer
+         * 3. Apply constraint biases to influence state selection probabilities
+         * 4. Randomly select a state based on weighted probabilities
+         * 5. Collapse the cell to the selected state
+         * 6. Create a propagation event to update neighboring cells
+         * 
+         * The weighted probability calculation uses a bias-to-weight conversion:
+         * weight = 2^(bias * 2)
+         * This gives an exponential effect where:
+         * - Bias of 0 = weight of 1 (neutral)
+         * - Bias of 0.5 = weight of 2 (twice as likely)
+         * - Bias of -0.5 = weight of 0.5 (half as likely)
+         */
         private bool CollapseNextCell()
         {
             // Find the cell with lowest entropy
@@ -1277,6 +1359,7 @@ namespace WFC.Generation
             return effectiveEntropy;
         }
 
+        // Get the current hierarchical constraint system
         public HierarchicalConstraintSystem GetHierarchicalConstraintSystem()
         {
             return hierarchicalConstraints;
@@ -1376,6 +1459,7 @@ namespace WFC.Generation
             return true;
         }
 
+        // Check if position is within chunk bounds
         public void ResetGeneration()
         {
             // Clear the propagation queue
@@ -1423,6 +1507,7 @@ namespace WFC.Generation
             Debug.Log("WFC generation reset");
         }
 
+        // Check if position is within chunk bounds
         public Material[] GetStateMaterials()
         {
             return stateMaterials;

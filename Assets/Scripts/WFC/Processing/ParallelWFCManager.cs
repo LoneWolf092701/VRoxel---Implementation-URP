@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Processing/ParallelWFCManager.cs
 
 using System.Collections;
 using System.Collections.Generic;

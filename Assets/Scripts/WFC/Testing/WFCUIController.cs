@@ -121,12 +121,6 @@ public class WFCUIController : MonoBehaviour
             return;
         }
 
-        // This is where you need to add a method to your WFCGenerator to run a single step
-        // For example, something like:
-        // wfcGenerator.RunSingleStep();
-
-        // For now, we'll assume this method exists:
-        // Process propagation events and collapse a cell if queue is empty
         if (wfcGenerator.GetType().GetMethod("RunSingleStep") != null)
         {
             wfcGenerator.GetType().GetMethod("RunSingleStep").Invoke(wfcGenerator, null);

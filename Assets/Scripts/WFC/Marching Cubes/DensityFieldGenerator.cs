@@ -65,9 +65,32 @@ namespace WFC.MarchingCubes
             return newField;
         }
 
-        /// <summary>
-        /// Generate a density field for a chunk
-        /// </summary>
+        /*
+         * GenerateDensityField
+         * ----------------------------------------------------------------------------
+         * Creates a 3D density field from WFC cell states for mesh generation.
+         * 
+         * Field generation process:
+         * 1. Initializes a 3D grid of density values with dimensions (size+1)³
+         * 2. Performs diagnostic analysis of existing density values
+         * 3. For each grid point in the density field:
+         *    a. Samples surrounding cells to determine local density
+         *    b. Uses stateDensityValues mapping to convert cell states to densities
+         *    c. Handles uncollapsed cells by averaging possible state densities
+         * 4. Applies terrain-specific preprocessing for natural features
+         * 5. Smooths boundaries between adjacent chunks for seamless meshes
+         * 6. Handles corner points where multiple chunks meet
+         * 
+         * The result is a continuous scalar field where values above surfaceLevel
+         * represent "solid" terrain and values below represent "empty" space.
+         * This field is used by the Marching Cubes algorithm to generate the mesh.
+         * 
+         * Parameters:
+         * - chunk: Chunk containing the WFC cells to convert
+         * - recursionDepth: Current recursion depth for boundary handling
+         * 
+         * Returns: 3D array of density values
+         */
         public float[,,] GenerateDensityField(Chunk chunk, int recursionDepth = 0)
         {
             chunkSize = chunk.Size;
@@ -379,10 +402,31 @@ namespace WFC.MarchingCubes
             }
         }
 
-        /// <summary>
-        /// Calculate the density value for a grid point based on surrounding cells
-        /// </summary>
-        // In DensityFieldGenerator.cs - Update CalculateDensity method
+        /*
+         * CalculateDensity
+         * ----------------------------------------------------------------------------
+         * Calculates the density value for a grid point based on surrounding cells.
+         * 
+         * Density calculation approach:
+         * 1. Grid points are at corners of cells, so each point is affected by
+         *    up to 8 surrounding cells (fewer at edges)
+         * 2. For each adjacent cell:
+         *    a. Gets the cell's state (if collapsed) or possible states
+         *    b. Converts state to density using stateDensityValues mapping
+         *    c. For uncollapsed cells, averages densities of all possible states
+         *    d. Adds variation based on noise for natural-looking terrain
+         * 3. Averages all sampled densities for the final value
+         * 
+         * This sampling approach creates a smooth gradient between different
+         * terrain features and ensures the generated mesh represents the
+         * underlying voxel data accurately.
+         * 
+         * Parameters:
+         * - chunk: Chunk containing the cells
+         * - x, y, z: Coordinates of the grid point
+         * 
+         * Returns: Calculated density value (typically 0.0-1.0)
+         */
         private float CalculateDensity(Chunk chunk, int x, int y, int z)
         {
             // For grid points, sample from ALL 8 surrounding cells
@@ -433,9 +477,30 @@ namespace WFC.MarchingCubes
             return sampleCount > 0 ? density / sampleCount : defaultValue;
         }
 
-        /// <summary>
-        /// Smooth boundaries between chunks to ensure seamless meshes
-        /// </summary>
+        /*
+         * SmoothBoundaries
+         * ----------------------------------------------------------------------------
+         * Smooths density values at chunk boundaries for seamless terrain.
+         * 
+         * Critical for eliminating visible seams in terrain, this function:
+         * 1. Identifies neighboring chunks in all six directions
+         * 2. Gets or generates density fields for neighboring chunks
+         * 3. For each shared boundary face:
+         *    a. Identifies the exact boundary planes to smooth
+         *    b. Sets identical density values at the boundary interface
+         *    c. Creates a smooth gradient extending inward from the boundary
+         * 4. Ensures special handling for edges where three chunks meet
+         * 5. Ensures special handling for corners where eight chunks meet
+         * 
+         * The seamless boundary handling is achieved by making density values
+         * identical at the interface and gradually blending them with distance
+         * from the boundary, ensuring continuous isosurfaces across chunks.
+         * 
+         * Parameters:
+         * - densityField: The density field to smooth
+         * - chunk: The chunk containing this density field
+         * - recursionDepth: Current recursion depth to prevent infinite loops
+         */
         private void SmoothBoundaries(float[,,] densityField, Chunk chunk, int recursionDepth = 0)
         {
             // Get chunk size

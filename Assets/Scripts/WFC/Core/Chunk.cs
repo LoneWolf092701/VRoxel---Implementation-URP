@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Core/Chunk.cs
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -41,6 +40,11 @@ namespace WFC.Core
         private int[,,] compressedStates;
         private List<Tuple<Vector3Int, int>> sparseCompressedStates;
 
+        /// <summary>
+        /// Creates a new chunk at the specified position with the given size.
+        /// <summary>
+        /// <param name="position"> Chunk Position in the world grid </param>
+        /// <param name="size"> Chunk Size in the world grid </param>
         public Chunk(Vector3Int position, int size)
         {
             Position = position;
@@ -72,6 +76,7 @@ namespace WFC.Core
             ConstraintInfluence = 1.0f;
         }
 
+        // Getters and Setters for cells
         public Cell GetCell(int x, int y, int z)
         {
             // If memory is optimized and we have compressed states, need to restore cells first
@@ -114,11 +119,13 @@ namespace WFC.Core
             IsDirty = true;
         }
 
+        // Check if a cell is on the boundary of the chunk
         public bool IsOnBoundary(int x, int y, int z)
         {
             return x == 0 || x == Size - 1 || y == 0 || y == Size - 1 || z == 0 || z == Size - 1;
         }
 
+        // Get the direction of the boundary for a given cell
         public Direction? GetBoundaryDirection(int x, int y, int z)
         {
             if (x == 0) return Direction.Left;
@@ -130,7 +137,7 @@ namespace WFC.Core
 
             return null;
         }
-
+        // Get the neighboring chunk in a specific direction
         public void InitializeCells(IEnumerable<int> possibleStates)
         {
             // If memory is optimized, restore first or recreate cells array
@@ -229,6 +236,7 @@ namespace WFC.Core
             cells = null;
         }
 
+        // Compresses the chunk to a sparse representation for partially collapsed chunks
         private void CompressPartiallyCollapsed()
         {
             // Make sure cells array exists
@@ -260,6 +268,7 @@ namespace WFC.Core
             cells = null;
         }
 
+        // Restores the chunk from a compressed state array
         private void RestoreFromStateArray()
         {
             // Create cells from compressed state array
@@ -318,7 +327,7 @@ namespace WFC.Core
             // Clear compressed data to free memory
             compressedStates = null;
         }
-
+        // Restores the chunk from a sparse representation
         private void RestoreFromSparseRepresentation()
         {
             if (sparseCompressedStates == null) return;

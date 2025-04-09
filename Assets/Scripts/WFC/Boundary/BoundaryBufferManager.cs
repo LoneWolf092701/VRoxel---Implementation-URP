@@ -1,4 +1,25 @@
-// Assets/Scripts/WFC/Boundary/BoundaryBufferManager.cs
+/*
+ * BoundaryBufferManager.cs
+ * -----------------------------
+ * Manages the boundaries between chunks to ensure seamless terrain generation.
+ * 
+ * A key challenge in chunk-based procedural generation is maintaining consistency
+ * across chunk boundaries. This manager implements a buffer system that:
+ * 
+ * 1. Creates "buffer zones" at chunk boundaries that mirror adjacent chunks
+ * 2. Propagates constraints bidirectionally between chunks when cells collapse
+ * 3. Resolves conflicts to maintain coherence across boundaries
+ * 4. Prevents infinite recursion in constraint propagation
+ * 
+ * The buffer system uses a virtual cell approach where each boundary has:
+ * - Boundary cells (real cells at the edge of a chunk)
+ * - Buffer cells (virtual cells that represent the adjacent chunk's boundary)
+ * 
+ * This creates an overlap between chunks that allows the WFC algorithm to
+ * operate seamlessly across chunk boundaries without needing to process
+ * the entire world at once.
+ */
+
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
@@ -35,7 +56,7 @@ namespace WFC.Boundary
     /// </summary>
     public interface IWFCAlgorithm : IBoundaryCompatibilityChecker, IPropagationHandler, IChunkProvider
     {
-        // Empty - just combines the other interfaces
+        // Empty - combines the other interfaces
     }
 
     /// <summary>
@@ -73,10 +94,24 @@ namespace WFC.Boundary
             this.chunkProvider = algorithm;
         }
 
-        /// <summary>
-        /// Updates buffer states when a cell collapses at the boundary and
-        /// ensures bi-directional propagation of constraints
-        /// </summary>
+        /*
+         * UpdateBuffersAfterCollapse
+         * -----------------------------
+         * Updates boundary buffers when a cell collapses at a chunk boundary.
+         * 
+         * This is a critical method for maintaining coherence between chunks that:
+         * 1. Propagates collapsed state information from one chunk to adjacent chunks
+         * 2. Updates buffer cells to reflect changed boundary cells
+         * 3. Applies constraints across chunk boundaries
+         * 4. Creates propagation events to continue the WFC algorithm in adjacent chunks
+         * 
+         * The method implements bidirectional propagation to ensure that constraints
+         * flow correctly in both directions across chunk boundaries. It also includes
+         * a propagation limit to prevent infinite loops in the constraint system.
+         * 
+         * This boundary system is what enables the generation of a seamless, infinite
+         * world without requiring the entire world to be processed simultaneously.
+         */
         public void UpdateBuffersAfterCollapse(Cell cell, Chunk chunk)
         {
             // If cell is not a boundary cell, nothing to do
@@ -233,9 +268,31 @@ namespace WFC.Boundary
             }
         }
 
-        /// <summary>
-        /// Applies constraints from buffer cells to boundary cells
-        /// </summary>
+        /*
+         * ApplyBufferConstraints
+         * ----------------------------------------------------------------------------
+         * Applies constraints from buffer cells to boundary cells.
+         * 
+         * This is the core of cross-chunk constraint propagation:
+         * 1. For each state in the boundary cell:
+         *    a. Checks compatibility with each state in the buffer cell
+         *    b. Adds compatible states to a new possible states set
+         * 2. Updates the boundary cell with the filtered possible states
+         * 3. Handles constraint conflicts with appropriate error handling
+         * 4. Limits recursion depth to prevent infinite propagation loops
+         * 
+         * The function ensures that cells at chunk boundaries have states
+         * that are compatible with their neighbors in adjacent chunks,
+         * maintaining consistency across the entire world.
+         * 
+         * Parameters:
+         * - boundaryCell: Cell at the edge of a chunk
+         * - bufferCell: Virtual cell representing adjacent chunk's boundary
+         * - direction: Direction from boundary to buffer
+         * - depth: Current recursion depth (preventing infinite loops)
+         * 
+         * Returns: true if boundary cell changed, false otherwise
+         */
         private bool ApplyBufferConstraints(Cell boundaryCell, Cell bufferCell, Direction direction, int depth = 0)
         {
             // To prevent infinite recursion
@@ -352,9 +409,26 @@ namespace WFC.Boundary
             }
         }
 
-        /// <summary>
-        /// Validates that boundaries between chunks are coherent
-        /// </summary>
+        /*
+         * ValidateBoundary
+         * ----------------------------------------------------------------------------
+         * Validates that a chunk boundary is consistent with adjacent chunks.
+         * 
+         * This validation ensures world coherence by:
+         * 1. Checking each cell pair across chunk boundaries
+         * 2. For collapsed cells, verifying state compatibility using adjacency rules
+         * 3. For uncollapsed cells, verifying they have at least one compatible possibility
+         * 4. Identifying and reporting any boundary conflicts
+         * 
+         * This is both a diagnostic function and a safety check to ensure
+         * that the chunk boundary system is working correctly and that
+         * seams won't appear in the final terrain.
+         * 
+         * Parameters:
+         * - buffer: The boundary buffer to validate
+         * 
+         * Returns: true if boundary is consistent, false if conflicts found
+         */
         public bool ValidateBoundary(BoundaryBuffer buffer)
         {
             if (buffer.AdjacentChunk == null)

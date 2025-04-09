@@ -1,5 +1,24 @@
-// Assets/Scripts/WFC/Chunking/ChunkManagerUpdated.cs
-// Assets/Scripts/WFC/Chunking/ChunkManager.cs
+/*
+ * ChunkManager.cs
+ * -----------------------------
+ * Manages the dynamic loading, unloading, and processing of terrain chunks.
+ * 
+ * This system enables an "infinite" procedural world by:
+ * 1. Tracking the viewer's position and movement
+ * 2. Predictively loading chunks in the viewer's path
+ * 3. Unloading distant chunks to conserve memory
+ * 4. Prioritizing chunks based on distance, view alignment, and other factors
+ * 5. Managing the full lifecycle of chunks from creation through collapse to mesh generation
+ * 
+ * The chunk management approach is adaptive, adjusting its behavior based on:
+ * - System performance (FPS)
+ * - Viewer movement patterns
+ * - Distance from viewer
+ * - Level of detail requirements
+ * 
+ * This allows the system to scale across different hardware capabilities
+ * while maintaining a smooth experience.
+ */
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
@@ -92,11 +111,11 @@ namespace WFC.Chunking
 
         #region Properties
 
-        // Properties that now use configuration
+        // Properties use configuration
         private int ChunkSize => activeConfig.World.chunkSize;
-        private float LoadDistance => currentLoadDistance; // Now using adaptive distance
+        private float LoadDistance => currentLoadDistance; // Using adaptive distance
         private float UnloadDistance => activeConfig.Performance.unloadDistance;
-        private int MaxConcurrentChunks => maxConcurrentChunks; // Now adaptive
+        private int MaxConcurrentChunks => maxConcurrentChunks; // Adaptive
 
         private Vector3 lastChunkGenerationPosition;
         private float chunkGenerationDistance = 10f; // Distance player must move before generating new chunks
@@ -206,11 +225,12 @@ namespace WFC.Chunking
                 UnloadChunk(chunkPos);
             }
 
-            // Now generate chunks around the player
+            // Generate chunks around the player
             Debug.Log($"Generating chunks around player at position: {viewerPosition}");
             CreateChunksAroundPlayer();
         }
 
+        // Reference initialization
         private void InitializeReferences()
         {
             if (viewer == null)
@@ -300,6 +320,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Chunk management
         private void ProcessDirtyChunks()
         {
             // Find chunks that need mesh generation
@@ -522,9 +543,31 @@ namespace WFC.Chunking
 
         #region Advanced Movement Prediction
 
-        /// <summary>
-        /// Advanced prediction system that analyzes movement patterns to predict future position
-        /// </summary>
+        /*
+         * PredictFuturePosition
+         * -----------------------------
+         * Advanced movement prediction system to anticipate where the viewer will be.
+         * 
+         * This predictive loading approach uses motion analysis to:
+         * 1. Analyze recent movement history for patterns
+         * 2. Calculate instantaneous velocity and acceleration
+         * 3. Evaluate longer-term direction consistency
+         * 4. Apply a physics-based prediction model including jerk (rate of change of acceleration)
+         * 
+         * The prediction formula is an extended version of the standard kinematic equation:
+         * P = P0 + V*t + 1/2A*t2 + 1/6J*t3
+         * 
+         * Where:
+         * - P = predicted position
+         * - P0 = current position
+         * - V = velocity
+         * - A = acceleration
+         * - J = jerk
+         * - t = time (adjusted based on movement consistency)
+         * 
+         * This predictive approach significantly improves terrain loading responsiveness
+         * by anticipating viewer movement and preparing terrain before it's needed.
+         */
         private Vector3 PredictFuturePosition(float predictionTimeSeconds)
         {
             // If not enough history, use simple prediction
@@ -554,6 +597,7 @@ namespace WFC.Chunking
                    (1f / 6f) * jerk * Mathf.Pow(adjustedPredictionTime, 3);
         }
 
+        // Calculate direction consistency based on movement history
         private float CalculateDirectionConsistency(Queue<MovementSample> history)
         {
             // Higher values (closer to 1.0) indicate more consistent direction
@@ -578,6 +622,7 @@ namespace WFC.Chunking
             return Mathf.Clamp01(avgDirection.magnitude); // 1.0 = perfectly consistent
         }
 
+        // Calculate average acceleration from movement history
         private Vector3 CalculateAverageAcceleration(Queue<MovementSample> history)
         {
             if (history.Count < 3) return viewerAcceleration;
@@ -606,6 +651,7 @@ namespace WFC.Chunking
             return viewerAcceleration; // Fallback
         }
 
+        // Calculate jerk (rate of change of acceleration) from movement history
         private Vector3 CalculateJerk(Queue<MovementSample> history)
         {
             if (history.Count < 4) return Vector3.zero;
@@ -662,9 +708,35 @@ namespace WFC.Chunking
 
         #region Interest-Based Prioritization
 
-        /// <summary>
-        /// Calculate how interesting a chunk is based on multiple factors
-        /// </summary>
+        /*
+        * CalculateChunkInterest
+        * ----------------------------------------------------------------------------
+        * Calculates how interesting a chunk is for prioritized loading.
+        * 
+        * Multi-factorial interest calculation:
+        * 1. Distance-based interest: closer chunks are more interesting
+        *    interestDistance = 1 / (1 + distance * 0.01)
+        * 
+        * 2. View-based interest: chunks in field of view are prioritized
+        *    viewAlignment = dot(dirToChunk, viewDirection)
+        *    interestView = (viewAlignment + 1) * 0.5  // normalized to 0-1
+        * 
+        * 3. Content-based interest: partially collapsed chunks get priority
+        *    - Calculates percentage of collapsed cells
+        *    - Maximum interest for chunks 30-70% complete (reduces thrashing)
+        * 
+        * 4. Feature-based interest: chunks with special terrain features
+        *    - Checks global constraints affecting the chunk
+        *    - Higher priority for chunks with mountains, rivers, etc.
+        * 
+        * The combined weighted score determines chunk processing order,
+        * creating a more natural and visually focused loading pattern.
+        * 
+        * Parameters:
+        * - chunkPos: Position of the chunk to evaluate
+        * 
+        * Returns: Interest score between 0-1
+        */
         private float CalculateChunkInterest(Vector3Int chunkPos)
         {
             float interestScore = 0f;
@@ -727,6 +799,7 @@ namespace WFC.Chunking
             return Vector3.Dot(dirToChunk, viewDirection);
         }
 
+        // Calculate the world position of a chunk based on its grid position
         private float CalculateCollapsedPercentage(Chunk chunk)
         {
             if (chunk == null) return 0f;
@@ -765,6 +838,7 @@ namespace WFC.Chunking
 
         #region Adaptive Chunk Generation Strategy
 
+        // Adaptive strategy update coroutine
         private IEnumerator AdaptiveStrategyUpdateCoroutine()
         {
             // Update strategy less frequently than every frame
@@ -775,6 +849,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Adaptive chunk generation strategy
         private void AdaptChunkGenerationStrategy()
         {
             // Update strategy based on performance metrics and viewer behavior
@@ -785,7 +860,7 @@ namespace WFC.Chunking
 
             // 2. Adjust generation radius based on performance
             float fps = 1f / Time.smoothDeltaTime;
-            float targetFps = 90f;
+            float targetFps = 90f;   // Target FPS
 
             if (fps > targetFps * 1.2f) // Performance is good, can increase load distance
             {
@@ -860,6 +935,7 @@ namespace WFC.Chunking
 
         #region LOD Management
 
+        // Assign LOD levels based on distance from viewer
         private void AssignLODLevels()
         {
             if (performanceMonitor != null)
@@ -1006,6 +1082,26 @@ namespace WFC.Chunking
 
         #region Chunk Management
 
+        /*
+         * ManageChunks
+         * ----------------------------------------------------------------------------
+         * Core function that handles loading and unloading chunks dynamically.
+         * 
+         * The active chunk management process:
+         * 1. Identifies chunks to load based on distance from viewer
+         *    and predicted movement direction
+         * 2. Prioritizes chunks based on interest value and distance
+         * 3. Limits the number of concurrent chunks based on performance
+         * 4. Creates chunk loading tasks with appropriate priorities
+         * 5. Identifies distant chunks for unloading
+         * 6. Creates unload tasks for chunks that are too far away
+         * 
+         * This dynamic loading system is what enables an infinite world
+         * experience while keeping memory and processing requirements manageable.
+         * 
+         * The function manages the chunk lifecycle through state transitions
+         * and queued tasks to ensure orderly creation and removal.
+         */
         private void ManageChunks()
         {
             // Get chunks to load
@@ -1104,7 +1200,7 @@ namespace WFC.Chunking
                             viewerChunk.z + z
                         );
 
-                        // Skip if already loaded or pending
+                        // Already loaded or pending?
                         ChunkLifecycleState currentState = GetChunkState(chunkPos);
                         if (currentState != ChunkLifecycleState.None &&
                             currentState != ChunkLifecycleState.Error)
@@ -1129,6 +1225,7 @@ namespace WFC.Chunking
             Debug.Log("Forced creation of initial chunks around player");
         }
 
+        // Get chunks to load based on viewer position and distance
         private List<Vector3Int> GetChunksToLoad()
         {
             // Calculate chunk coordinates of viewer
@@ -1266,6 +1363,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Calculate load priority for a chunk based on multiple factors
         private float CalculateLoadPriority(Vector3Int chunkPos)
         {
             // Convert to world position
@@ -1303,6 +1401,7 @@ namespace WFC.Chunking
 
         #region Task Processing
 
+        // Queue to hold chunk tasks
         private void ProcessChunkTasks()
         {
             // Process a limited number of tasks per frame
@@ -1383,6 +1482,7 @@ namespace WFC.Chunking
 
         #region Chunk Operations
 
+        // Method to create a chunk
         public void CreateChunk(Vector3Int position)
         {
             // Update chunk state to loading
@@ -1476,6 +1576,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to unload a chunk from the world
         private void UnloadChunk(Vector3Int position)
         {
             // Update chunk state
@@ -1528,6 +1629,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to remove the mesh object associated with a chunk
         private void RemoveChunkMeshObject(Vector3Int position)
         {
             // Find mesh objects with matching position
@@ -1545,6 +1647,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to collapse a chunk
         private void CollapseChunk(Chunk chunk, int maxIterations)
         {
             if (performanceMonitor != null)
@@ -1622,6 +1725,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to collapse the next cell in the chunk
         private bool CollapseNextCell(Chunk chunk)
         {
             // Find the cell with lowest entropy
@@ -1793,6 +1897,7 @@ namespace WFC.Chunking
             return false;
         }
 
+        // Method to propagate collapse to neighboring cells
         private void PropagateCollapse(Cell cell, Chunk chunk)
         {
             // Find cell position in chunk
@@ -1832,6 +1937,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to apply constraints to a neighboring cell
         private void ApplyConstraintToNeighbor(Cell source, Cell target, Direction direction, Chunk targetChunk)
         {
             // Skip if target already collapsed
@@ -1847,7 +1953,7 @@ namespace WFC.Chunking
             foreach (int targetState in target.PossibleStates)
             {
                 // Check if this state can be adjacent to the source state
-                // This requires access to adjacency rules which would be in WFCGenerator
+                // requires access to adjacency rules which would be in WFCGenerator
                 bool isCompatible = true;
 
                 if (wfcGenerator != null)
@@ -1879,6 +1985,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to generate the mesh for a chunk
         private void GenerateChunkMesh(Chunk chunk)
         {
             if (performanceMonitor != null)
@@ -1932,6 +2039,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Fallback mesh generation method
         private void GenerateFallbackMesh(Chunk chunk)
         {
             // Fallback - create a simple mesh directly
@@ -2065,11 +2173,32 @@ namespace WFC.Chunking
 
         #region Helper Methods
 
-        /// <summary>
-        /// Applies initial terrain constraints to a chunk before running the WFC algorithm.
-        /// This creates a foundation for the terrain by setting certain cells to specific states
-        /// based on height, noise patterns, and other factors.
-        /// </summary>
+        /*
+         * ApplyInitialConstraints
+         * ----------------------------------------------------------------------------
+         * Applies initial terrain constraints to a newly created chunk.
+         * 
+         * This comprehensive terrain initialization:
+         * 1. Generates noise-based heightmap using multiple octaves:
+         *    - Base noise for overall elevation
+         *    - Detail noise for small variations
+         *    - Feature noise for medium-scale terrain features
+         * 2. Determines water level from separate noise function
+         * 3. Creates terrain height and material variations:
+         *    - Deep underground: solid ground
+         *    - Near surface: mix of ground and occasional rock
+         *    - Surface layer: varied terrain types (grass, sand, rock) based on moisture
+         *    - Above surface: occasional trees in suitable areas
+         * 4. Smooths chunk boundaries for seamless transitions
+         * 
+         * This initial terrain provides a foundational structure that the WFC algorithm
+         * then refines through constraint propagation, creating more detailed and
+         * coherent terrain features.
+         * 
+         * Parameters:
+         * - chunk: The newly created chunk to initialize
+         * - random: Seeded random generator for deterministic generation
+         */
         private void ApplyInitialConstraints(Chunk chunk, System.Random random)
         {
             // Constants that control terrain generation characteristics
@@ -2282,6 +2411,7 @@ namespace WFC.Chunking
             SmoothChunkBoundaries(chunk, terrainHeight);
         }
 
+        // Method to smooth chunk boundaries with neighbors
         private void SmoothChunkBoundaries(Chunk chunk, int[,] terrainHeight)
         {
             // Check each direction for neighbors
@@ -2335,6 +2465,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Helper method to get the boundary cell from a neighbor chunk
         private Cell GetNeighborBoundaryCell(Chunk chunk, Chunk neighbor, Direction dir, int index)
         {
             // Convert boundary position to neighbor's coordinate system
@@ -2363,6 +2494,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to connect chunk neighbors
         private void ConnectChunkNeighbors(Chunk chunk)
         {
             // Check each direction for neighbors
@@ -2380,6 +2512,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Method to initialize boundary buffers for a chunk
         private void InitializeBoundaryBuffers(Chunk chunk)
         {
             foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
@@ -2411,6 +2544,7 @@ namespace WFC.Chunking
             }
         }
 
+        // Helper method to get cells at the boundary of a chunk
         private List<Cell> GetBoundaryCells(Chunk chunk, Direction direction)
         {
             List<Cell> cells = new List<Cell>();
@@ -2511,13 +2645,11 @@ namespace WFC.Chunking
             if (oldLoadDistance != LoadDistance || oldUnloadDistance != UnloadDistance)
             {
                 Debug.Log("ChunkManager: Load/unload distances updated. Refreshing chunk management.");
-                // Could trigger a refresh here
             }
 
             if (oldChunkSize != ChunkSize)
             {
                 Debug.LogWarning("ChunkManager: Chunk size changed. This will require world regeneration.");
-                // This is a more significant change requiring regeneration
             }
         }
 
@@ -2623,6 +2755,7 @@ namespace WFC.Chunking
             public int MaxIterations { get; set; }
             public float Priority { get; set; }
         }
+        // Helper enum for task types
         private enum ChunkTaskType
         {
             Create,
@@ -2631,7 +2764,25 @@ namespace WFC.Chunking
             GenerateMesh
         }
 
-        // ----------------------------------------------------------------------------------------
+        /*
+        * CreateChunksAroundPlayer
+        * ----------------------------------------------------------------------------
+        * Initiates chunk generation in the vicinity of the player/viewer.
+        * 
+        * Process:
+        * 1. Determines the chunk coordinate at the viewer's current position
+        * 2. Directly creates the chunk the player is standing in with high priority
+        * 3. Starts a coroutine for gradual creation of surrounding chunks to avoid
+        *    frame rate drops from creating too many chunks at once
+        * 4. Updates the last chunk generation position for incremental checks
+        * 
+        * This function is called both during initialization and whenever the player
+        * moves significantly from the last chunk generation position, ensuring
+        * terrain is always available ahead of the player's movement.
+        * 
+        * The gradual creation through coroutines helps maintain performance
+        * even when many chunks need to be created at once.
+        */
         public void CreateChunksAroundPlayer()
         {
             Vector3Int viewerChunk = new Vector3Int(
@@ -2650,6 +2801,7 @@ namespace WFC.Chunking
             StartCoroutine(GradualChunkCreation(viewerChunk));
         }
 
+        // Coroutine to create chunks gradually
         private IEnumerator GradualChunkCreation(Vector3Int centerChunk)
         {
             for (int x = -2; x <= 2; x++)
@@ -2671,9 +2823,8 @@ namespace WFC.Chunking
 
                         // Wait a frame between chunks to prevent freezing
                         yield return null;
-                    }
                 }
-            //}
+            }
         }
     }
 }

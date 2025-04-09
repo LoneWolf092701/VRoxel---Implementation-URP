@@ -1,5 +1,3 @@
-// Assets/Scripts/WFC/Performance/PerformanceMonitor.cs
-
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Chunking;
@@ -143,15 +141,14 @@ namespace WFC.Performance
                     var marchingCubes = marchingCubesField.GetValue(meshGenerator);
                     if (marchingCubes != null)
                     {
-                        // Try to detect terrain inversion by checking cube index calculation method
-                        // This is just for reporting purposes, not a fix
+                        // detect terrain inversion by checking cube index calculation method
                         var methodInfo = marchingCubes.GetType().GetMethod("ProcessCube",
                             System.Reflection.BindingFlags.NonPublic |
                             System.Reflection.BindingFlags.Instance);
 
                         if (methodInfo != null)
                         {
-                            // Cannot directly check method implementation, so this is a best-effort detection
+                            // Cannot directly check method implementation
                             Debug.Log("Found marching cubes implementation, but cannot verify threshold comparison direction");
                             isTerrainInverted = false; // Default to fixed state
                         }
@@ -159,7 +156,7 @@ namespace WFC.Performance
                 }
             }
 
-            // Try to find ParallelWFCManager if we don't have processor reference
+            // Try to find ParallelWFCManager if no processor reference
             if (parallelProcessor == null)
             {
                 var parallelManager = FindObjectOfType<ParallelWFCManager>();
@@ -255,7 +252,6 @@ namespace WFC.Performance
                     boundaryConflicts = (int)conflictsField.GetValue(boundaryManager);
                 }
 
-                // We don't have direct access to coherence metrics, but we can approximate
                 boundaryUpdates++;
             }
         }
@@ -264,7 +260,7 @@ namespace WFC.Performance
         {
             if (meshGenerator != null)
             {
-                // Check if we have timing data for mesh generation
+                // Check if enough timing data for mesh generation
                 if (componentTimings.TryGetValue("MeshGeneration", out float meshTime) &&
                     componentCalls.TryGetValue("MeshGeneration", out int meshCalls) &&
                     meshCalls > 0)
@@ -395,7 +391,7 @@ namespace WFC.Performance
         /// <param name="componentName">Name of the component being timed</param>
         public void EndComponentTiming(string componentName)
         {
-            // Only proceed if we're timing the specified component
+            // Only proceed if timing the specified component
             if (componentName != currentTimingComponent)
             {
                 Debug.LogWarning($"EndComponentTiming called for {componentName} but StartComponentTiming was called for {currentTimingComponent}");

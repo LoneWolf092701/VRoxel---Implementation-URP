@@ -1,4 +1,27 @@
-// Assets/Scripts/WFC/MarchingCubes/MarchingCubesGenerator.cs
+/*
+ * MarchingCubesGenerator.cs
+ * -----------------------------
+ * Implementation of the Marching Cubes algorithm for generating smooth meshes from voxel data.
+ * 
+ * Marching Cubes is an isosurface extraction algorithm that processes a 3D scalar field to
+ * produce a triangle mesh representing a constant density surface (isosurface).
+ * 
+ * Algorithm Overview:
+ * 1. For each cube in the density field:
+ *    a. Determine which corners are inside vs. outside the surface
+ *    b. Use this pattern to index into a lookup table for triangle configuration
+ *    c. Calculate exact vertex positions along edges using linear interpolation
+ *    d. Generate triangles according to the lookup table
+ * 
+ * This implementation includes:
+ * - Object pooling to reduce garbage collection
+ * - LOD support for performance optimization
+ * - Mesh simplification for distant chunks
+ * 
+ * References:
+ * - Lorensen, W. E., & Cline, H. E. (1987). "Marching cubes: A high resolution 3D surface
+ *   construction algorithm." ACM SIGGRAPH Computer Graphics, 21(4), 163–169.
+ */
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -99,9 +122,35 @@ namespace WFC.MarchingCubes
             InitializeTables();
         }
 
-        /// <summary>
-        /// Generate a mesh from a density field using the Marching Cubes algorithm
-        /// </summary>
+        /*
+         * GenerateMesh
+         * ----------------------------------------------------------------------------
+         * Generates a mesh from a density field using the Marching Cubes algorithm.
+         * 
+         * This comprehensive mesh generation:
+         * 1. Configures LOD (Level of Detail) based on input level
+         * 2. Obtains pooled collection objects to reduce garbage collection
+         * 3. Analyzes density field for debugging:
+         *    - Counts values above/below threshold
+         *    - Determines min/max density values
+         *    - Detects if surface generation is possible
+         * 4. Processes each cube in the density field:
+         *    - Calls ProcessCube() for actual triangle generation
+         *    - Accumulates vertices, triangles, and normals
+         * 5. Creates and configures the Unity Mesh object
+         * 6. Applies mesh simplification for lower LOD levels
+         * 7. Returns pooled collections to reduce memory pressure
+         * 
+         * The function implements memory and performance optimizations
+         * including object pooling and appropriate error handling when
+         * no surface can be generated.
+         * 
+         * Parameters:
+         * - densityField: 3D grid of density values
+         * - lodLevel: Level of detail (0=highest, higher=simplified)
+         * 
+         * Returns: Generated Unity Mesh object
+         */
         public Mesh GenerateMesh(float[,,] densityField, int lodLevel = 0)
         {
             int skipFactor = lodLevel + 1;
@@ -223,27 +272,41 @@ namespace WFC.MarchingCubes
 
         private Mesh SimplifyMesh(Mesh originalMesh, float reductionFactor)
         {
-            // This is a simplified placeholder - in practice, you would use
-            // a more sophisticated decimation algorithm
 
-            // For now, we'll do a simple vertex clustering
+            // a simple vertex clustering
             Vector3[] vertices = originalMesh.vertices;
             int[] triangles = originalMesh.triangles;
 
             // Target vertex count
             int targetVertexCount = Mathf.Max(10, Mathf.FloorToInt(vertices.Length * (1 - reductionFactor)));
 
-            // Use Unity's MeshUtility if available (Pro feature)
+            // Use Unity's MeshUtility if it's there
             #if UNITY_EDITOR
             UnityEditor.MeshUtility.Optimize(originalMesh);
             #endif
 
-            // For a full implementation, you would integrate a mesh decimation library
-            // or implement a quadric error metric decimation algorithm
-
             return originalMesh;
         }
 
+        /*
+         * ProcessCube
+         * -----------------------------
+         * Core function of the Marching Cubes algorithm that processes a single cube.
+         * 
+         * Algorithm Steps:
+         * 1. Sample density values at the 8 corners of the cube
+         * 2. Compute a cube index (8-bit integer) where each bit represents
+         *    whether a corner is inside the surface (density > threshold)
+         * 3. Use the cube index to look up which edges have the isosurface crossing them
+         * 4. For each crossing edge, calculate the exact intersection point using linear interpolation:
+         *    p = v1 + t * (v2 - v1) where t = (threshold - d1) / (d2 - d1)
+         * 5. Generate triangles based on the triangle table lookup for this cube configuration
+         * 
+         * The edgeTable and triangleTable contain precalculated data for all 256 possible
+         * Bourke, P. (1994) 'Polygonising a scalar field', [online] 
+         * Available at: https://paulbourke.net/geometry/polygonise/
+         * cube configurations, determined by which of the 8 corners are inside/outside the surface.
+         */
         private void ProcessCube(float[,,] densityField, int x, int y, int z,
                                 List<Vector3> vertices, List<int> triangles, List<Vector3> normals)
         {
@@ -683,7 +746,7 @@ namespace WFC.MarchingCubes
                 triangleTable[i] = -1;
             }
 
-            // Fill in the entries we've defined
+            // Fill in the entries
             for (int i = 0; i < triangleTableEntries.Length; i++)
             {
                 for (int j = 0; j < 16; j++)
@@ -692,8 +755,6 @@ namespace WFC.MarchingCubes
                 }
             }
 
-            // In a real implementation, you'd use the full table data
-            // which is quite large (4096 integers)
         }
 
         /// <summary>

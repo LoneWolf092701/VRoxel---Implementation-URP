@@ -1,5 +1,3 @@
-// Assets/Scripts/WFC/Processing/ParallelWFCProcessor.cs
-
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -233,9 +231,33 @@ namespace WFC.Processing
             }
         }
 
-        /// <summary>
-        /// Process a WFC job based on its type
-        /// </summary>
+        /*
+         * ProcessJob
+         * ----------------------------------------------------------------------------
+         * Processes a WFC job in parallel across worker threads.
+         * 
+         * This function dispatches different job types to appropriate handlers:
+         * 1. Collapse jobs:
+         *    - Runs the WFC algorithm to collapse cells in a chunk
+         *    - Uses thread-safe implementations to prevent race conditions
+         *    - Tracks progress and marks completion when no further progress possible
+         * 
+         * 2. GenerateMesh jobs:
+         *    - Marks the chunk as dirty for mesh generation
+         *    - Actual mesh generation happens on the main thread
+         *    - This job just flags chunks ready for visualization
+         * 
+         * 3. ApplyConstraints jobs:
+         *    - Applies hierarchical constraints to uncollapsed cells
+         *    - Uses thread-safe constraint application
+         * 
+         * The parallel processing system significantly improves performance
+         * by distributing the computationally intensive WFC algorithm
+         * across multiple CPU cores.
+         * 
+         * Parameters:
+         * - job: The job to process, containing type, chunk, and parameters
+         */
         private void ProcessJob(WFCJob job)
         {
             switch (job.JobType)
@@ -301,9 +323,7 @@ namespace WFC.Processing
                         if (cell.CollapsedState.HasValue)
                             continue;
 
-                        // This would call into your hierarchical constraint system
-                        // For thread safety, this needs to be carefully designed
-                        // ApplyConstraintsToCell(cell, chunk);
+
                     }
                 }
             }

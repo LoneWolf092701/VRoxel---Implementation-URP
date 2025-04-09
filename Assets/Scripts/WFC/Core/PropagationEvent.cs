@@ -1,9 +1,11 @@
-// Assets/Scripts/WFC/Core/PropagationEvent.cs
 using System;
 using System.Collections.Generic;
 
 namespace WFC.Core
 {
+    /// <summary>
+    /// Implements a propagation event for the Wave Function Collapse algorithm.
+    /// </summary>
     public class PropagationEvent : IComparable<PropagationEvent>
     {
         public Cell Cell { get; set; }
@@ -24,6 +26,7 @@ namespace WFC.Core
             CalculatePriority();
         }
 
+        // Calculate the priority of the event based on its properties.
         private void CalculatePriority()
         {
             // Higher priority for:

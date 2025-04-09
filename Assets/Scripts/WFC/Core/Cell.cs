@@ -14,6 +14,19 @@
 # chunking, and boundary management systems for coherent region transitions.
 # ===================================================================
 */
+/*
+ * Cell.cs
+ * -----------------------------
+ * Implements the fundamental unit for the Wave Function Collapse algorithm.
+ * Each cell represents a discrete volume in 3D space that can be in multiple
+ * possible states until "collapsed" to a single definite state.
+ * 
+ * Key WFC Concepts:
+ * - Superposition: Cells start with multiple possible states
+ * - Collapse: The act of selecting a single definite state
+ * - Entropy: Measure of uncertainty (number of possible states)
+ * - Propagation: Constraints spreading from collapsed cells to neighbors
+ */
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -56,12 +69,25 @@ namespace WFC.Core
             BoundaryDirection = null;
         }
 
-        /// <summary>
-        /// Collapses this cell to a specific state, removing all other possibilities.
-        /// The core operation of the Wave Function Collapse algorithm.
-        /// </summary>
-        /// <param name="state">The state to collapse to</param>
-        /// <returns>True if collapse was successful, false if the state wasn't possible</returns>
+        /*
+         * Collapse
+         * ----------------------------------------------------------------------------
+         * Collapses a cell to a single definite state.
+         * 
+         * This is the core state transformation in the WFC algorithm:
+         * 1. Verifies the requested state is in the cell's possible states
+         * 2. Clears all possible states and sets only the chosen state
+         * 3. Sets the CollapsedState property to mark the cell as definite
+         * 
+         * A collapsed cell has reached its final state and won't change further
+         * during the WFC algorithm, but it will continue to influence neighboring
+         * cells through constraint propagation.
+         * 
+         * Parameters:
+         * - state: The state to collapse this cell to
+         * 
+         * Returns: true if collapse succeeded, false if the state wasn't possible
+         */
         public bool Collapse(int state)
         {
             if (!PossibleStates.Contains(state))
@@ -72,12 +98,27 @@ namespace WFC.Core
             CollapsedState = state;
             return true;
         }
-        /// <summary>
-        /// Removes a specific state from the cell's possibilities.
-        /// Automatically collapses the cell if only one state remains.
-        /// </summary>
-        /// <param name="state">The state to remove</param>
-        /// <returns>True if state was removed, false if already collapsed or state not present</returns>
+        /*
+         * RemoveState
+         * ----------------------------------------------------------------------------
+         * Removes a possible state from a cell's superposition.
+         * 
+         * This is how constraints remove impossible states during propagation:
+         * 1. Checks if cell is already collapsed (no changes possible)
+         * 2. Checks if the state is actually in the possible states
+         * 3. Removes the state from possibilities
+         * 4. If only one state remains, automatically collapses to that state
+         * 
+         * The auto-collapse on last state is an optimization that immediately
+         * finalizes cells once they have only one option left, allowing them
+         * to start propagating constraints to their neighbors.
+         * 
+         * Parameters:
+         * - state: The state to remove from possibilities
+         * 
+         * Returns: true if state was removed, false if cell was already collapsed
+         *          or state wasn't in the possible states
+         */
         public bool RemoveState(int state)
         {
             if (CollapsedState.HasValue)
@@ -98,11 +139,27 @@ namespace WFC.Core
             return true;
         }
 
-        /// <summary>
-        /// Set possible states to be the given hash set.
-        /// </summary>
-        /// <param name="state">The hash set of states to remove</param>
-        /// <returns>True if state is possible, false if already collapsed or state not present</returns>
+        /*
+         * SetPossibleStates
+         * ----------------------------------------------------------------------------
+         * Sets a new collection of possible states for the cell.
+         * 
+         * This is used during constraint propagation and initialization:
+         * 1. Checks if cell is already collapsed (no changes possible)
+         * 2. Ensures the new state set isn't empty
+         * 3. Records the old number of states for change detection
+         * 4. Replaces the current possible states with the new set
+         * 5. If only one state remains, automatically collapses to that state
+         * 
+         * The function compares the old and new counts to detect if the entropy
+         * actually changed, which is important for determining if further
+         * propagation is needed.
+         * 
+         * Parameters:
+         * - states: New set of possible states
+         * 
+         * Returns: true if the number of states changed, false otherwise
+         */
         public bool SetPossibleStates(HashSet<int> states)
         {
             if (CollapsedState.HasValue)

@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Configuration/WFCConfigManager.cs
 using UnityEngine;
 
 namespace WFC.Configuration

@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Boundary/BoundaryBuffer.cs
 using System.Collections.Generic;
 using WFC.Core;
 
@@ -24,6 +23,8 @@ namespace WFC.Boundary
         // Consistency flag
         public bool IsConsistent { get; set; }
 
+        /// Constructor
+        /// BoundaryBuffer constructor initializes the buffer with a direction and owner chunk.
         public BoundaryBuffer(Direction direction, Chunk ownerChunk)
         {
             Direction = direction;

@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Core/GlobalConstraint.cs
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -32,16 +31,36 @@ namespace WFC.Core
         public float NoiseScale = 0.1f;
         public float NoiseAmplitude = 1.0f;
 
-        // NEW: Advanced parameters for constraints
+        // Advanced parameters for constraints
         public AnimationCurve BlendCurve; // Custom blend falloff curve
         public AnimationCurve HeightCurve; // Custom height influence curve
         public bool UseNoise = false; // Whether to apply noise to influence
         public int NoiseSeed = 0; // Seed for noise generation
 
-        /// <summary>
-        /// Calculates the influence of this global constraint at a given world position.
-        /// Returns 0-1 value representing the constraint's strength at this point.
-        /// </summary>
+        /*
+         * GetInfluenceAt
+         * ----------------------------------------------------------------------------
+         * Calculates the influence of a global constraint at a specific world position.
+         * 
+         * This spatial influence calculation:
+         * 1. Determines if the point is inside the constraint's core area:
+         *    - If inside, applies full influence (possibly modified by noise)
+         * 2. If outside core area, calculates distance to the nearest point on the core area
+         * 3. Applies falloff based on the distance:
+         *    - Either using a custom blend curve if provided
+         *    - Or using linear falloff from the core outward to BlendRadius
+         * 4. Applies additional modifiers like noise for variation
+         * 5. Adjusts final influence by the constraint's Strength parameter
+         * 
+         * The spatial blending creates natural, gradual transitions between
+         * different terrain features and biomes, avoiding hard edges
+         * and unnatural boundaries.
+         * 
+         * Parameters:
+         * - worldPosition: The world position to check
+         * 
+         * Returns: Influence value 0-1 (0=no influence, 1=full influence)
+         */
         public float GetInfluenceAt(Vector3 worldPosition)
         {
             // Calculate distance from center of constraint region
@@ -95,9 +114,30 @@ namespace WFC.Core
             return influence * Strength;
         }
 
-        /// <summary>
-        /// Gets the state bias for a specific state at a given position
-        /// </summary>
+        /*
+         * GetStateBias
+         * ----------------------------------------------------------------------------
+         * Gets the bias value for a specific state at a given position.
+         * 
+         * The bias calculation process:
+         * 1. Gets the base influence at the position
+         * 2. If no influence or no defined bias for this state, returns 0
+         * 3. For height-based constraints:
+         *    - Modifies influence based on height to create flat terrain
+         *    - Applies 50% reduction factor to keep terrain stable
+         * 4. For other constraint types (biomes, features):
+         *    - Returns the full bias * influence value
+         * 
+         * This function connects the spatial influence calculation to the
+         * actual effect on individual cell states, transforming general constraint
+         * definitions into specific biases for the WFC algorithm.
+         * 
+         * Parameters:
+         * - state: The state to get bias for
+         * - worldPosition: World position to check
+         * 
+         * Returns: Bias value (-1 to 1) affecting state probability
+         */
         public float GetStateBias(int state, Vector3 worldPosition)
         {
             // Get base influence at this point

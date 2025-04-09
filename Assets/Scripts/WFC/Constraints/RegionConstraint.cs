@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Core/RegionConstraint.cs
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -38,10 +37,10 @@ namespace WFC.Core
         public int SourceState = -1;
         public int TargetState = -1;
 
-        // NEW: Direction vector for transitions
+        // Direction vector for transitions
         public Vector3 TransitionDirection = Vector3.right;
 
-        // NEW: Terrain feature parameters
+        // Terrain feature parameters
         public float ElevationOffset = 0f;
         public float ElevationScale = 1.0f;
         public AnimationCurve HeightCurve;

@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Presets/TerrainPresetManager.cs
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
@@ -156,14 +155,6 @@ namespace WFC.Presets
             // Create mountain preset
             var mountainPreset = TerrainConstraintPreset.CreateMountainPreset();
             UnityEditor.AssetDatabase.CreateAsset(mountainPreset, "Assets/Resources/Presets/Terrain/Mountain_Terrain.asset");
-
-            //// Create island preset
-            //var islandPreset = TerrainConstraintPreset.CreateIslandPreset();
-            //UnityEditor.AssetDatabase.CreateAsset(islandPreset, "Assets/Resources/Presets/Terrain/Tropical_Island.asset");
-
-            //// Create plains preset
-            //var plainsPreset = TerrainConstraintPreset.CreatePlainsPreset();
-            //UnityEditor.AssetDatabase.CreateAsset(plainsPreset, "Assets/Resources/Presets/Terrain/Rolling_Plains.asset");
 
             UnityEditor.AssetDatabase.SaveAssets();
             UnityEditor.AssetDatabase.Refresh();

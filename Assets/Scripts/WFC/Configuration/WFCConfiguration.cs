@@ -4,6 +4,7 @@ using UnityEngine;
 [CreateAssetMenu(fileName = "WFCConfig", menuName = "WFC/Configuration")]
 public class WFCConfiguration : ScriptableObject
 {
+    // This class holds the configuration settings for the Wave Function Collapse algorithm.
     [Serializable]
     public class WorldSettings
     {
@@ -15,6 +16,7 @@ public class WFCConfiguration : ScriptableObject
         public int randomSeed = 0;
     }
 
+    // This class holds the settings for the algorithm's parameters.
     [Serializable]
     public class AlgorithmSettings
     {
@@ -25,6 +27,7 @@ public class WFCConfiguration : ScriptableObject
         public int maxIterationsPerChunk = 100;
     }
 
+    // This class holds the visualization settings for the algorithm.
     [Serializable]
     public class VisualizationSettings
     {
@@ -33,6 +36,7 @@ public class WFCConfiguration : ScriptableObject
         public bool highlightBoundaries = true;
     }
 
+    // This class holds the performance settings for the algorithm.
     [Serializable]
     public class PerformanceSettings
     {
@@ -43,7 +47,7 @@ public class WFCConfiguration : ScriptableObject
         public float unloadDistance = 150f;
         public int maxConcurrentChunks = 16;
 
-        // LOD Settings - New addition for the LOD system
+        // LOD Settings - addition for the LOD system
         [Serializable]
         public class LODSettings
         {
@@ -81,6 +85,7 @@ public class WFCConfiguration : ScriptableObject
     [Header("Performance Settings")]
     public PerformanceSettings Performance = new PerformanceSettings();
 
+    // This method validates the configuration settings.
     public bool Validate()
     {
         bool valid = true;

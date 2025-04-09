@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Processing/WFCAlgorithmAdapter.cs
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Boundary;
@@ -36,7 +35,6 @@ namespace WFC.Processing
         /// </summary>
         public void AddPropagationEvent(PropagationEvent evt)
         {
-            // Since we're only using WFCGenerator now, we can simplify this
             wfcGenerator.AddPropagationEvent(evt);
         }
 

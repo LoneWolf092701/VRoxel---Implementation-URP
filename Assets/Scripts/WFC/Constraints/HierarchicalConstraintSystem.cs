@@ -1,4 +1,21 @@
-// Assets/Scripts/WFC/Core/HierarchicalConstraintSystem.cs
+/*
+ * HierarchicalConstraintSystem.cs
+ * -----------------------------
+ * Implements a multi-scale constraint system for guiding the WFC terrain generation.
+ * 
+ * This system allows for control at different scales:
+ * - Global constraints: Large-scale terrain features like mountains, rivers, biomes
+ * - Region constraints: Medium-scale features like forests, lakes, transition zones
+ * - Local constraints: Fine-grained control for specific detailed features
+ * 
+ * Each constraint applies biases to the state selection probabilities during WFC collapse,
+ * influencing but not strictly enforcing the terrain generation. This creates a balance
+ * between controlled structure and procedural variation.
+ * 
+ * The hierarchical approach enables both top-down design control and emergent details,
+ * with constraints having varying influence based on strength, distance, and priority.
+ * 
+ */
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
@@ -33,11 +50,11 @@ namespace WFC.Core
         private Dictionary<Vector3Int, Dictionary<int, float>> chunkStateBiasCache =
             new Dictionary<Vector3Int, Dictionary<int, float>>();
 
-        // NEW: Constraint change tracking for efficient updates
+        // Constraint change tracking for efficient updates
         private bool constraintsChanged = false;
         private HashSet<Vector3Int> dirtyChunks = new HashSet<Vector3Int>();
 
-        // NEW: Constraint application statistics
+        // Constraint application statistics
         public struct ConstraintStats
         {
             public int GlobalConstraintsApplied;
@@ -277,9 +294,25 @@ namespace WFC.Core
             return result;
         }
 
-        /// <summary>
-        /// Calculate the combined influence of all constraints on a specific cell
-        /// </summary>
+        /*
+         * CalculateConstraintInfluence
+         * -----------------------------
+         * Computes the combined influence of all constraints on a specific cell.
+         * 
+         * This is a key function in the constraint-based guidance system that:
+         * 1. Gets the world position for the cell
+         * 2. Queries all relevant constraints that might affect this position
+         * 3. Combines their influences into a set of biases for each possible state
+         * 
+         * The biases are numeric values typically in the range [-1,1] that modify
+         * the probability of selecting each state during the collapse operation:
+         * - Positive bias: increases likelihood of selecting the state
+         * - Negative bias: decreases likelihood of selecting the state
+         * - Zero bias: no influence on the state selection
+         * 
+         * The method handles resolving conflicts between competing constraints
+         * through various weighting and prioritization strategies.
+         */
         public Dictionary<int, float> CalculateConstraintInfluence(Cell cell, Chunk chunk, int maxStates)
         {
             // Get world position for this cell
@@ -372,13 +405,6 @@ namespace WFC.Core
                     }
                 }
             }
-
-            // If we didn't collapse, just adjust the cell's entropy for future WFC decisions
-            // This can be done by setting a custom entropy value beyond just the count
-            // But our current Cell class doesn't support this directly
-
-            // A more advanced implementation would extend the Cell class to handle
-            // weighted probability distributions for states
         }
 
         /// <summary>
@@ -519,38 +545,6 @@ namespace WFC.Core
 
             AddGlobalConstraint(forestConstraint);
 
-            //// Add transition regions between biomes
-            //// Example: Mountain to Forest transition
-            //RegionConstraint mountainForestTransition = new RegionConstraint()
-            //{
-            //    Name = "Mountain-Forest Transition",
-            //    Type = RegionType.Transition,
-            //    ChunkPosition = new Vector3Int(1, 1, 0),
-            //    ChunkSize = new Vector3Int(1, 1, 1),
-            //    Strength = 0.7f,
-            //    Gradient = 0.5f,
-            //    SourceState = 4, // Rock
-            //    TargetState = 6  // Tree
-            //};
-
-            //AddRegionConstraint(mountainForestTransition);
-
-            //// River to Ground transition
-            //RegionConstraint riverGroundTransition = new RegionConstraint()
-            //{
-            //    Name = "River-Ground Transition",
-            //    Type = RegionType.Transition,
-            //    ChunkPosition = new Vector3Int(1, 0, 0),
-            //    ChunkSize = new Vector3Int(1, 1, 2),
-            //    InternalOrigin = new Vector3(0.3f, 0, 0.3f),
-            //    InternalSize = new Vector3(0.4f, 1, 0.4f),
-            //    Strength = 0.6f,
-            //    Gradient = 0.3f,
-            //    SourceState = 3, // Water
-            //    TargetState = 1  // Ground
-            //};
-
-            //AddRegionConstraint(riverGroundTransition);
         }
 
         /// <summary>
@@ -592,7 +586,7 @@ namespace WFC.Core
         }
 
         /// <summary>
-        /// NEW: Create a feature at a specific location
+        /// Create a feature at a specific location
         /// </summary>
         public void CreateFeature(Vector3Int chunkPos, Vector3 internalOrigin, Vector3 internalSize,
                                  Dictionary<int, float> stateBiases, string name = "Feature", float strength = 0.8f)
@@ -617,9 +611,34 @@ namespace WFC.Core
             AddRegionConstraint(feature);
         }
 
-        /// <summary>
-        /// Get combined state biases at a specific position
-        /// </summary>
+        /*
+         * GetStateBiases
+         * ----------------------------------------------------------------------------
+         * Computes and combines state biases from all applicable constraints.
+         * 
+         * This detailed constraint resolution:
+         * 1. Organizes constraints by type (global, region, local)
+         * 2. Assigns appropriate weights to each constraint type
+         * 3. For each constraint type:
+         *    a. Groups biases by state
+         *    b. Uses sign-preserving averaging for same-state biases
+         * 4. Combines across constraint types with sophisticated conflict handling:
+         *    a. Detects opposing biases (conflicts)
+         *    b. Resolves conflicts by taking the stronger bias
+         *    c. For compatible biases, uses weighted blending
+         *    d. Applies normalization to keep values in valid range
+         * 
+         * The conflict resolution is critical for creating coherent terrain
+         * when different constraints might have opposing effects on the same cell.
+         * 
+         * Parameters:
+         * - worldPosition: World position to check
+         * - chunkPosition: Position of the chunk
+         * - localPosition: Position within the chunk
+         * - maxStates: Maximum number of possible states
+         * 
+         * Returns: Dictionary mapping states to combined bias values
+         */
         private Dictionary<int, float> GetStateBiases(
             Vector3 worldPosition,
             Vector3Int chunkPosition,
@@ -682,7 +701,7 @@ namespace WFC.Core
             }
 
             // Normalize and combine biases with conflict resolution
-            // First, normalize within each constraint type
+            // Normalize within each constraint type
             Dictionary<string, Dictionary<int, float>> normalizedTypeGroups =
                 new Dictionary<string, Dictionary<int, float>>();
 
@@ -720,7 +739,7 @@ namespace WFC.Core
                 }
             }
 
-            // Now combine across constraint types, with conflict detection
+            // Combine across constraint types, with conflict detection
             foreach (var typeGroup in normalizedTypeGroups)
             {
                 string type = typeGroup.Key;
@@ -799,7 +818,7 @@ namespace WFC.Core
         }
 
         /// <summary>
-        /// NEW: Visualize constraints at a given world position
+        /// Visualize constraints at a given world position
         /// </summary>
         public Dictionary<string, object> VisualizeAtPosition(Vector3 worldPos, int maxStates)
         {
@@ -918,7 +937,7 @@ namespace WFC.Core
         }
         
         /// <summary>
-        /// NEW: Export constraints to a serializable format
+        /// Export constraints to a serializable format
         /// </summary>
         public string ExportConstraints()
         {
@@ -992,7 +1011,7 @@ namespace WFC.Core
         }
         
         /// <summary>
-        /// NEW: Import constraints from serialized format
+        /// Import constraints from serialized format
         /// </summary>
         public bool ImportConstraints(string data)
         {

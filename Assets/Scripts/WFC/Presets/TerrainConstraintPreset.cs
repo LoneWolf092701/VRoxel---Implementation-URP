@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Presets/TerrainConstraintPreset.cs
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -192,35 +191,5 @@ namespace WFC.Presets
             return preset;
         }
 
-        /// <summary>
-        /// Create a preset with default settings for beaches and islands
-        /// </summary>
-        //public static TerrainConstraintPreset CreateIslandPreset()
-        //{
-        //    var preset = CreateInstance<TerrainConstraintPreset>();
-        //    preset.presetName = "Tropical Island";
-        //    preset.description = "Island terrain with sandy beaches and tropical forests";
-        //    preset.includeMountainRange = true;
-        //    preset.includeRiver = true;
-        //    preset.mountainHeight = 0.5f;
-        //    preset.mountainCoverage = 0.2f;
-        //    preset.mountainRockiness = 0.6f;
-        //    return preset;
-        //}
-
-        /// <summary>
-        /// Create a preset with default settings for flat plains
-        /// </summary>
-        //public static TerrainConstraintPreset CreatePlainsPreset()
-        //{
-        //    var preset = CreateInstance<TerrainConstraintPreset>();
-        //    preset.presetName = "Rolling Plains";
-        //    preset.description = "Flat to gently rolling terrain with scattered forests and rivers";
-        //    preset.includeMountainRange = false;
-        //    preset.includeRiver = true;
-        //    preset.defaultGroundHeight = 0.15f;
-        //    preset.noiseScale = 0.03f;
-        //    return preset;
-        //}
     }
 }
