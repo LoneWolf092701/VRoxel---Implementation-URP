@@ -271,6 +271,13 @@ namespace WFC.Chunking
         {
             UpdateViewerData();
 
+            ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
+            if (parallelManager != null && parallelProcessor == null)
+            {
+                parallelProcessor = parallelManager.GetParallelProcessor();
+                Debug.Log("Connected to ParallelWFCManager for parallel processing");
+            }
+
             // Check if player has moved far enough to generate new chunks
             if (Vector3.Distance(viewerPosition, lastChunkGenerationPosition) > chunkGenerationDistance)
             {
@@ -298,13 +305,6 @@ namespace WFC.Chunking
 
             // Process dirty chunks that need mesh generation
             ProcessDirtyChunks();
-
-            ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
-            if (parallelManager != null && parallelProcessor == null)
-            {
-                parallelProcessor = parallelManager.GetParallelProcessor();
-                Debug.Log("Connected to ParallelWFCManager for parallel processing");
-            }
 
             // Optimize memory for inactive chunks
             OptimizeInactiveChunks();
@@ -1404,6 +1404,17 @@ namespace WFC.Chunking
         // Queue to hold chunk tasks
         private void ProcessChunkTasks()
         {
+            if (useParallelProcessing && parallelProcessor == null)
+            {
+                Debug.LogWarning("useParallelProcessing is true but parallelProcessor is null - trying to find ParallelWFCManager");
+                ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
+                if (parallelManager != null)
+                {
+                    parallelProcessor = parallelManager.GetParallelProcessor();
+                    Debug.Log($"Connected to ParallelWFCManager for parallel processing - active threads: {parallelProcessor?.ActiveThreads ?? 0}");
+                }
+            }
+
             // Process a limited number of tasks per frame
             int tasksProcessed = 0;
             int maxTasksPerFrame = 2; // Could also come from config
@@ -1415,7 +1426,7 @@ namespace WFC.Chunking
                 try
                 {
                     // Only use parallel processing for collapse tasks, not mesh generation
-                    if (parallelProcessor != null && task.Type == ChunkTaskType.Collapse)
+                    if (useParallelProcessing && parallelProcessor != null && task.Type == ChunkTaskType.Collapse)
                     {
                         bool queued = parallelProcessor.QueueChunkForProcessing(
                             task.Chunk,

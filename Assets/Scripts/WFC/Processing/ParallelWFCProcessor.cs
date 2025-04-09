@@ -30,7 +30,16 @@ namespace WFC.Processing
         // Profiling data
         public int TotalProcessedJobs { get; private set; } = 0;
         public float AverageJobTime { get; private set; } = 0;
-        public int ActiveThreads => processingChunks.Count;
+        public int ActiveThreads
+        {
+            get
+            {
+                if (!isRunning || workerThreads == null) return 0;
+                return workerThreads.Length;
+            }
+        }
+
+        public int ProcessingChunksCount => processingChunks.Count;
 
         // Reference to WFC system
         private IWFCAlgorithm wfcAlgorithm;
@@ -180,54 +189,67 @@ namespace WFC.Processing
         /// </summary>
         private void WorkerThreadFunction()
         {
-            while (isRunning)
+            int threadId = Thread.CurrentThread.ManagedThreadId;
+            try
             {
-                WFCJob job = null;
-
-                // Get a job from the queue
-                lock (queueLock)
+                while (isRunning)
                 {
-                    if (jobQueue.Count > 0)
-                    {
-                        job = jobQueue.Dequeue();
-                    }
-                    else
-                    {
-                        // No jobs, wait for notification
-                        Monitor.Wait(queueLock, 1000); // 1 second timeout
-                        continue;
-                    }
-                }
+                    WFCJob job = null;
 
-                // Process the job
-                if (job != null)
-                {
-                    Stopwatch stopwatch = new Stopwatch(); // Thread-safe timer
-                    stopwatch.Start();
-
-                    try
-                    {
-                        ProcessJob(job);
-                    }
-                    catch (Exception e)
-                    {
-                        // Use UnityEngine.Debug, not System.Diagnostics.Debug
-                        UnityEngine.Debug.LogError($"Error processing chunk {job.Chunk.Position}: {e.Message}\n{e.StackTrace}");
-                    }
-
-                    stopwatch.Stop();
-                    float jobTime = stopwatch.ElapsedMilliseconds / 1000f; // Convert to seconds
-
-                    // Update stats
+                    // Get a job from the queue
                     lock (queueLock)
                     {
-                        TotalProcessedJobs++;
-                        AverageJobTime = (AverageJobTime * (TotalProcessedJobs - 1) + jobTime) / TotalProcessedJobs;
+                        if (jobQueue.Count > 0)
+                        {
+                            job = jobQueue.Dequeue();
+                        }
+                        else
+                        {
+                            // No jobs, wait for notification
+                            Monitor.Wait(queueLock, 1000); // 1 second timeout
+                            continue;
+                        }
+                    }
 
-                        // Remove from processing set
-                        processingChunks.Remove(job.Chunk.Position);
+                    // Process the job
+                    if (job != null)
+                    {
+                        Stopwatch stopwatch = new Stopwatch(); // Thread-safe timer
+                        stopwatch.Start();
+
+                        try
+                        {
+                            ProcessJob(job);
+                        }
+                        catch (Exception e)
+                        {
+                            // Use UnityEngine.Debug, not System.Diagnostics.Debug
+                            UnityEngine.Debug.LogError($"Error processing chunk {job.Chunk.Position}: {e.Message}\n{e.StackTrace}");
+                        }
+
+                        stopwatch.Stop();
+                        float jobTime = stopwatch.ElapsedMilliseconds / 1000f; // Convert to seconds
+
+                        // Update stats
+                        lock (queueLock)
+                        {
+                            TotalProcessedJobs++;
+                            AverageJobTime = (AverageJobTime * (TotalProcessedJobs - 1) + jobTime) / TotalProcessedJobs;
+
+                            // Remove from processing set
+                            processingChunks.Remove(job.Chunk.Position);
+                        }
                     }
                 }
+
+            }
+                catch (Exception e)
+            {
+                UnityEngine.Debug.LogError($"Worker thread {threadId} crashed: {e.Message}\n{e.StackTrace}");
+            }
+            finally
+            {
+                UnityEngine.Debug.Log($"Worker thread {threadId} stopped");
             }
         }
 

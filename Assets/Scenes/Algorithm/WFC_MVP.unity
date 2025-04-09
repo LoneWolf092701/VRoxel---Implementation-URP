@@ -166,7 +166,7 @@ MonoBehaviour:
   wfcGenerator: {fileID: 1124905181}
   chunkManager: {fileID: 1218634540}
   enableParallelProcessing: 1
-  maxThreads: 4
+  maxThreads: 32
   showDebugInfo: 1
 --- !u!1 &207340124
 GameObject:
@@ -371,19 +371,16 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   wfcGenerator: {fileID: 1124905181}
   chunkManager: {fileID: 1218634540}
-  performanceMonitor: {fileID: 1408270512}
-  targetCoherenceScore: 0.9
-  visualizeBoundaries: 1
-  goodBoundaryColor: {r: 0, g: 1, b: 0, a: 1}
-  badBoundaryColor: {r: 1, g: 0, b: 0, a: 1}
-  minAcceptableCoherence: 0.75
-  testChunkCount: 9
-  trackGenerationLatency: 1
-  maxAcceptableChunkGenTime: 1
-  maxAcceptableFrameTimeMs: 16.7
-  targetConstraintSatisfaction: 0.95
-  visualizeConstraints: 0
-  minAcceptableConstraintRate: 0.8
+  meshGenerator: {fileID: 1411155122}
+  enableMonitoring: 1
+  logMetricsToConsole: 1
+  saveMetricsToFile: 1
+  metricsFilePath: WFC_Metrics.txt
+  monitoringInterval: 5
+  testChunkSize: 16
+  testWorldSizeX: 4
+  testWorldSizeY: 2
+  testWorldSizeZ: 4
 --- !u!1 &291866357
 GameObject:
   m_ObjectHideFlags: 0

@@ -68,6 +68,9 @@ namespace WFC.Processing
                 return;
             }
 
+            if (maxThreads <= 0)
+                maxThreads = Mathf.Max(1, SystemInfo.processorCount - 1);
+
             // Initialize the parallel processor with the adapter
             parallelProcessor = new ParallelWFCProcessor(algorithmAdapter, maxThreads);
             parallelProcessor.Start();

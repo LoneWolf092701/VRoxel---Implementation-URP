@@ -201,6 +201,7 @@ namespace WFC.Performance
             }
         }
 
+        // Update parallel processing stats
         private void UpdateParallelStats()
         {
             if (parallelProcessor != null)
@@ -210,9 +211,7 @@ namespace WFC.Performance
                 avgJobTime = parallelProcessor.AverageJobTime;
 
                 // Try to get queue count using reflection (if available)
-                var queueField = parallelProcessor.GetType().GetField("jobQueue",
-                    System.Reflection.BindingFlags.NonPublic |
-                    System.Reflection.BindingFlags.Instance);
+                var queueField = parallelProcessor.GetType().GetField("jobQueue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
                 if (queueField != null)
                 {

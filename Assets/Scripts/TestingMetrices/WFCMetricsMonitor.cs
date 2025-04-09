@@ -1,97 +1,116 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
 using UnityEngine;
 using WFC.Boundary;
 using WFC.Core;
 using WFC.Generation;
 using WFC.Chunking;
-using System.Collections.Generic;
-using System.Linq;
+using WFC.MarchingCubes;
 
 namespace WFC.Metrics
 {
-    [ExecuteInEditMode]
+    /// <summary>
+    /// Enhanced metrics monitor that collects and saves performance data for the WFC system
+    /// </summary>
     public class WFCMetricsMonitor : MonoBehaviour
     {
         [Header("References")]
         [SerializeField] private WFCGenerator wfcGenerator;
         [SerializeField] private ChunkManager chunkManager;
-        [SerializeField] private WFC.Performance.PerformanceMonitor performanceMonitor;
+        [SerializeField] private MeshGenerator meshGenerator;
 
-        [Header("Boundary Coherence Settings")]
-        [SerializeField, Range(0f, 1f)] private float targetCoherenceScore = 0.9f;
-        [SerializeField] private bool visualizeBoundaries = false;
-        [SerializeField] private Color goodBoundaryColor = Color.green;
-        [SerializeField] private Color badBoundaryColor = Color.red;
-        [SerializeField] private float minAcceptableCoherence = 0.75f;
+        [Header("Monitoring Settings")]
+        [SerializeField] private bool enableMonitoring = true;
+        [SerializeField] private bool logMetricsToConsole = true;
+        [SerializeField] private bool saveMetricsToFile = true;
+        [SerializeField] private string metricsFilePath = "WFC_Metrics.txt";
+        [SerializeField] private float monitoringInterval = 5.0f; // seconds between measurements
 
-        [Header("Performance Metrics")]
-        [SerializeField] private int testChunkCount = 9;
-        [SerializeField] private bool trackGenerationLatency = true;
-        [SerializeField] private float maxAcceptableChunkGenTime = 1.0f;
-        [SerializeField] private float maxAcceptableFrameTimeMs = 16.7f; // 60fps
+        [Header("Test Settings")]
+        [SerializeField] private int testChunkSize = 16;
+        [SerializeField] private int testWorldSizeX = 4;
+        [SerializeField] private int testWorldSizeY = 2;
+        [SerializeField] private int testWorldSizeZ = 4;
 
-        [Header("Constraint Settings")]
-        [SerializeField, Range(0f, 1f)] private float targetConstraintSatisfaction = 0.95f;
-        [SerializeField] private bool visualizeConstraints = false;
-        [SerializeField] private float minAcceptableConstraintRate = 0.8f;
+        // Metrics data containers
+        private Dictionary<string, float> performanceMetrics = new Dictionary<string, float>();
+        private Dictionary<string, int> countMetrics = new Dictionary<string, int>();
+        private Dictionary<string, float> ratioMetrics = new Dictionary<string, float>();
 
-        // Runtime metrics
-        private float boundaryCoherenceScore = 0f;
-        private int boundaryTotalCells = 0;
-        private int boundaryCompatibleCells = 0;
+        // Measurement timing
+        private float lastMeasurementTime = 0f;
+        private int measurementCount = 0;
 
-        private float avgChunkGenerationTime = 0f;
-        private float peakChunkGenerationTime = 0f;
-        private Dictionary<Vector3Int, float> chunkGenTimes = new Dictionary<Vector3Int, float>();
-
-        private float constraintSatisfactionRate = 0f;
-        private int constraintsApplied = 0;
-        private int constraintsSatisfied = 0;
-
-        // Cached components
+        // References to internal components
         private BoundaryBufferManager boundaryManager;
         private HierarchicalConstraintSystem constraintSystem;
-
-        // Public getters
-        public float BoundaryCoherence => boundaryCoherenceScore;
-        public float AverageGenerationTime => avgChunkGenerationTime;
-        public float ConstraintSatisfactionRate => constraintSatisfactionRate;
+        private DensityFieldGenerator densityFieldGenerator;
 
         private void Start()
         {
             FindReferences();
             InitializeMetrics();
+            lastMeasurementTime = Time.time;
         }
 
         private void Update()
         {
-            if (boundaryManager != null && wfcGenerator != null)
-                UpdateBoundaryMetrics();
+            if (!enableMonitoring)
+                return;
 
-            if (constraintSystem != null)
-                UpdateConstraintMetrics();
+            // Take measurements at interval
+            if (Time.time - lastMeasurementTime >= monitoringInterval)
+            {
+                CollectMetrics();
+                lastMeasurementTime = Time.time;
+                measurementCount++;
+
+                // Log or save metrics
+                if (logMetricsToConsole)
+                    LogMetricsToConsole();
+
+                if (saveMetricsToFile && measurementCount % 5 == 0) // Save every 5 measurements
+                    SaveMetricsToFile();
+            }
         }
 
         private void FindReferences()
         {
+            // Find main components if not assigned
             if (wfcGenerator == null)
-                wfcGenerator = FindAnyObjectByType<WFCGenerator>();
+                wfcGenerator = FindObjectOfType<WFCGenerator>();
 
             if (chunkManager == null)
-                chunkManager = FindAnyObjectByType<ChunkManager>();
+                chunkManager = FindObjectOfType<ChunkManager>();
 
-            if (performanceMonitor == null)
-                performanceMonitor = FindAnyObjectByType<WFC.Performance.PerformanceMonitor>();
+            if (meshGenerator == null)
+                meshGenerator = FindObjectOfType<MeshGenerator>();
 
             // Get internal references via reflection
             if (wfcGenerator != null)
             {
+                // Get boundary manager
                 var boundaryField = wfcGenerator.GetType().GetField("boundaryManager",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
                 if (boundaryField != null)
                     boundaryManager = boundaryField.GetValue(wfcGenerator) as BoundaryBufferManager;
 
+                // Get constraint system
                 constraintSystem = wfcGenerator.GetHierarchicalConstraintSystem();
+            }
+
+            // Get density field generator
+            if (meshGenerator != null)
+            {
+                var densityField = meshGenerator.GetType().GetField("densityGenerator",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+                if (densityField != null)
+                    densityFieldGenerator = densityField.GetValue(meshGenerator) as DensityFieldGenerator;
             }
 
             // Subscribe to events
@@ -101,108 +120,304 @@ namespace WFC.Metrics
 
         private void InitializeMetrics()
         {
-            boundaryCoherenceScore = 0f;
-            boundaryTotalCells = 0;
-            boundaryCompatibleCells = 0;
+            // Initialize performance metrics
+            performanceMetrics["ChunkGenerationTime"] = 0f;
+            performanceMetrics["MeshGenerationTime"] = 0f;
+            performanceMetrics["PropagationTime"] = 0f;
+            performanceMetrics["FrameTime"] = 0f;
+            performanceMetrics["MemoryUsage"] = 0f;
+            performanceMetrics["BoundaryCoherence"] = 0f;
 
-            avgChunkGenerationTime = 0f;
-            peakChunkGenerationTime = 0f;
-            chunkGenTimes.Clear();
+            // Initialize count metrics
+            countMetrics["LoadedChunks"] = 0;
+            countMetrics["ProcessingChunks"] = 0;
+            countMetrics["TotalCells"] = 0;
+            countMetrics["CollapsedCells"] = 0;
+            countMetrics["BoundaryUpdates"] = 0;
+            countMetrics["BoundaryConflicts"] = 0;
+            countMetrics["TotalVertices"] = 0;
+            countMetrics["TotalTriangles"] = 0;
+            countMetrics["ConstraintsApplied"] = 0;
 
-            constraintSatisfactionRate = 0f;
-            constraintsApplied = 0;
-            constraintsSatisfied = 0;
+            // Initialize ratio metrics
+            ratioMetrics["ConstraintSatisfactionRate"] = 0f;
+            ratioMetrics["CollapsedCellPercentage"] = 0f;
+            ratioMetrics["BoundaryCoherenceRate"] = 0f;
+            ratioMetrics["ProcessingEfficiency"] = 0f;
         }
 
-        private void UpdateBoundaryMetrics()
+        private void CollectMetrics()
         {
-            if (chunkManager == null || boundaryManager == null)
-                return;
+            // Get memory usage
+            performanceMetrics["MemoryUsage"] = (float)System.GC.GetTotalMemory(false) / (1024 * 1024); // MB
 
-            var chunks = chunkManager.GetLoadedChunks();
-            int totalBoundaries = 0;
-            float totalCoherence = 0f;
-            boundaryTotalCells = 0;
-            boundaryCompatibleCells = 0;
+            // Get frame time
+            performanceMetrics["FrameTime"] = Time.deltaTime * 1000f; // ms
 
-            foreach (var chunkEntry in chunks)
+            // Get chunk counts
+            if (chunkManager != null)
             {
-                Chunk chunk = chunkEntry.Value;
+                var chunks = chunkManager.GetLoadedChunks();
+                countMetrics["LoadedChunks"] = chunks.Count;
 
-                foreach (var bufferEntry in chunk.BoundaryBuffers)
+                // Count processing chunks
+                countMetrics["ProcessingChunks"] = chunks.Count(c =>
+                    GetChunkState(c.Key) == ChunkManager.ChunkLifecycleState.Collapsing ||
+                    GetChunkState(c.Key) == ChunkManager.ChunkLifecycleState.Loading);
+
+                // Count total and collapsed cells
+                int totalCells = 0;
+                int collapsedCells = 0;
+
+                foreach (var chunk in chunks.Values)
                 {
-                    BoundaryBuffer buffer = bufferEntry.Value;
+                    int chunkCellCount = chunk.Size * chunk.Size * chunk.Size;
+                    totalCells += chunkCellCount;
 
-                    if (buffer.AdjacentChunk != null)
+                    // Sample some cells to estimate collapse percentage
+                    int sampleSize = Mathf.Min(27, chunkCellCount);
+                    int samplesPerDimension = Mathf.CeilToInt(Mathf.Pow(sampleSize, 1f / 3f));
+                    float step = chunk.Size / (float)samplesPerDimension;
+
+                    int sampleCollapsed = 0;
+                    int samplesChecked = 0;
+
+                    for (int x = 0; x < samplesPerDimension; x++)
                     {
-                        var metrics = boundaryManager.CalculateBoundaryMetrics(buffer);
-
-                        if (metrics.CollapsedCells > 0)
+                        for (int y = 0; y < samplesPerDimension; y++)
                         {
-                            totalCoherence += metrics.CoherenceScore;
-                            totalBoundaries++;
+                            for (int z = 0; z < samplesPerDimension; z++)
+                            {
+                                int sampleX = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(x * step));
+                                int sampleY = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(y * step));
+                                int sampleZ = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(z * step));
 
-                            boundaryTotalCells += metrics.TotalCells;
-                            boundaryCompatibleCells += metrics.CompatibleCells;
+                                Cell cell = chunk.GetCell(sampleX, sampleY, sampleZ);
+                                if (cell != null && cell.CollapsedState.HasValue)
+                                    sampleCollapsed++;
+
+                                samplesChecked++;
+                            }
+                        }
+                    }
+
+                    // Extrapolate to full chunk
+                    if (samplesChecked > 0)
+                        collapsedCells += Mathf.RoundToInt(chunkCellCount * ((float)sampleCollapsed / samplesChecked));
+                }
+
+                countMetrics["TotalCells"] = totalCells;
+                countMetrics["CollapsedCells"] = collapsedCells;
+                ratioMetrics["CollapsedCellPercentage"] = totalCells > 0 ? (float)collapsedCells / totalCells : 0f;
+            }
+
+            // Get boundary metrics
+            if (boundaryManager != null && chunkManager != null)
+            {
+                var chunks = chunkManager.GetLoadedChunks();
+                int totalBoundaries = 0;
+                float totalCoherence = 0f;
+                int boundaryConflicts = 0;
+
+                foreach (var chunkEntry in chunks)
+                {
+                    Chunk chunk = chunkEntry.Value;
+                    foreach (var bufferEntry in chunk.BoundaryBuffers)
+                    {
+                        BoundaryBuffer buffer = bufferEntry.Value;
+                        if (buffer.AdjacentChunk != null)
+                        {
+                            var metrics = CalculateBoundaryMetrics(buffer);
+                            if (metrics.CollapsedCells > 0)
+                            {
+                                totalCoherence += metrics.CoherenceScore;
+                                totalBoundaries++;
+                                boundaryConflicts += metrics.ConflictCells;
+                            }
                         }
                     }
                 }
+
+                performanceMetrics["BoundaryCoherence"] = totalBoundaries > 0 ?
+                    totalCoherence / totalBoundaries : 1f;
+                countMetrics["BoundaryUpdates"] = totalBoundaries;
+                countMetrics["BoundaryConflicts"] = boundaryConflicts;
+                ratioMetrics["BoundaryCoherenceRate"] = totalBoundaries > 0 ?
+                    1f - ((float)boundaryConflicts / totalBoundaries) : 1f;
             }
 
-            boundaryCoherenceScore = totalBoundaries > 0 ?
-                totalCoherence / totalBoundaries : 1f;
-        }
-
-        private void UpdateConstraintMetrics()
-        {
-            if (constraintSystem == null)
-                return;
-
-            var stats = constraintSystem.Statistics;
-
-            if (stats.CellsAffected > 0)
+            // Get constraint metrics
+            if (constraintSystem != null)
             {
-                constraintSatisfactionRate = (float)stats.CellsCollapsed / stats.CellsAffected;
-                constraintsApplied = stats.CellsAffected;
-                constraintsSatisfied = stats.CellsCollapsed;
+                var stats = constraintSystem.Statistics;
+                countMetrics["ConstraintsApplied"] = stats.GlobalConstraintsApplied +
+                                                      stats.RegionConstraintsApplied +
+                                                      stats.LocalConstraintsApplied;
+
+                ratioMetrics["ConstraintSatisfactionRate"] = stats.CellsAffected > 0 ?
+                    (float)stats.CellsCollapsed / stats.CellsAffected : 1f;
+            }
+
+            // Get mesh metrics
+            if (meshGenerator != null)
+            {
+                int totalVertices = 0;
+                int totalTriangles = 0;
+                int meshCount = 0;
+
+                // Try to get mesh objects through reflection
+                var meshObjectsField = meshGenerator.GetType().GetField("chunkMeshObjects",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+                if (meshObjectsField != null)
+                {
+                    var meshObjects = meshObjectsField.GetValue(meshGenerator) as Dictionary<Vector3Int, GameObject>;
+                    if (meshObjects != null)
+                    {
+                        foreach (var obj in meshObjects.Values)
+                        {
+                            if (obj != null)
+                            {
+                                MeshFilter filter = obj.GetComponent<MeshFilter>();
+                                if (filter != null && filter.sharedMesh != null)
+                                {
+                                    totalVertices += filter.sharedMesh.vertexCount;
+                                    totalTriangles += filter.sharedMesh.triangles.Length / 3;
+                                    meshCount++;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                countMetrics["TotalVertices"] = totalVertices;
+                countMetrics["TotalTriangles"] = totalTriangles;
+
+                // Get mesh generation time from component timing if available
+                if (meshGenerator.GetType().GetField("averageMeshGenerationTime",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance) is var field && field != null)
+                {
+                    performanceMetrics["MeshGenerationTime"] = (float)field.GetValue(meshGenerator) * 1000f; // ms
+                }
+            }
+
+            // Calculate efficiency metrics
+            ratioMetrics["ProcessingEfficiency"] = countMetrics["ProcessingChunks"] > 0 ?
+                (float)countMetrics["LoadedChunks"] / countMetrics["ProcessingChunks"] : 1f;
+        }
+
+        private void LogMetricsToConsole()
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine("========== WFC METRICS ==========");
+            sb.AppendLine($"Measurement #{measurementCount} at time {Time.time:F1}s\n");
+
+            sb.AppendLine("PERFORMANCE METRICS:");
+            foreach (var metric in performanceMetrics.OrderBy(m => m.Key))
+            {
+                string unit = metric.Key.Contains("Time") ? "ms" :
+                              metric.Key.Contains("Memory") ? "MB" : "";
+                sb.AppendLine($"  {metric.Key}: {metric.Value:F2} {unit}");
+            }
+
+            sb.AppendLine("\nCOUNT METRICS:");
+            foreach (var metric in countMetrics.OrderBy(m => m.Key))
+            {
+                sb.AppendLine($"  {metric.Key}: {metric.Value}");
+            }
+
+            sb.AppendLine("\nRATIO METRICS:");
+            foreach (var metric in ratioMetrics.OrderBy(m => m.Key))
+            {
+                sb.AppendLine($"  {metric.Key}: {metric.Value:P1}");
+            }
+
+            sb.AppendLine("=================================");
+
+            Debug.Log(sb.ToString());
+        }
+
+        private void SaveMetricsToFile()
+        {
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+
+                // Add header if file doesn't exist
+                if (!File.Exists(metricsFilePath))
+                {
+                    sb.Append("Timestamp,");
+
+                    // Add performance metrics headers
+                    foreach (var metric in performanceMetrics.Keys.OrderBy(k => k))
+                    {
+                        sb.Append($"{metric},");
+                    }
+
+                    // Add count metrics headers
+                    foreach (var metric in countMetrics.Keys.OrderBy(k => k))
+                    {
+                        sb.Append($"{metric},");
+                    }
+
+                    // Add ratio metrics headers
+                    foreach (var metric in ratioMetrics.Keys.OrderBy(k => k))
+                    {
+                        sb.Append($"{metric},");
+                    }
+
+                    sb.AppendLine();
+                }
+
+                // Add data row
+                sb.Append($"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")},");
+
+                // Add performance metrics values
+                foreach (var metric in performanceMetrics.Keys.OrderBy(k => k))
+                {
+                    sb.Append($"{performanceMetrics[metric]:F2},");
+                }
+
+                // Add count metrics values
+                foreach (var metric in countMetrics.Keys.OrderBy(k => k))
+                {
+                    sb.Append($"{countMetrics[metric]},");
+                }
+
+                // Add ratio metrics values
+                foreach (var metric in ratioMetrics.Keys.OrderBy(k => k))
+                {
+                    sb.Append($"{ratioMetrics[metric]:F4},");
+                }
+
+                sb.AppendLine();
+
+                // Write to file (append)
+                File.AppendAllText(metricsFilePath, sb.ToString());
+
+                Debug.Log($"Metrics saved to {metricsFilePath}");
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error saving metrics to file: {e.Message}");
             }
         }
 
+        // Event handler for chunk state changes
         private void OnChunkStateChanged(Vector3Int chunkPos, ChunkManager.ChunkLifecycleState oldState, ChunkManager.ChunkLifecycleState newState)
         {
-            if (!trackGenerationLatency)
-                return;
-
+            // Track chunk generation time
             if (oldState == ChunkManager.ChunkLifecycleState.Loading &&
                 newState == ChunkManager.ChunkLifecycleState.Active)
             {
-                // Chunk finished loading
-                if (chunkGenTimes.TryGetValue(chunkPos, out float startTime))
-                {
-                    float genTime = Time.realtimeSinceStartup - startTime;
-
-                    // Record time and update stats
-                    peakChunkGenerationTime = Mathf.Max(peakChunkGenerationTime, genTime);
-
-                    // Calculate new average
-                    float totalTime = 0f;
-                    foreach (var time in chunkGenTimes.Values)
-                        totalTime += time;
-
-                    avgChunkGenerationTime = chunkGenTimes.Count > 0 ?
-                        totalTime / chunkGenTimes.Count : 0f;
-                }
-            }
-            else if (oldState == ChunkManager.ChunkLifecycleState.None &&
-                     newState == ChunkManager.ChunkLifecycleState.Loading)
-            {
-                // Chunk started loading
-                chunkGenTimes[chunkPos] = Time.realtimeSinceStartup;
+                // Chunk finished processing
+                // Could add timing logic here
             }
         }
 
-        // Test methods
-        public void RunBoundaryCoherenceTest()
+        // Manual test functions
+        [ContextMenu("Run Performance Test")]
+        public void RunPerformanceTest()
         {
             if (chunkManager == null || wfcGenerator == null)
             {
@@ -210,9 +425,9 @@ namespace WFC.Metrics
                 return;
             }
 
-            Debug.Log("Running boundary coherence test...");
+            Debug.Log("Running performance test...");
 
-            // Safer alternative to CreateChunksAroundPlayer
+            // Force generation of test chunks
             Vector3Int centerChunk = Vector3Int.zero;
 
             // Try to get viewer position if available
@@ -226,109 +441,145 @@ namespace WFC.Metrics
                 );
             }
 
-            // Create center chunk
-            chunkManager.CreateChunkAt(centerChunk);
+            // Create a grid of test chunks
+            int halfSizeX = testWorldSizeX / 2;
+            int halfSizeZ = testWorldSizeZ / 2;
 
-            // Create surrounding chunks
-            for (int x = -1; x <= 1; x++)
+            for (int x = -halfSizeX; x <= halfSizeX; x++)
             {
-                for (int z = -1; z <= 1; z++)
+                for (int y = 0; y < testWorldSizeY; y++)
                 {
-                    if (x == 0 && z == 0) continue; // Skip center
-                    Vector3Int pos = centerChunk + new Vector3Int(x, 0, z);
-                    chunkManager.CreateChunkAt(pos);
-                }
-            }
-        }
-
-        public void RunPerformanceTest()
-        {
-            if (chunkManager == null || wfcGenerator == null)
-            {
-                Debug.LogError("Cannot run test: ChunkManager or WFCGenerator is missing");
-                return;
-            }
-
-            Debug.Log("Running generation performance test...");
-
-            // Clear previous data
-            chunkGenTimes.Clear();
-
-            // Create a test grid centered at origin or near viewer
-            Vector3Int centerChunk = Vector3Int.zero;
-
-            // Try to get viewer position if available
-            if (chunkManager.viewer != null)
-            {
-                Vector3 pos = chunkManager.viewer.position;
-                centerChunk = new Vector3Int(
-                    Mathf.FloorToInt(pos.x / wfcGenerator.ChunkSize),
-                    0, // Always at ground level
-                    Mathf.FloorToInt(pos.z / wfcGenerator.ChunkSize)
-                );
-            }
-
-            // Determine grid size based on test chunk count
-            int gridSize = Mathf.CeilToInt(Mathf.Sqrt(testChunkCount));
-            int halfSize = gridSize / 2;
-
-            // Create chunks in a grid pattern
-            for (int x = -halfSize; x <= halfSize; x++)
-            {
-                for (int z = -halfSize; z <= halfSize; z++)
-                {
-                    if (x * x + z * z <= testChunkCount) // Create in a rough circle
+                    for (int z = -halfSizeZ; z <= halfSizeZ; z++)
                     {
-                        Vector3Int chunkPos = centerChunk + new Vector3Int(x, 0, z);
+                        Vector3Int chunkPos = centerChunk + new Vector3Int(x, y, z);
                         chunkManager.CreateChunkAt(chunkPos);
                     }
                 }
             }
+
+            // Collect and save metrics immediately
+            CollectMetrics();
+            LogMetricsToConsole();
+            SaveMetricsToFile();
+
+            // Schedule periodic collections
+            StartCoroutine(CollectTestMetrics());
         }
 
-        public void RunConstraintTest()
+        private System.Collections.IEnumerator CollectTestMetrics()
         {
-            FindReferences(); // Ensure references are up to date
-
-            if (wfcGenerator == null || constraintSystem == null)
-                return;
-
-            Debug.Log("Running constraint satisfaction test...");
-
-            // Force constraint application on existing chunks
-            var chunks = chunkManager.GetLoadedChunks();
-            int cellsProcessed = 0;
-
-            foreach (var chunkEntry in chunks)
+            for (int i = 0; i < 10; i++) // Collect 10 samples
             {
-                Chunk chunk = chunkEntry.Value;
+                yield return new WaitForSeconds(1.0f);
+                CollectMetrics();
+                LogMetricsToConsole();
+                if (i % 2 == 0) // Save every other sample
+                    SaveMetricsToFile();
+            }
+        }
 
-                for (int x = 0; x < chunk.Size; x++)
+        [ContextMenu("Save Current Metrics")]
+        public void SaveCurrentMetrics()
+        {
+            CollectMetrics();
+            LogMetricsToConsole();
+            SaveMetricsToFile();
+        }
+
+        [ContextMenu("Reset Metrics")]
+        public void ResetMetrics()
+        {
+            InitializeMetrics();
+            measurementCount = 0;
+            Debug.Log("Metrics reset");
+        }
+
+        // Helper functions
+
+        private ChunkManager.ChunkLifecycleState GetChunkState(Vector3Int chunkPos)
+        {
+            if (chunkManager == null)
+                return ChunkManager.ChunkLifecycleState.None;
+
+            // Use reflection to access the protected method
+            var method = chunkManager.GetType().GetMethod("GetChunkState",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance);
+
+            if (method != null)
+                return (ChunkManager.ChunkLifecycleState)method.Invoke(chunkManager, new object[] { chunkPos });
+
+            return ChunkManager.ChunkLifecycleState.None;
+        }
+
+        private struct BoundaryMetricsData
+        {
+            public int TotalCells;
+            public int CollapsedCells;
+            public int CompatibleCells;
+            public int ConflictCells;
+            public float CoherenceScore;
+        }
+
+        private BoundaryMetricsData CalculateBoundaryMetrics(BoundaryBuffer buffer)
+        {
+            BoundaryMetricsData metrics = new BoundaryMetricsData();
+
+            if (buffer.AdjacentChunk == null || buffer.BoundaryCells.Count == 0)
+                return metrics;
+
+            Direction oppositeDir = buffer.Direction.GetOpposite();
+
+            if (!buffer.AdjacentChunk.BoundaryBuffers.TryGetValue(oppositeDir, out var adjacentBuffer))
+                return metrics;
+
+            metrics.TotalCells = buffer.BoundaryCells.Count;
+
+            for (int i = 0; i < buffer.BoundaryCells.Count; i++)
+            {
+                if (i >= adjacentBuffer.BoundaryCells.Count)
+                    break;
+
+                Cell cell1 = buffer.BoundaryCells[i];
+                Cell cell2 = adjacentBuffer.BoundaryCells[i];
+
+                if (cell1.CollapsedState.HasValue && cell2.CollapsedState.HasValue)
                 {
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            Cell cell = chunk.GetCell(x, y, z);
+                    metrics.CollapsedCells++;
 
-                            if (cell != null && !cell.CollapsedState.HasValue)
-                            {
-                                constraintSystem.ApplyConstraintsToCell(cell, chunk, wfcGenerator.MaxCellStates);
-                                cellsProcessed++;
-                            }
-                        }
-                    }
+                    // Check compatibility
+                    bool isCompatible = AreStatesCompatible(
+                        cell1.CollapsedState.Value,
+                        cell2.CollapsedState.Value,
+                        buffer.Direction);
+
+                    if (isCompatible)
+                        metrics.CompatibleCells++;
+                    else
+                        metrics.ConflictCells++;
                 }
             }
 
-            Debug.Log($"Applied constraints to {cellsProcessed} cells");
-            UpdateConstraintMetrics();
+            metrics.CoherenceScore = metrics.CollapsedCells > 0 ?
+                (float)metrics.CompatibleCells / metrics.CollapsedCells : 1f;
+
+            return metrics;
         }
 
-        // Helper for UI
-        public Color GetCoherenceColor(float score)
+        private bool AreStatesCompatible(int stateA, int stateB, Direction direction)
         {
-            return Color.Lerp(badBoundaryColor, goodBoundaryColor, score);
+            if (wfcGenerator != null)
+                return wfcGenerator.AreStatesCompatible(stateA, stateB, direction);
+
+            // Default compatibility rules as fallback
+            if (stateA == stateB)
+                return true; // Same states are compatible
+
+            // Default: allow transitions between ground (1) and other states
+            if (stateA == 1 || stateB == 1)
+                return true;
+
+            return false;
         }
     }
 }
