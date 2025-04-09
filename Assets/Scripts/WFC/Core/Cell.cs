@@ -1,4 +1,19 @@
-// Assets/Scripts/WFC/Core/Cell.cs
+/*
+# ===================================================================
+# Wave Function Collapse Algorithm Implementation with Hierarchical Constraints
+# ===================================================================
+# Original WFC Algorithm:
+#   - Maxim Gumin (https://github.com/mxgmn/WaveFunctionCollapse)
+#
+# This implementation incorporates elements from:
+#   - Oskar Stålberg's techniques for boundary handling in Townscaper (adopted)
+#   - Martin O'Leary's approaches for constraint-based terrain generation (adopted)
+#   - Claude Shannon's entropy calculation from information theory
+#
+# This code implements a 2D version of WFC with hierarchical constraints,
+# chunking, and boundary management systems for coherent region transitions.
+# ===================================================================
+*/
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -27,6 +42,11 @@ namespace WFC.Core
         // Visual correction flag for mesh generation
         public bool NeedsVisualCorrection { get; set; }
 
+        /// <summary>
+        /// Creates a new cell at the specified position with the given initial possible states.
+        /// </summary>
+        /// <param name="position">3D position within a chunk</param>
+        /// <param name="initialStates">Collection of initially allowed states for this cell</param>
         public Cell(Vector3Int position, IEnumerable<int> initialStates)
         {
             Position = position;
@@ -36,6 +56,12 @@ namespace WFC.Core
             BoundaryDirection = null;
         }
 
+        /// <summary>
+        /// Collapses this cell to a specific state, removing all other possibilities.
+        /// The core operation of the Wave Function Collapse algorithm.
+        /// </summary>
+        /// <param name="state">The state to collapse to</param>
+        /// <returns>True if collapse was successful, false if the state wasn't possible</returns>
         public bool Collapse(int state)
         {
             if (!PossibleStates.Contains(state))
@@ -46,7 +72,12 @@ namespace WFC.Core
             CollapsedState = state;
             return true;
         }
-
+        /// <summary>
+        /// Removes a specific state from the cell's possibilities.
+        /// Automatically collapses the cell if only one state remains.
+        /// </summary>
+        /// <param name="state">The state to remove</param>
+        /// <returns>True if state was removed, false if already collapsed or state not present</returns>
         public bool RemoveState(int state)
         {
             if (CollapsedState.HasValue)
@@ -67,6 +98,11 @@ namespace WFC.Core
             return true;
         }
 
+        /// <summary>
+        /// Set possible states to be the given hash set.
+        /// </summary>
+        /// <param name="state">The hash set of states to remove</param>
+        /// <returns>True if state is possible, false if already collapsed or state not present</returns>
         public bool SetPossibleStates(HashSet<int> states)
         {
             if (CollapsedState.HasValue)

@@ -285,7 +285,7 @@ namespace WFC.MarchingCubes
             int cubeIndex = 0;
             for (int i = 0; i < 8; i++)
             {
-                if (cornerDensities[i] < surfaceLevel)
+                if (cornerDensities[i] > surfaceLevel)
                 {
                     cubeIndex |= (1 << i);
                 }

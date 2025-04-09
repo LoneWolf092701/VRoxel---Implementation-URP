@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/Generation/WFCGenerator.cs
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -79,11 +78,11 @@ namespace WFC.Generation
                 Debug.LogWarning("WFCGenerator: Using configuration with validation issues.");
             }
 
-            //InitializeWorld();
             StartCoroutine(DelayedInitialization());
 
         }
 
+        // Initializes the WFC algorithm and starts the generation process
         private IEnumerator DelayedInitialization()
         {
             int maxRetries = 5;
@@ -109,7 +108,7 @@ namespace WFC.Generation
             InitializeWorld();
         }
 
-        // New method that initializes rules without creating chunks
+        // Initializes rules without creating chunks
         private void InitializeRulesOnly()
         {
             // Initialize adjacency rules but don't create chunks
@@ -132,14 +131,14 @@ namespace WFC.Generation
             // Process propagation queue
             ProcessPropagationQueue();
 
-            // NEW: Process parallel processor events
+            // Process parallel processor events
             if (parallelProcessor != null)
             {
                 parallelProcessor.ProcessMainThreadEvents();
             }
 
 
-            // Check if we need to collapse more cells
+            // Check if it need to collapse more cells
             if (propagationQueue.Count == 0)
             {
                 CollapseNextCell();
@@ -160,6 +159,7 @@ namespace WFC.Generation
             }
         }
 
+        // Collapse the next cell in the queue
         private void ProcessPropagationEvent(PropagationEvent evt)
         {
             // Skip if the event is invalid
@@ -186,6 +186,7 @@ namespace WFC.Generation
             }
         }
 
+        // Collapse the next cell in the queue
         private void PropagateToNeighbors(Cell cell, Chunk chunk)
         {
             // Find cell position in chunk
@@ -212,11 +213,11 @@ namespace WFC.Generation
                 else
                 {
                     // Handle neighbor in adjacent chunk (through boundary system)
-                    // This is already handled by boundaryManager.UpdateBuffersAfterCollapse
                 }
             }
         }
 
+        // Find the position of a cell within a chunk
         private Vector3Int? FindCellPosition(Cell cell, Chunk chunk)
         {
             for (int x = 0; x < chunk.Size; x++)
@@ -236,6 +237,7 @@ namespace WFC.Generation
             return null;
         }
 
+        // Apply constraints to a cell based on its collapsed state
         private bool IsPositionInChunk(Vector3Int pos, int chunkSize)
         {
             return pos.x >= 0 && pos.x < chunkSize &&
@@ -243,6 +245,7 @@ namespace WFC.Generation
                    pos.z >= 0 && pos.z < chunkSize;
         }
 
+        // Apply constraints to a cell based on its collapsed state
         private void ApplyConstraint(Cell cell, int constraintState, Direction direction, Chunk chunk)
         {
             // Skip if already collapsed
@@ -281,7 +284,10 @@ namespace WFC.Generation
             }
         }
 
-        // creating chunks at 0,0,0 position
+        /// <summary>
+        /// Initializes the world grid and adjacent rules.
+        /// Creates the initial structure and rules for the WFC algorithm.
+        /// </summary>
         private void InitializeWorld()
         {
             // Initialize adjacency rules
@@ -429,7 +435,7 @@ namespace WFC.Generation
             }
         }
 
-        // NEW METHOD: Create flat ground terrain
+        // Create flat ground terrain
         private void ApplyFlatGroundTerrain(Chunk chunk, System.Random random)
         {
             // Only generate terrain at the bottom layer (y=0)
@@ -508,7 +514,7 @@ namespace WFC.Generation
         }
 
 
-        // MODIFIED METHOD: Mountains as features without excessive height
+        // Mountains as features without excessive height
         private void ApplyMountainFeatures(Chunk chunk, float intensity, System.Random random)
         {
             // Never make terrain in upper chunks
@@ -576,7 +582,7 @@ namespace WFC.Generation
             hierarchicalConstraints.AddGlobalConstraint(mountainConstraint);
         }
 
-        // MODIFIED METHOD: Water features without excessive depth
+        // Water features without excessive depth
         private void ApplyWaterFeatures(Chunk chunk, float intensity, System.Random random)
         {
             // Never make terrain in upper chunks
