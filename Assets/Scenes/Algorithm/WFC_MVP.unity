@@ -258,12 +258,12 @@ GameObject:
   - component: {fileID: 226482518}
   - component: {fileID: 226482519}
   m_Layer: 0
-  m_Name: TerrainPresetManager
+  m_Name: TerrainManager
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &226482518
 Transform:
   m_ObjectHideFlags: 0
@@ -288,18 +288,10 @@ MonoBehaviour:
   m_GameObject: {fileID: 226482517}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b9335828fbef08547b99bdbba2eb1ce0, type: 3}
+  m_Script: {fileID: 11500000, guid: a49104da7280cb6448a75d9ff351db8b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcGenerator: {fileID: 1124905181}
-  defaultPreset: {fileID: 11400000, guid: 905c6e6a6ef664a49856241ca4cd530a, type: 2}
-  availablePresets:
-  - {fileID: 11400000, guid: f4451cd76fe8b9145b364fe96d149634, type: 2}
-  - {fileID: 11400000, guid: 4e0b0b98c78396244aec5cb85c762c3f, type: 2}
-  - {fileID: 11400000, guid: 905c6e6a6ef664a49856241ca4cd530a, type: 2}
-  - {fileID: 11400000, guid: 420852e4297981f42a89c93f97d3f7f6, type: 2}
-  applyOnStart: 1
-  autoRegenerateOnPresetChange: 0
+  currentTerrain: {fileID: 11400000, guid: 91ea8289a94a3444e8a335f5b11cbe3b, type: 2}
 --- !u!1 &266812408
 GameObject:
   m_ObjectHideFlags: 0
@@ -929,6 +921,7 @@ MonoBehaviour:
   - {fileID: 2100000, guid: 283c92b3c94677441b4614a7101792e2, type: 2}
   - {fileID: 2100000, guid: 59a74a368f5c6fd43ab0c5fb100bbbf3, type: 2}
   - {fileID: 2100000, guid: a8b64633af1e1514c9e928867fa252fb, type: 2}
+  terrainManager: {fileID: 0}
 --- !u!1 &983494137
 GameObject:
   m_ObjectHideFlags: 0
@@ -1012,6 +1005,7 @@ MonoBehaviour:
   - {fileID: 2100000, guid: 283c92b3c94677441b4614a7101792e2, type: 2}
   - {fileID: 2100000, guid: 59a74a368f5c6fd43ab0c5fb100bbbf3, type: 2}
   - {fileID: 2100000, guid: a8b64633af1e1514c9e928867fa252fb, type: 2}
+  terrainManager: {fileID: 0}
 --- !u!4 &1124905182
 Transform:
   m_ObjectHideFlags: 0
@@ -1064,6 +1058,7 @@ MonoBehaviour:
   movementHistorySize: 60
   basePredictionTime: 2
   enableDebugLogging: 1
+  currentTerrainType: MountainValley
 --- !u!4 &1218634541
 Transform:
   m_ObjectHideFlags: 0
@@ -1329,11 +1324,11 @@ Transform:
   - {fileID: 1124905182}
   - {fileID: 1218634541}
   - {fileID: 1411155123}
+  - {fileID: 226482518}
   - {fileID: 93430297}
   - {fileID: 1408270511}
   - {fileID: 1703491498}
   - {fileID: 948878866}
-  - {fileID: 226482518}
   - {fileID: 983494138}
   - {fileID: 1314112787}
   - {fileID: 1229439649}
@@ -1363,6 +1358,10 @@ MonoBehaviour:
   debugLogging: 1
   chunkProcessingDelay: 5
   maxInitRetries: 3
+  configInitialized: 0
+  wfcGeneratorInitialized: 0
+  chunkManagerInitialized: 0
+  meshGeneratorInitialized: 0
 --- !u!1 &1466852793
 GameObject:
   m_ObjectHideFlags: 0
@@ -1891,7 +1890,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1703491498
 Transform:
   m_ObjectHideFlags: 0

@@ -34,6 +34,7 @@ using WFC.Performance;
 using WFC.MarchingCubes;
 using WFC.Boundary;
 using System;
+using WFC.Terrain;
 
 namespace WFC.Chunking
 {
@@ -61,6 +62,9 @@ namespace WFC.Chunking
 
         [Header("Debug Settings")]
         [SerializeField] private bool enableDebugLogging = false;
+        [SerializeField] private string currentTerrainType = "MountainValley"; // Default terrain
+        private ITerrainGenerator terrainGenerator;
+        private TerrainDefinition terrainDefinition;
 
         #endregion
 
@@ -120,6 +124,13 @@ namespace WFC.Chunking
         private Vector3 lastChunkGenerationPosition;
         private float chunkGenerationDistance = 10f; // Distance player must move before generating new chunks
 
+        // World properties
+        public Vector3Int WorldSize => new Vector3Int(
+            activeConfig.World.worldSizeX,
+            activeConfig.World.worldSizeY,
+            activeConfig.World.worldSizeZ
+        );
+
 
         #endregion
 
@@ -171,6 +182,7 @@ namespace WFC.Chunking
             lastChunkGenerationPosition = Vector3.zero; // Initialize this to ensure the generation happens
 
             Debug.Log($"ChunkManager Start completed. Initial viewer position: {(viewer != null ? viewer.position.ToString() : "No viewer")}");
+            
         }
 
         /// <summary>
@@ -297,8 +309,6 @@ namespace WFC.Chunking
 
             // Manage chunks (load/unload)
             ManageChunks();
-
-            CleanupNonGroundChunks();
 
             // Process chunk tasks
             ProcessChunkTasks();
@@ -860,7 +870,7 @@ namespace WFC.Chunking
 
             // 2. Adjust generation radius based on performance
             float fps = 1f / Time.smoothDeltaTime;
-            float targetFps = 90f;   // Target FPS
+            float targetFps = 100f;   // Target FPS
 
             if (fps > targetFps * 1.2f) // Performance is good, can increase load distance
             {
@@ -1176,55 +1186,6 @@ namespace WFC.Chunking
             }
         }
 
-        public void ForceGenerateInitialChunks()
-        {
-            // Force create chunks around the starting position
-            Vector3Int viewerChunk = new Vector3Int(
-                Mathf.FloorToInt(viewerPosition.x / ChunkSize),
-                Mathf.FloorToInt(viewerPosition.y / ChunkSize),
-                Mathf.FloorToInt(viewerPosition.z / ChunkSize)
-            );
-
-            Debug.Log($"Generating initial chunks around viewer at {viewerChunk}");
-
-            // Create a 3x3x3 grid of chunks around the player
-            for (int x = -1; x <= 1; x++)
-            {
-                for (int y = -1; y <= 1; y++)
-                {
-                    for (int z = -1; z <= 1; z++)
-                    {
-                        Vector3Int chunkPos = new Vector3Int(
-                            viewerChunk.x + x,
-                            viewerChunk.y + y,
-                            viewerChunk.z + z
-                        );
-
-                        // Already loaded or pending?
-                        ChunkLifecycleState currentState = GetChunkState(chunkPos);
-                        if (currentState != ChunkLifecycleState.None &&
-                            currentState != ChunkLifecycleState.Error)
-                            continue;
-
-                        // Create task to generate this chunk
-                        ChunkTask task = new ChunkTask
-                        {
-                            Type = ChunkTaskType.Create,
-                            Position = chunkPos,
-                            Priority = 100f // High priority
-                        };
-
-                        chunkTasks.Enqueue(task, task.Priority);
-
-                        // Update chunk state
-                        UpdateChunkState(chunkPos, ChunkLifecycleState.Pending);
-                    }
-                }
-            }
-
-            Debug.Log("Forced creation of initial chunks around player");
-        }
-
         // Get chunks to load based on viewer position and distance
         private List<Vector3Int> GetChunksToLoad()
         {
@@ -1343,25 +1304,7 @@ namespace WFC.Chunking
             }).ToList();
         }
 
-        private void CleanupNonGroundChunks()
-        {
-            List<Vector3Int> chunksToRemove = new List<Vector3Int>();
-
-            foreach (var chunkPos in loadedChunks.Keys)
-            {
-                // Identify chunks above ground level
-                if (chunkPos.y > 0)
-                {
-                    chunksToRemove.Add(chunkPos);
-                }
-            }
-
-            foreach (var chunkPos in chunksToRemove)
-            {
-                UnloadChunk(chunkPos);
-                Debug.Log($"Forcibly removed above-ground chunk at {chunkPos}");
-            }
-        }
+        
 
         // Calculate load priority for a chunk based on multiple factors
         private float CalculateLoadPriority(Vector3Int chunkPos)
@@ -2021,7 +1964,7 @@ namespace WFC.Chunking
                 else
                 {
                     // Create the mesh directly as a fallback
-                    GenerateFallbackMesh(chunk);
+                    Debug.LogError("Generate Chunk Mesh not found!!!");
                 }
 
                 // Mark chunk as processed
@@ -2048,78 +1991,6 @@ namespace WFC.Chunking
                 if (performanceMonitor != null)
                     performanceMonitor.EndComponentTiming("MeshGeneration");
             }
-        }
-
-        // Fallback mesh generation method
-        private void GenerateFallbackMesh(Chunk chunk)
-        {
-            // Fallback - create a simple mesh directly
-            // Step 1: Create a density field generator
-            var densityGenerator = new WFC.MarchingCubes.DensityFieldGenerator();
-
-            // Step 2: Generate a density field from the chunk
-            float[,,] densityField = densityGenerator.GenerateDensityField(chunk);
-
-            // Step 3: Create a marching cubes generator
-            var marchingCubes = new WFC.MarchingCubes.MarchingCubesGenerator();
-
-            // Step 4: Generate mesh using appropriate LOD level
-            Mesh mesh = marchingCubes.GenerateMesh(densityField, chunk.LODLevel);
-
-            // Step 5: Create or update the GameObject for this chunk
-            string chunkName = $"Terrain_Chunk_{chunk.Position.x}_{chunk.Position.y}_{chunk.Position.z}";
-            GameObject meshObject = GameObject.Find(chunkName);
-
-            if (meshObject == null)
-            {
-                meshObject = new GameObject(chunkName);
-                meshObject.transform.position = GetChunkWorldPosition(chunk.Position);
-                meshObject.AddComponent<MeshFilter>();
-                meshObject.AddComponent<MeshRenderer>();
-
-                // Parent to this object
-                meshObject.transform.parent = transform;
-            }
-
-            // Step 6: Assign the mesh and material
-            MeshFilter meshFilter = meshObject.GetComponent<MeshFilter>();
-            meshFilter.mesh = mesh;
-
-            // Find and assign a material
-            MeshRenderer meshRenderer = meshObject.GetComponent<MeshRenderer>();
-
-            Material terrainMat = null;
-
-            // Try to get materials from WFCGenerator
-            if (wfcGenerator != null)
-            {
-                Material[] stateMaterials = wfcGenerator.GetStateMaterials();
-
-                if (stateMaterials != null && stateMaterials.Length > 0)
-                {
-                    int dominantState = GetDominantState(chunk);
-
-                    if (dominantState >= 0 && dominantState < stateMaterials.Length)
-                    {
-                        terrainMat = stateMaterials[dominantState];
-                    }
-                }
-            }
-
-            // If no material found, try resources or create default
-            if (terrainMat == null)
-            {
-                terrainMat = Resources.Load<Material>("TerrainMaterial");
-
-                if (terrainMat == null)
-                {
-                    // Fallback to a default material
-                    terrainMat = new Material(Shader.Find("Standard"));
-                    terrainMat.color = new Color(0.5f, 0.5f, 0.5f);
-                }
-            }
-
-            meshRenderer.material = terrainMat;
         }
 
         // Helper method to determine the dominant state in a chunk
@@ -2212,297 +2083,35 @@ namespace WFC.Chunking
          */
         private void ApplyInitialConstraints(Chunk chunk, System.Random random)
         {
-            // Constants that control terrain generation characteristics
-            float baseHeightScale = 0.01f;    // Controls how gradually height changes (smaller = more gradual)
-            float detailScale = 0.05f;        // Controls small terrain details
-            float featureScale = 0.025f;      // Controls medium terrain features
-            float materialNoiseScale = 0.08f; // Controls how materials are distributed
-
-            // Base ground level - adjust as needed for your world
-            int baseGroundLevel = chunk.Size / 2;
-
-            // Noise offsets to create different patterns
-            float heightOffset = 0;
-            float detailOffset = 500;
-            float materialOffset = 1000;
-            float featureOffset = 2000;
-            float waterOffset = 3000;
-
-            // Initialize terrain heights across the chunk
-            float[,] heightMap = new float[chunk.Size, chunk.Size];
-            float minHeight = float.MaxValue;
-            float maxHeight = float.MinValue;
-
-            // Step 1: Generate base height map using global coordinates for consistency across chunks
-            for (int x = 0; x < chunk.Size; x++)
+            if (terrainGenerator == null)
             {
-                for (int z = 0; z < chunk.Size; z++)
+                Debug.LogError("No terrain generator available!");
+
+                // Fallback to very basic terrain (flat ground with air above)
+                for (int x = 0; x < chunk.Size; x++)
                 {
-                    // Calculate world coordinates for consistent noise sampling
-                    float worldX = (chunk.Position.x * chunk.Size + x);
-                    float worldZ = (chunk.Position.z * chunk.Size + z);
-
-                    // Sample multiple noise octaves for natural-looking terrain
-                    float baseNoise = Mathf.PerlinNoise(
-                        worldX * baseHeightScale + heightOffset,
-                        worldZ * baseHeightScale + heightOffset
-                    );
-
-                    float detailNoise = Mathf.PerlinNoise(
-                        worldX * detailScale + detailOffset,
-                        worldZ * detailScale + detailOffset
-                    ) * 0.25f; // Reduced strength for detail noise
-
-                    float featureNoise = Mathf.PerlinNoise(
-                        worldX * featureScale + featureOffset,
-                        worldZ * featureScale + featureOffset
-                    ) * 0.5f; // Medium strength for feature noise
-
-                    // Combine noise for final height
-                    float combinedNoise = baseNoise * 0.6f + detailNoise + featureNoise * 0.4f;
-
-                    // Store normalized height (0-1 range)
-                    heightMap[x, z] = combinedNoise;
-
-                    // Track min and max heights for normalization
-                    minHeight = Mathf.Min(minHeight, combinedNoise);
-                    maxHeight = Mathf.Max(maxHeight, combinedNoise);
-                }
-            }
-
-            // Step 2: Normalize heights and convert to actual terrain heights
-            float heightRange = maxHeight - minHeight;
-            if (heightRange < 0.001f) heightRange = 1.0f; // Avoid division by zero
-
-            int[,] terrainHeight = new int[chunk.Size, chunk.Size];
-            for (int x = 0; x < chunk.Size; x++)
-            {
-                for (int z = 0; z < chunk.Size; z++)
-                {
-                    // Normalize to 0-1 range
-                    float normalizedHeight = (heightMap[x, z] - minHeight) / heightRange;
-
-                    // Apply curve to create more flat areas and steeper mountains
-                    normalizedHeight = Mathf.Pow(normalizedHeight, 1.5f);
-
-                    // Convert to actual height in cells
-                    int height = Mathf.FloorToInt(baseGroundLevel + normalizedHeight * chunk.Size * 0.6f);
-
-                    // Ensure height is in bounds
-                    terrainHeight[x, z] = Mathf.Clamp(height, 1, chunk.Size - 1);
-                }
-            }
-
-            // Step 3: Apply water level determination - consistent across chunks
-            float waterNoise = Mathf.PerlinNoise(
-                chunk.Position.x * baseHeightScale * 5 + waterOffset,
-                chunk.Position.z * baseHeightScale * 5 + waterOffset
-            );
-
-            int waterLevel = (waterNoise > 0.6f) ?
-                baseGroundLevel - Mathf.FloorToInt((waterNoise - 0.6f) * 10) :
-                -1; // No water
-
-            // Step 4: Assign states to cells based on terrain height and material patterns
-            for (int x = 0; x < chunk.Size; x++)
-            {
-                for (int z = 0; z < chunk.Size; z++)
-                {
-                    // Get world coordinates for material selection
-                    float worldX = (chunk.Position.x * chunk.Size + x);
-                    float worldZ = (chunk.Position.z * chunk.Size + z);
-
-                    // Material variation noise
-                    float materialNoise = Mathf.PerlinNoise(
-                        worldX * materialNoiseScale + materialOffset,
-                        worldZ * materialNoiseScale + materialOffset
-                    );
-
-                    // Additional noise for specific features
-                    float specialFeatureNoise = Mathf.PerlinNoise(
-                        worldX * (materialNoiseScale * 2) + featureOffset,
-                        worldZ * (materialNoiseScale * 2) + featureOffset
-                    );
-
-                    // Get target height for this column
-                    int height = terrainHeight[x, z];
-
-                    // Iterate through all cells in this vertical column
                     for (int y = 0; y < chunk.Size; y++)
                     {
-                        Cell cell = chunk.GetCell(x, y, z);
-                        if (cell == null) continue;
-
-                        // Water layer check - must happen first
-                        if (waterLevel > 0 && y <= waterLevel)
+                        for (int z = 0; z < chunk.Size; z++)
                         {
-                            cell.Collapse(3); // Water state
-                            continue;
-                        }
-
-                        // Deep underground - always solid ground
-                        if (y < height - 3)
-                        {
-                            cell.Collapse(1); // Ground state
-                        }
-                        // Underground near surface
-                        else if (y < height - 1)
-                        {
-                            // Some rock veins underground
-                            if (materialNoise > 0.7f)
+                            Cell cell = chunk.GetCell(x, y, z);
+                            if (cell != null)
                             {
-                                cell.Collapse(4); // Rock state
-                            }
-                            else
-                            {
-                                cell.Collapse(1); // Ground state
-                            }
-                        }
-                        // Surface layer
-                        else if (y == height - 1)
-                        {
-                            // Create varied surface types
-                            if (waterLevel > 0 && y <= waterLevel + 1)
-                            {
-                                // Near water - create beaches
-                                cell.Collapse(5); // Sand
-                            }
-                            else if (materialNoise < 0.3f)
-                            {
-                                // Sandy areas
-                                cell.Collapse(5); // Sand
-                            }
-                            else if (materialNoise < 0.7f)
-                            {
-                                // Grassy areas (most common)
-                                cell.Collapse(2); // Grass
-                            }
-                            else if (materialNoise < 0.9f)
-                            {
-                                // Rocky outcrops
-                                cell.Collapse(4); // Rock
-                            }
-                            else
-                            {
-                                // Occasional dirt patches
-                                cell.Collapse(1); // Ground
-                            }
-                        }
-                        // Surface features
-                        else if (y == height)
-                        {
-                            // Only add features in non-water areas
-                            if (waterLevel < 0 || y > waterLevel)
-                            {
-                                // Occasionally add trees - more likely in grassy areas
-                                if (specialFeatureNoise > 0.8f && materialNoise > 0.4f && materialNoise < 0.8f)
-                                {
-                                    cell.Collapse(6); // Tree
-                                }
+                                // Simple flat terrain at half height
+                                if (y < chunk.Size / 2)
+                                    cell.Collapse(TerrainStateRegistry.STATE_GROUND);
                                 else
-                                {
-                                    cell.Collapse(0); // Air
-                                }
+                                    cell.Collapse(TerrainStateRegistry.STATE_AIR);
                             }
-                            else
-                            {
-                                cell.Collapse(3); // Water near surface
-                            }
-                        }
-                        // Above surface - air
-                        else
-                        {
-                            cell.Collapse(0); // Air
                         }
                     }
                 }
+
+                return;
             }
 
-            // Step 5: Smooth edges at chunk boundaries
-            SmoothChunkBoundaries(chunk, terrainHeight);
-        }
-
-        // Method to smooth chunk boundaries with neighbors
-        private void SmoothChunkBoundaries(Chunk chunk, int[,] terrainHeight)
-        {
-            // Check each direction for neighbors
-            foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
-            {
-                // Skip if no neighbor in this direction
-                if (!chunk.Neighbors.TryGetValue(dir, out Chunk neighbor))
-                    continue;
-
-                // We only need to smooth X and Z boundaries for height
-                if (dir != Direction.Left && dir != Direction.Right &&
-                    dir != Direction.Forward && dir != Direction.Back)
-                    continue;
-
-                // Process cells at the boundary
-                switch (dir)
-                {
-                    case Direction.Left: // X = 0 boundary
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            // Make boundary heights match with some random variation
-                            int thisHeight = terrainHeight[0, z];
-                            Cell boundaryCell = chunk.GetCell(0, thisHeight, z);
-
-                            // See if there's already a cell from the neighboring chunk should match
-                            Cell neighborCell = GetNeighborBoundaryCell(chunk, neighbor, dir, z);
-
-                            if (neighborCell != null && neighborCell.CollapsedState.HasValue)
-                            {
-                                // Match state with neighbor for consistency
-                                if (boundaryCell != null)
-                                {
-                                    boundaryCell.Collapse(neighborCell.CollapsedState.Value);
-                                }
-                            }
-                        }
-                        break;
-
-                    case Direction.Right: // X = Size-1 boundary
-                        // Similar logic for right boundary
-                        break;
-
-                    case Direction.Back: // Z = 0 boundary
-                        // Similar logic for back boundary
-                        break;
-
-                    case Direction.Forward: // Z = Size-1 boundary
-                        // Similar logic for forward boundary
-                        break;
-                }
-            }
-        }
-
-        // Helper method to get the boundary cell from a neighbor chunk
-        private Cell GetNeighborBoundaryCell(Chunk chunk, Chunk neighbor, Direction dir, int index)
-        {
-            // Convert boundary position to neighbor's coordinate system
-            switch (dir)
-            {
-                case Direction.Left:
-                    return neighbor.GetCell(neighbor.Size - 1, 0, index); // Right edge of neighbor
-
-                case Direction.Right:
-                    return neighbor.GetCell(0, 0, index); // Left edge of neighbor
-
-                case Direction.Down:
-                    return neighbor.GetCell(index, neighbor.Size - 1, 0); // Top edge of neighbor
-
-                case Direction.Up:
-                    return neighbor.GetCell(index, 0, 0); // Bottom edge of neighbor
-
-                case Direction.Back:
-                    return neighbor.GetCell(index, 0, neighbor.Size - 1); // Front edge of neighbor
-
-                case Direction.Forward:
-                    return neighbor.GetCell(index, 0, 0); // Back edge of neighbor
-
-                default:
-                    return null;
-            }
+            // Use the current terrain generator to apply constraints
+            terrainGenerator.GenerateTerrain(chunk, random);
         }
 
         // Method to connect chunk neighbors
@@ -2541,17 +2150,83 @@ namespace WFC.Chunking
                 List<Cell> boundaryCells = GetBoundaryCells(chunk, dir);
                 buffer.BoundaryCells = boundaryCells;
 
+                // Mark all boundary cells explicitly
+                foreach (var cell in boundaryCells)
+                {
+                    cell.IsBoundary = true;
+                    cell.BoundaryDirection = dir;
+                }
+
                 // Create buffer cells to mirror neighbor
                 List<Cell> bufferCells = new List<Cell>();
                 for (int i = 0; i < boundaryCells.Count; i++)
                 {
-                    Cell bufferCell = new Cell(new Vector3Int(-1, -1, -1), new int[0]);
+                    // CRITICAL FIX: Initialize buffer cells with the same possible states as boundary cells
+                    Cell bufferCell = new Cell(new Vector3Int(-1, -1, -1), boundaryCells[i].PossibleStates);
                     bufferCells.Add(bufferCell);
                 }
                 buffer.BufferCells = bufferCells;
 
                 // Add to chunk's boundary buffers
                 chunk.BoundaryBuffers[dir] = buffer;
+            }
+
+            // CRITICAL FIX: Immediately synchronize buffers after initialization
+            foreach (var buffer in chunk.BoundaryBuffers.Values)
+            {
+                SynchronizeBuffer(buffer);
+            }
+        }
+
+        private void SynchronizeBuffer(BoundaryBuffer buffer)
+        {
+            if (buffer.AdjacentChunk == null)
+                return;
+
+            Direction oppositeDir = buffer.Direction.GetOpposite();
+
+            // Get adjacent buffer
+            if (!buffer.AdjacentChunk.BoundaryBuffers.TryGetValue(oppositeDir, out BoundaryBuffer adjacentBuffer))
+                return;
+
+            // For each cell at the boundary
+            for (int i = 0; i < buffer.BoundaryCells.Count && i < adjacentBuffer.BoundaryCells.Count; i++)
+            {
+                Cell cell1 = buffer.BoundaryCells[i];
+                Cell cell2 = adjacentBuffer.BoundaryCells[i];
+
+                // If either cell is already collapsed, propagate that state
+                if (cell1.CollapsedState.HasValue && !cell2.CollapsedState.HasValue)
+                {
+                    cell2.Collapse(cell1.CollapsedState.Value);
+                }
+                else if (cell2.CollapsedState.HasValue && !cell1.CollapsedState.HasValue)
+                {
+                    cell1.Collapse(cell2.CollapsedState.Value);
+                }
+                // Otherwise ensure they have compatible states
+                else if (!cell1.CollapsedState.HasValue && !cell2.CollapsedState.HasValue)
+                {
+                    // Find compatible states
+                    HashSet<int> compatibleStates = new HashSet<int>();
+                    foreach (int state1 in cell1.PossibleStates)
+                    {
+                        foreach (int state2 in cell2.PossibleStates)
+                        {
+                            if (wfcGenerator.AreStatesCompatible(state1, state2, buffer.Direction))
+                            {
+                                compatibleStates.Add(state1);
+                                break;
+                            }
+                        }
+                    }
+
+                    // If found compatible states, update cell1
+                    if (compatibleStates.Count > 0)
+                    {
+                        cell1.SetPossibleStates(compatibleStates);
+                    }
+                }
             }
         }
 
@@ -2690,7 +2365,6 @@ namespace WFC.Chunking
 
             // Restart
             StartCoroutine(AdaptiveStrategyUpdateCoroutine());
-            ForceGenerateInitialChunks();
         }
 
         /// <summary>

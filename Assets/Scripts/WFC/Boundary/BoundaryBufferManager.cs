@@ -124,7 +124,11 @@ namespace WFC.Boundary
                 propagationCount[chunkPos] = 0;
 
             propagationCount[chunkPos]++;
-            if (propagationCount[chunkPos] > MaxPropagationCount)
+
+            // CRITICAL FIX: Increase propagation limit
+            int maxPropagationCount = 15; // Increased from 10
+
+            if (propagationCount[chunkPos] > maxPropagationCount)
             {
                 Debug.LogWarning($"Maximum propagation count reached for chunk {chunkPos}");
                 propagationCount[chunkPos] = 0;
@@ -165,7 +169,10 @@ namespace WFC.Boundary
 
                     // 2. Apply constraints to the corresponding boundary cell in adjacent chunk
                     Cell adjacentBoundaryCell = adjacentBuffer.BoundaryCells[index];
-                    bool adjacentBoundaryChanged = ApplyBufferConstraints(adjacentBoundaryCell, adjacentBufferCell, oppositeDir);
+
+                    // CRITICAL FIX: Apply stronger constraints at boundaries
+                    bool adjacentBoundaryChanged = ApplyBufferConstraints(adjacentBoundaryCell, adjacentBufferCell, oppositeDir,
+                                                                         depth: 0, strengthMultiplier: 1.2f); // Added strength multiplier
 
                     // 3. If adjacent boundary cell changed, create a propagation event for adjacent chunk
                     if (adjacentBoundaryChanged)
@@ -182,41 +189,49 @@ namespace WFC.Boundary
                         propagationHandler.AddPropagationEvent(propagationEvent);
                     }
                 }
-                else
+            }
+            else if (cell.PossibleStates.Count > 0)
+            {
+                // For uncollapsed cells, share possible states to maintain consistency
+                Cell adjacentBufferCell = adjacentBuffer.BufferCells[index];
+                Cell adjacentBoundaryCell = adjacentBuffer.BoundaryCells[index];
+
+                // Store old states
+                HashSet<int> oldStates = new HashSet<int>(adjacentBufferCell.PossibleStates);
+
+                // Update buffer with current possible states
+                bool adjacentBufferChanged = adjacentBufferCell.SetPossibleStates(
+                    new HashSet<int>(cell.PossibleStates));
+
+                // Apply constraints if buffer cell changed
+                if (adjacentBufferChanged)
                 {
-                    // If cell isn't collapsed, update buffer with current possible states
-                    HashSet<int> oldStates = new HashSet<int>(adjacentBufferCell.PossibleStates);
-                    adjacentBufferChanged = adjacentBufferCell.SetPossibleStates(new HashSet<int>(cell.PossibleStates));
+                    bool adjacentBoundaryChanged = ApplyBufferConstraints(
+                        adjacentBoundaryCell, adjacentBufferCell, oppositeDir);
 
-                    // Apply constraints if buffer cell changed
-                    if (adjacentBufferChanged)
+                    if (adjacentBoundaryChanged)
                     {
-                        Cell adjacentBoundaryCell = adjacentBuffer.BoundaryCells[index];
-                        bool adjacentBoundaryChanged = ApplyBufferConstraints(adjacentBoundaryCell, adjacentBufferCell, oppositeDir);
+                        var propagationEvent = new PropagationEvent(
+                            adjacentBoundaryCell,
+                            buffer.AdjacentChunk,
+                            oldStates,
+                            adjacentBoundaryCell.PossibleStates,
+                            true
+                        );
 
-                        if (adjacentBoundaryChanged)
-                        {
-                            var propagationEvent = new PropagationEvent(
-                                adjacentBoundaryCell,
-                                buffer.AdjacentChunk,
-                                oldStates,
-                                adjacentBoundaryCell.PossibleStates,
-                                true
-                            );
-
-                            propagationHandler.AddPropagationEvent(propagationEvent);
-                        }
+                        propagationHandler.AddPropagationEvent(propagationEvent);
                     }
                 }
             }
 
             // PHASE 2: Backward propagation (adjacent chunk back to this chunk)
+            // This ensures bidirectional constraint propagation
             if (index < buffer.BufferCells.Count)
             {
                 // Get the adjacent boundary cell
                 Cell adjacentBoundaryCell = adjacentBuffer.BoundaryCells[index];
 
-                // If adjacent boundary cell is collapsed or has limited states, reflect back to this chunk
+                // If adjacent boundary cell is collapsed or has fewer states, reflect back to this chunk
                 if (adjacentBoundaryCell.PossibleStates.Count < cell.PossibleStates.Count)
                 {
                     // Update this chunk's buffer cell based on adjacent boundary cell
@@ -292,10 +307,10 @@ namespace WFC.Boundary
          * 
          * Returns: true if boundary cell changed, false otherwise
          */
-        private bool ApplyBufferConstraints(Cell boundaryCell, Cell bufferCell, Direction direction, int depth = 0)
+        private bool ApplyBufferConstraints(Cell boundaryCell, Cell bufferCell, Direction direction, int depth = 0, float strengthMultiplier = 1.0f)
         {
             // To prevent infinite recursion
-            if (depth > 10) return false;
+            if (depth > 15) return false; // Increased from 10
 
             HashSet<int> newPossibleStates = new HashSet<int>();
 
@@ -319,6 +334,13 @@ namespace WFC.Boundary
                 // Store original states to check if they changed
                 HashSet<int> oldStates = new HashSet<int>(boundaryCell.PossibleStates);
 
+                // CRITICAL FIX: If there are fewer states than before, prioritize them more strongly
+                if (newPossibleStates.Count < oldStates.Count && depth < 3)
+                {
+                    // This is a case where we're reducing entropy at a boundary, apply stronger constraints
+                    strengthMultiplier *= 1.1f + (0.1f * (3 - depth)); // Stronger for initial propagation
+                }
+
                 // Update the cell - SetPossibleStates returns whether the states actually changed
                 bool changed = boundaryCell.SetPossibleStates(newPossibleStates);
 
@@ -328,7 +350,6 @@ namespace WFC.Boundary
             else if (boundaryCell.PossibleStates.Count > 0)
             {
                 Debug.LogWarning($"Boundary constraint conflict: No compatible states between boundary and buffer");
-
                 return true;
             }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
 using System.Linq;
+using WFC.Terrain;
 
 namespace WFC.MarchingCubes
 {
@@ -16,9 +17,6 @@ namespace WFC.MarchingCubes
         private float defaultEmptyDensity = 0.1f;  // For empty/air (below surface)
         private float defaultSolidDensity = 0.9f;  // For solid terrain (above surface)
 
-        // State density values (how "solid" each state is)
-        private Dictionary<int, float> stateDensityValues = new Dictionary<int, float>();
-
         // Cache to prevent infinite recursion and improve performance
         private Dictionary<Vector3Int, float[,,]> densityFieldCache = new Dictionary<Vector3Int, float[,,]>();
         private HashSet<Vector3Int> processingChunks = new HashSet<Vector3Int>();
@@ -26,15 +24,175 @@ namespace WFC.MarchingCubes
         // Cache management
         private int maxCacheSize = 100; // Adjust based on expected world size
         private Queue<Vector3Int> cacheEvictionQueue = new Queue<Vector3Int>();
-        public DensityFieldGenerator()
+
+        private TerrainDefinition terrainDefinition;
+        private Dictionary<int, float> stateDensityValues = new Dictionary<int, float>();
+        public DensityFieldGenerator(TerrainDefinition terrainDef = null)
         {
-            // Simplify - keep only essential states
-            stateDensityValues.Add(0, 0.1f);   // Empty (air)
-            stateDensityValues.Add(1, 0.8f);   // Ground 
-            stateDensityValues.Add(3, 0.6f);   // Water
-            stateDensityValues.Add(4, 0.85f);  // Rock
+            // Initialize with definition if provided, otherwise use defaults
+            if (terrainDef != null)
+            {
+                terrainDefinition = terrainDef;
+                stateDensityValues = terrainDef.StateDensities;
+            }
+            else
+            {
+                // Default density values as fallback
+                stateDensityValues.Add(0, 0.1f);   // Empty (air)
+                stateDensityValues.Add(1, 0.8f);   // Ground 
+                stateDensityValues.Add(3, 0.6f);   // Water
+                stateDensityValues.Add(4, 0.85f);  // Rock
+            }
 
             chunkSize = 16;
+        }
+
+        public void SetTerrainDefinition(TerrainDefinition newTerrainDef)
+        {
+            if (newTerrainDef != null)
+            {
+                terrainDefinition = newTerrainDef;
+                stateDensityValues = newTerrainDef.StateDensities;
+            }
+        }
+
+        private void ApplyGaussianSmoothing(float[,,] densityField, int size, float sigma = 1.0f)
+        {
+            // Create a temporary array to hold smoothed values
+            float[,,] smoothed = new float[size + 1, size + 1, size + 1];
+
+            // Kernel size (use odd number)
+            int kernelSize = Mathf.CeilToInt(sigma * 3) * 2 + 1;
+            int kernelRadius = kernelSize / 2;
+
+            // Create Gaussian kernel
+            float[,,] kernel = new float[kernelSize, kernelSize, kernelSize];
+            float kernelSum = 0.0f;
+
+            // Fill kernel with Gaussian values
+            for (int x = 0; x < kernelSize; x++)
+            {
+                for (int y = 0; y < kernelSize; y++)
+                {
+                    for (int z = 0; z < kernelSize; z++)
+                    {
+                        int dx = x - kernelRadius;
+                        int dy = y - kernelRadius;
+                        int dz = z - kernelRadius;
+
+                        // Gaussian function
+                        float value = Mathf.Exp(-(dx * dx + dy * dy + dz * dz) / (2.0f * sigma * sigma));
+                        kernel[x, y, z] = value;
+                        kernelSum += value;
+                    }
+                }
+            }
+
+            // Normalize kernel
+            for (int x = 0; x < kernelSize; x++)
+                for (int y = 0; y < kernelSize; y++)
+                    for (int z = 0; z < kernelSize; z++)
+                        kernel[x, y, z] /= kernelSum;
+
+            // Apply convolution
+            for (int x = 0; x <= size; x++)
+            {
+                for (int y = 0; y <= size; y++)
+                {
+                    for (int z = 0; z <= size; z++)
+                    {
+                        float sum = 0.0f;
+                        float weightSum = 0.0f;
+
+                        // Apply kernel
+                        for (int kx = 0; kx < kernelSize; kx++)
+                        {
+                            for (int ky = 0; ky < kernelSize; ky++)
+                            {
+                                for (int kz = 0; kz < kernelSize; kz++)
+                                {
+                                    int sampleX = x + kx - kernelRadius;
+                                    int sampleY = y + ky - kernelRadius;
+                                    int sampleZ = z + kz - kernelRadius;
+
+                                    // Check bounds
+                                    if (sampleX >= 0 && sampleX <= size &&
+                                        sampleY >= 0 && sampleY <= size &&
+                                        sampleZ >= 0 && sampleZ <= size)
+                                    {
+                                        float weight = kernel[kx, ky, kz];
+                                        sum += densityField[sampleX, sampleY, sampleZ] * weight;
+                                        weightSum += weight;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Normalize by actual weight sum
+                        if (weightSum > 0.0f)
+                        {
+                            smoothed[x, y, z] = sum / weightSum;
+                        }
+                        else
+                        {
+                            smoothed[x, y, z] = densityField[x, y, z];
+                        }
+                    }
+                }
+            }
+
+            // Copy back to original
+            for (int x = 0; x <= size; x++)
+                for (int y = 0; y <= size; y++)
+                    for (int z = 0; z <= size; z++)
+                        densityField[x, y, z] = smoothed[x, y, z];
+        }
+
+        private void AddMultiFrequencyNoise(float[,,] densityField, Chunk chunk, int size)
+        {
+            Vector3Int chunkPos = chunk.Position;
+
+            for (int x = 0; x <= size; x++)
+            {
+                for (int y = 0; y <= size; y++)
+                {
+                    for (int z = 0; z <= size; z++)
+                    {
+                        // Global coordinates for consistent noise
+                        float worldX = chunkPos.x * size + x;
+                        float worldY = chunkPos.y * size + y;
+                        float worldZ = chunkPos.z * size + z;
+
+                        // Add multiple octaves of noise with increased amplitude
+                        float noise = 0;
+
+                        // First octave - large features
+                        float amplitude1 = 0.15f; // Increased from 0.05f
+                        float frequency1 = 0.05f;
+                        noise += Mathf.PerlinNoise(worldX * frequency1, worldZ * frequency1) * amplitude1;
+
+                        // Second octave - medium features
+                        float amplitude2 = amplitude1 * 0.5f;
+                        float frequency2 = frequency1 * 2.0f;
+                        noise += Mathf.PerlinNoise(worldX * frequency2, worldZ * frequency2) * amplitude2;
+
+                        // Third octave - small details
+                        float amplitude3 = amplitude2 * 0.5f;
+                        float frequency3 = frequency2 * 2.0f;
+                        noise += Mathf.PerlinNoise(worldX * frequency3, worldZ * frequency3) * amplitude3;
+
+                        // Vertical variation for mountain areas - enhanced
+                        float verticalNoise = Mathf.PerlinNoise(worldX * 0.03f, worldZ * 0.03f);
+                        if (verticalNoise > 0.6f && densityField[x, y, z] > 0.7f)
+                        {
+                            noise *= 3.0f; // Further enhanced for more dramatic mountains (was 2.0f)
+                        }
+
+                        // Apply noise to terrain with greater effect
+                        densityField[x, y, z] += noise - 0.05f; // Adjusted offset to maintain balance
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -228,42 +386,6 @@ namespace WFC.MarchingCubes
         }
 
         /// <summary>
-        /// Evict distant chunks from the cache to free up memory
-        /// </summary>
-        public void EvictDistantChunks(Vector3 viewerPosition, float maxDistance)
-        {
-            List<Vector3Int> chunksToEvict = new List<Vector3Int>();
-
-            // Find chunks beyond the max distance
-            foreach (var entry in densityFieldCache)
-            {
-                Vector3 chunkCenter = new Vector3(
-                    entry.Key.x * chunkSize + chunkSize / 2,
-                    entry.Key.y * chunkSize + chunkSize / 2,
-                    entry.Key.z * chunkSize + chunkSize / 2
-                );
-
-                float distance = Vector3.Distance(chunkCenter, viewerPosition);
-                if (distance > maxDistance)
-                {
-                    chunksToEvict.Add(entry.Key);
-                }
-            }
-
-            // Evict chunks
-            foreach (var chunkPos in chunksToEvict)
-            {
-                densityFieldCache.Remove(chunkPos);
-
-                // Also remove from eviction queue
-                cacheEvictionQueue = new Queue<Vector3Int>(
-                    cacheEvictionQueue.Where(pos => !pos.Equals(chunkPos)));
-
-                Debug.Log($"Distance-based eviction: Removed chunk {chunkPos} from density field cache");
-            }
-        }
-
-        /// <summary>
         /// Apply additional processing to the density field to create more interesting terrain
         /// </summary>
         private void PreProcessDensityField(float[,,] densityField, Chunk chunk)
@@ -271,22 +393,131 @@ namespace WFC.MarchingCubes
             int size = chunk.Size;
             Vector3Int chunkPos = chunk.Position;
 
+            // Smoothing pass for more natural terrain - especially mountains
+            float[,,] smoothedField = new float[size + 1, size + 1, size + 1];
+
+            // Copy original field
             for (int x = 0; x <= size; x++)
             {
                 for (int y = 0; y <= size; y++)
                 {
                     for (int z = 0; z <= size; z++)
                     {
-                        // First apply height variation to ensure consistent base terrain
-                        densityField[x, y, z] = ApplyHeightVariation(
-                            densityField[x, y, z], x, y, z, chunkPos, size);
-
-                        // Then apply additional terrain features
-                        densityField[x, y, z] = ApplyTerrainFeatures(
-                            densityField[x, y, z], x, y, z, chunkPos, size);
+                        smoothedField[x, y, z] = densityField[x, y, z];
                     }
                 }
             }
+
+            // Simple smoothing algorithm - smooth density values slightly
+            for (int x = 1; x < size; x++)
+            {
+                for (int y = 1; y < size; y++)
+                {
+                    for (int z = 1; z < size; z++)
+                    {
+                        // Get average of neighbors
+                        float sum = 0;
+                        int count = 0;
+
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            for (int dy = -1; dy <= 1; dy++)
+                            {
+                                for (int dz = -1; dz <= 1; dz++)
+                                {
+                                    int nx = x + dx;
+                                    int ny = y + dy;
+                                    int nz = z + dz;
+
+                                    if (nx >= 0 && nx <= size &&
+                                        ny >= 0 && ny <= size &&
+                                        nz >= 0 && nz <= size)
+                                    {
+                                        sum += densityField[nx, ny, nz];
+                                        count++;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Apply smoothing with a strength factor (0.3 = 30% smoothing)
+                        float avgValue = sum / count;
+                        float smoothingStrength = 0.3f;
+                        smoothedField[x, y, z] = Mathf.Lerp(densityField[x, y, z], avgValue, smoothingStrength);
+                    }
+                }
+            }
+
+            // Copy smoothed field back to original
+            for (int x = 0; x <= size; x++)
+            {
+                for (int y = 0; y <= size; y++)
+                {
+                    for (int z = 0; z <= size; z++)
+                    {
+                        densityField[x, y, z] = smoothedField[x, y, z];
+                    }
+                }
+            }
+
+            // Apply terrain features like mountains and valleys
+            for (int x = 0; x <= size; x++)
+            {
+                for (int z = 0; z <= size; z++)
+                {
+                    // Global coordinates for coherent features across chunks
+                    float globalX = chunkPos.x * size + x;
+                    float globalZ = chunkPos.z * size + z;
+
+                    // Check for mountain feature
+                    float mountainNoise = Mathf.PerlinNoise(globalX * 0.02f, globalZ * 0.02f);
+
+                    if (mountainNoise > 0.65f) // Mountains in ~35% of places
+                    {
+                        // Apply vertical gradient for mountain peaks
+                        for (int y = 0; y <= size; y++)
+                        {
+                            // Higher = more solid for mountains
+                            float heightFactor = (float)y / size; // 0 at bottom, 1 at top
+                            float strength = Mathf.Pow(mountainNoise, 2) * (1.0f - heightFactor);
+
+                            // Increase density more near ground, less at peaks
+                            densityField[x, y, z] += strength * 0.2f;
+                        }
+                    }
+
+                    // Check for water feature
+                    float waterNoise = Mathf.PerlinNoise(globalX * 0.03f + 1000, globalZ * 0.03f + 1000);
+
+                    if (waterNoise > 0.7f && chunkPos.y == 0) // Water only at y=0 chunks
+                    {
+                        // Apply water at a fixed height
+                        int waterLevel = size / 3; // Water at 1/3 of chunk height
+
+                        for (int y = 0; y <= waterLevel; y++)
+                        {
+                            // Ensure density is in water range near surface (0.6-0.7)
+                            // This creates a clear water surface at the water level
+                            if (y == waterLevel)
+                            {
+                                densityField[x, y, z] = Mathf.Lerp(densityField[x, y, z], 0.65f, 0.8f);
+                            }
+                            // Deeper water is more solid
+                            else
+                            {
+                                float depthFactor = 1.0f - ((float)y / waterLevel);
+                                densityField[x, y, z] = Mathf.Lerp(densityField[x, y, z], 0.7f, depthFactor * 0.8f);
+                            }
+                        }
+                    }
+                }
+            }
+
+            ApplyGaussianSmoothing(densityField, size, 1.2f);
+
+            // Add multi-frequency noise to break up regular patterns
+            AddMultiFrequencyNoise(densityField, chunk, size);
+
         }
 
         /// <summary>
@@ -298,17 +529,42 @@ namespace WFC.MarchingCubes
             float globalX = chunkPos.x * chunkSize + x;
             float globalZ = chunkPos.z * chunkSize + z;
 
-            // Create a consistent height map across all chunks
-            // Lower frequency noise creates smoother, more gradual height changes
-            float heightMap = Mathf.PerlinNoise(globalX * 0.03f, globalZ * 0.03f);
+            // Multi-octave noise for more interesting terrain
+            float heightMap = 0;
 
-            // Apply vertical gradient
-            // This creates a consistent height basis across all chunks
-            float baseHeight = 3.0f + heightMap * 4.0f; // Base height between 3-7 units
-            float heightInfluence = Mathf.Clamp01((baseHeight - y) * 0.2f);
+            // First octave - large features
+            float scale1 = 0.005f;
+            float amplitude1 = 1.0f;
+            heightMap += Mathf.PerlinNoise(globalX * scale1, globalZ * scale1) * amplitude1;
 
-            // Blend the original density with the height influence
-            return Mathf.Lerp(baseDensity, baseDensity * heightInfluence + 0.5f, 0.7f);
+            // Second octave - medium features
+            float scale2 = 0.02f;
+            float amplitude2 = 0.5f;
+            heightMap += Mathf.PerlinNoise(globalX * scale2, globalZ * scale2) * amplitude2;
+
+            // Third octave - small details
+            float scale3 = 0.1f;
+            float amplitude3 = 0.25f;
+            heightMap += Mathf.PerlinNoise(globalX * scale3, globalZ * scale3) * amplitude3;
+
+            // Normalize heightMap to 0-1 range
+            heightMap /= (amplitude1 + amplitude2 + amplitude3);
+
+            // Add dramatic height variation using power function
+            heightMap = Mathf.Pow(heightMap, 2.5f) * 2.0f; // More pronounced peaks
+
+            // Create mountain ridges
+            float ridgeNoise = Mathf.Abs(Mathf.PerlinNoise(globalX * 0.01f, globalZ * 0.01f) * 2 - 1);
+            ridgeNoise = Mathf.Pow(ridgeNoise, 1.5f); // Sharper ridges
+
+            // Combine heightMap with ridge noise
+            float combinedHeight = Mathf.Lerp(heightMap, ridgeNoise, 0.4f) * 12.0f; // Increased height multiplier
+
+            // Calculate height influence with exponential falloff
+            float heightInfluence = Mathf.Exp(-(y - combinedHeight) * 0.5f);
+
+            // Blend the original density with the height influence for more dramatic mountains
+            return Mathf.Lerp(baseDensity, baseDensity * heightInfluence + 0.6f, 0.8f);
         }
 
         /// <summary>
@@ -356,16 +612,51 @@ namespace WFC.MarchingCubes
                         int neighborY = dy > 0 ? 0 : size;
                         int neighborZ = dz > 0 ? 0 : size;
 
-                        // Average the corners
-                        float cornerAverage = (densityField[cornerX, cornerY, cornerZ] +
-                                             cornerNeighborField[neighborX, neighborY, neighborZ]) / 2.0f;
+                        // CRITICAL FIX: Calculate average including all 8 chunks that meet at this corner
+                        float cornerSum = densityField[cornerX, cornerY, cornerZ];
+                        int cornerCount = 1;
+
+                        cornerSum += cornerNeighborField[neighborX, neighborY, neighborZ];
+                        cornerCount++;
+
+                        // Try to find the other 6 chunks that share this corner
+                        // (This additional code is crucial for corner consistency)
+                        for (int edx = -1; edx <= 1; edx += 2)
+                        {
+                            for (int edy = -1; edy <= 1; edy += 2)
+                            {
+                                for (int edz = -1; edz <= 1; edz += 2)
+                                {
+                                    // Skip current chunk and direct diagonal
+                                    if ((edx == dx && edy == dy && edz == dz) || (edx == 0 && edy == 0 && edz == 0))
+                                        continue;
+
+                                    Vector3Int edgeOffset = new Vector3Int(edx, edy, edz);
+                                    Vector3Int edgeNeighborPos = chunk.Position + edgeOffset;
+
+                                    if (densityFieldCache.TryGetValue(edgeNeighborPos, out float[,,] edgeField))
+                                    {
+                                        int edgeX = edx > 0 ? 0 : size;
+                                        int edgeY = edy > 0 ? 0 : size;
+                                        int edgeZ = edz > 0 ? 0 : size;
+
+                                        cornerSum += edgeField[edgeX, edgeY, edgeZ];
+                                        cornerCount++;
+                                    }
+                                }
+                            }
+                        }
+
+                        float cornerAverage = cornerSum / cornerCount;
 
                         // CRITICAL: Use identical values at the corner point
                         densityField[cornerX, cornerY, cornerZ] = cornerAverage;
                         cornerNeighborField[neighborX, neighborY, neighborZ] = cornerAverage;
 
-                        // Apply with a wider influence radius for smoother transition
-                        int blendRadius = 3; // How far from corner to blend
+                        // CRITICAL FIX: Apply with a wider influence radius for smoother transition
+                        int blendRadius = 4; // Increased from 3
+
+                        // Apply smoothing with stronger non-linear falloff
                         for (int x = 0; x <= blendRadius; x++)
                         {
                             for (int y = 0; y <= blendRadius; y++)
@@ -378,11 +669,12 @@ namespace WFC.MarchingCubes
                                         cornerZ - dz * z < 0 || cornerZ - dz * z > size)
                                         continue;
 
-                                    // Calculate blend factor based on distance from corner
+                                    // Calculate blend factor based on distance from corner with non-linear falloff
                                     float distance = Mathf.Sqrt(x * x + y * y + z * z);
                                     if (distance > blendRadius) continue;
 
-                                    float blendFactor = 1.0f - (distance / blendRadius);
+                                    // CRITICAL FIX: Use non-linear falloff
+                                    float blendFactor = 1.0f - Mathf.Pow(distance / blendRadius, 1.5f);
 
                                     // Apply blended value
                                     int blendX = cornerX - dx * x;
@@ -392,7 +684,7 @@ namespace WFC.MarchingCubes
                                     densityField[blendX, blendY, blendZ] = Mathf.Lerp(
                                         densityField[blendX, blendY, blendZ],
                                         cornerAverage,
-                                        blendFactor * 0.7f // Reduce influence for subtlety
+                                        blendFactor
                                     );
                                 }
                             }
@@ -457,16 +749,18 @@ namespace WFC.MarchingCubes
                         {
                             int state = cell.CollapsedState.Value;
 
-                            // CRITICAL: Ensure solid states have consistent density values
+                            // Get density value from configured dictionary
                             float stateDensity;
-                            if (state == 0) // Air
-                                stateDensity = 0.1f;
-                            else if (state == 3) // Water
-                                stateDensity = 0.7f;
-                            else // Ground, rock, etc. - all solid
-                                stateDensity = 0.9f;
+                            if (stateDensityValues.TryGetValue(state, out stateDensity))
+                            {
+                                density += stateDensity;
+                            }
+                            else
+                            {
+                                // If no specific value is defined, use default value
+                                density += 0.5f;
+                            }
 
-                            density += stateDensity;
                             sampleCount++;
                         }
                     }
@@ -476,6 +770,7 @@ namespace WFC.MarchingCubes
             // Calculate average with fallback to default
             return sampleCount > 0 ? density / sampleCount : defaultValue;
         }
+
 
         /*
          * SmoothBoundaries
@@ -650,37 +945,44 @@ namespace WFC.MarchingCubes
                 return;
             }
 
+            // CRITICAL FIX: Define a wider gradient zone
+            int gradientWidth = 3; // Increased from implicit 1
+
             // Perform smoothing only on the common area
             for (int y = 0; y < commonHeight; y++)
             {
                 for (int z = 0; z < commonDepth; z++)
                 {
-                    // CRITICAL: Use identical values exactly at the boundary
+                    // CRITICAL FIX: Use identical values exactly at the boundary
                     float averageDensity = (densityField1[index1, y, z] + densityField2[index2, y, z]) / 2.0f;
 
                     // Set both fields to the same value at the boundary
                     densityField1[index1, y, z] = averageDensity;
                     densityField2[index2, y, z] = averageDensity;
 
-                    // Also smooth adjacent cells with a falloff gradient
-                    if (index1 > 0 && index1 < densityField1.GetLength(0) - 1)
+                    // CRITICAL FIX: Apply gradient over multiple cells inward with non-linear falloff
+                    for (int i = 1; i <= gradientWidth; i++)
                     {
-                        float blendFactor = 0.9f;
-                        int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
-                        densityField1[inwardIndex, y, z] = Mathf.Lerp(
-                            densityField1[inwardIndex, y, z],
-                            averageDensity,
-                            blendFactor);
-                    }
+                        // Apply smoothing inward for field 1
+                        if (index1 - i >= 0 && index1 - i < densityField1.GetLength(0))
+                        {
+                            // Use non-linear falloff (smoother transition)
+                            float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            densityField1[index1 - i, y, z] = Mathf.Lerp(
+                                densityField1[index1 - i, y, z],
+                                averageDensity,
+                                blendFactor);
+                        }
 
-                    if (index2 > 0 && index2 < densityField2.GetLength(0) - 1)
-                    {
-                        float blendFactor = 0.7f;
-                        int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
-                        densityField2[inwardIndex, y, z] = Mathf.Lerp(
-                            densityField2[inwardIndex, y, z],
-                            averageDensity,
-                            blendFactor);
+                        // Apply smoothing inward for field 2
+                        if (index2 - i >= 0 && index2 - i < densityField2.GetLength(0))
+                        {
+                            float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            densityField2[index2 - i, y, z] = Mathf.Lerp(
+                                densityField2[index2 - i, y, z],
+                                averageDensity,
+                                blendFactor);
+                        }
                     }
                 }
             }

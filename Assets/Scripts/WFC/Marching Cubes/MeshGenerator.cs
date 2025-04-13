@@ -193,18 +193,19 @@ namespace WFC.MarchingCubes
                 int dominantState = GetDominantState(chunk);
                 if (wfcGenerator != null && dominantState >= 0)
                 {
-                    Material[] stateMaterials = wfcGenerator.GetStateMaterials();
+                    //Material[] stateMaterials = wfcGenerator.GetStateMaterials();
 
-                    if (stateMaterials != null && stateMaterials.Length > dominantState && stateMaterials[dominantState] != null)
-                    {
-                        meshRenderer.material = stateMaterials[dominantState];
-                        if (enableDetailedLogging) Debug.Log($"Applied material for state {dominantState} to chunk {chunkPos}");
-                    }
-                    else
-                    {
-                        meshRenderer.material = terrainMaterial;
-                        if (enableDetailedLogging) Debug.Log($"Using fallback material for chunk {chunkPos} - state {dominantState}");
-                    }
+                    //if (stateMaterials != null && stateMaterials.Length > dominantState && stateMaterials[dominantState] != null)
+                    //{
+                        //meshRenderer.material = stateMaterials[dominantState];
+                        //if (enableDetailedLogging) Debug.Log($"Applied material for state {dominantState} to chunk {chunkPos}");
+                    //}
+                    //else
+                    //{
+                        //meshRenderer.material = terrainMaterial;
+                        //if (enableDetailedLogging) Debug.Log($"Using fallback material for chunk {chunkPos} - state {dominantState}");
+                    //}
+                    Debug.LogError($"Material for state {dominantState} not found. Using default material.");
                 }
                 else
                 {
@@ -212,6 +213,11 @@ namespace WFC.MarchingCubes
                     if (enableDetailedLogging) Debug.Log($"Using default material for chunk {chunkPos}");
                 }
 
+                // Apply trees if WFCGenerator is available
+                if (wfcGenerator != null && chunk.Position.y == 0)
+                {
+                    wfcGenerator.GenerateTreeModels(chunk);
+                }
                 // Set up LOD if enabled
                 if (useUnityLODSystem)
                 {

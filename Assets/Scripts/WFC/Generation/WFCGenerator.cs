@@ -45,12 +45,10 @@ using WFC.Configuration;
 using System.Collections;
 using WFC.Chunking;
 using WFC.Processing;
+using WFC.Terrain;
 
 namespace WFC.Generation
 {
-    /// <summary>
-    /// Updated WFCGenerator class that properly integrates with the configuration system
-    /// </summary>
     public class WFCGenerator : MonoBehaviour, WFC.Boundary.IChunkProvider, WFC.Boundary.IWFCAlgorithm
     {
         [Header("Configuration")]
@@ -70,9 +68,16 @@ namespace WFC.Generation
         // Boundary manager
         private BoundaryBufferManager boundaryManager;
 
+        // Configurable System
+        private TerrainDefinition currentTerrainDefinition;
+        [SerializeField] private TerrainManager terrainManager;
+        private TerrainStateRegistry stateRegistry;
+
         // Cache for config access
         private WFCConfiguration activeConfig;
         private ParallelWFCProcessor parallelProcessor;
+
+        private ITerrainGenerator terrainGenerator;
 
 
         private int frameSkipCounter = 0;
@@ -98,6 +103,19 @@ namespace WFC.Generation
 
         private void Awake()
         {
+            stateRegistry = TerrainStateRegistry.Instance;
+            if (stateRegistry == null)
+            {
+                Debug.LogError("WFCGenerator: TerrainStateRegistry not found! Creating default instance.");
+                stateRegistry = new TerrainStateRegistry();
+            }
+
+            if (TerrainManager.Current != null && TerrainManager.Current.TerrainGenerator != null)
+            {
+                terrainGenerator = TerrainManager.Current.TerrainGenerator;
+                Debug.Log($"Using terrain generator: {TerrainManager.Current.name}");
+            }
+
             // Get the configuration - use override if specified, otherwise use global config
             activeConfig = configOverride != null ? configOverride : WFCConfigManager.Config;
 
@@ -141,7 +159,6 @@ namespace WFC.Generation
             }
 
             Debug.Log("No ChunkManager found after retries, initializing WFC grid at origin");
-            InitializeWorld();
         }
 
         // Initializes rules without creating chunks
@@ -368,42 +385,42 @@ namespace WFC.Generation
          * This is the foundation of the entire WFC system, establishing the world structure
          * before any cell collapse or terrain generation begins.
          */
-        private void InitializeWorld()
-        {
-            // Initialize adjacency rules
-            adjacencyRules = new bool[MaxCellStates, MaxCellStates, 6]; // 6 directions
-            SetupAdjacencyRules();
+        //private void InitializeWorld()
+        //{
+        //    // Initialize adjacency rules
+        //    adjacencyRules = new bool[MaxCellStates, MaxCellStates, 6]; // 6 directions
+        //    SetupAdjacencyRules();
 
-            // Create chunks based on configuration
-            for (int x = 0; x < WorldSize.x; x++)
-            {
-                for (int y = 0; y < WorldSize.y; y++)
-                {
-                    for (int z = 0; z < WorldSize.z; z++)
-                    {
-                        Vector3Int chunkPos = new Vector3Int(x, y, z);
-                        Chunk chunk = new Chunk(chunkPos, ChunkSize);
+        //    // Create chunks based on configuration
+        //    for (int x = 0; x < WorldSize.x; x++)
+        //    {
+        //        for (int y = 0; y < WorldSize.y; y++)
+        //        {
+        //            for (int z = 0; z < WorldSize.z; z++)
+        //            {
+        //                Vector3Int chunkPos = new Vector3Int(x, y, z);
+        //                Chunk chunk = new Chunk(chunkPos, ChunkSize);
 
-                        // Initialize with all possible states
-                        var allStates = Enumerable.Range(0, MaxCellStates);
-                        chunk.InitializeCells(allStates);
+        //                // Initialize with all possible states
+        //                var allStates = Enumerable.Range(0, MaxCellStates);
+        //                chunk.InitializeCells(allStates);
 
-                        chunks.Add(chunkPos, chunk);
-                    }
-                }
-            }
+        //                chunks.Add(chunkPos, chunk);
+        //            }
+        //        }
+        //    }
 
-            // Connect chunk neighbors
-            ConnectChunkNeighbors();
+        //    // Connect chunk neighbors
+        //    ConnectChunkNeighbors();
 
-            // Initialize boundary buffers
-            InitializeBoundaryBuffers();
+        //    // Initialize boundary buffers
+        //    InitializeBoundaryBuffers();
 
-            // Create boundary manager
-            boundaryManager = new BoundaryBufferManager((IWFCAlgorithm)this);
+        //    // Create boundary manager
+        //    boundaryManager = new BoundaryBufferManager((IWFCAlgorithm)this);
 
-            InitializeHierarchicalConstraints();
-        }
+        //    InitializeHierarchicalConstraints();
+        //}
 
         private int GenerateChunkSeed(Vector3Int chunkPos)
         {
@@ -423,67 +440,38 @@ namespace WFC.Generation
             // Create the hierarchical constraint system
             hierarchicalConstraints = new HierarchicalConstraintSystem(ChunkSize);
 
-            // CRITICAL: Add a strong ground level constraint first
+            // Apply constraints from terrain definition if available
+            if (terrainGenerator != null)
+            {
+                terrainGenerator.ApplyConstraints(hierarchicalConstraints, WorldSize, ChunkSize);
+                return;
+            }
+
+            // Fallback to basic constraints if no terrain generator
+            ApplyBasicConstraints(hierarchicalConstraints, WorldSize, ChunkSize);
+        }
+
+        // Fallback constraints method
+        private void ApplyBasicConstraints(HierarchicalConstraintSystem system, Vector3Int worldSize, int chunkSize)
+        {
+            // Simple ground level constraint
             GlobalConstraint groundConstraint = new GlobalConstraint
             {
                 Name = "Ground Level",
                 Type = ConstraintType.HeightMap,
-                WorldCenter = new Vector3(WorldSize.x * ChunkSize / 2, WorldSize.y * ChunkSize / 4, WorldSize.z * ChunkSize / 2),
-                WorldSize = new Vector3(WorldSize.x * ChunkSize, 0, WorldSize.z * ChunkSize),
-                BlendRadius = ChunkSize * 2,
-                Strength = 0.9f,
+                WorldCenter = new Vector3(worldSize.x * chunkSize / 2, 0, worldSize.z * chunkSize / 2),
+                WorldSize = new Vector3(worldSize.x * chunkSize, 0, worldSize.z * chunkSize),
+                BlendRadius = chunkSize,
+                Strength = 0.8f,
                 MinHeight = 0,
-                MaxHeight = WorldSize.y * ChunkSize
+                MaxHeight = worldSize.y * chunkSize
             };
 
-            // Add strong biases for ground formation
-            groundConstraint.StateBiases[0] = -0.9f; // Strong negative bias for air below ground level
-            groundConstraint.StateBiases[1] = 0.8f;  // Strong positive bias for ground
-            groundConstraint.StateBiases[2] = 0.6f;  // Positive bias for grass near surface
+            // Simple ground state biases
+            groundConstraint.StateBiases[0] = -0.9f; // Empty (negative bias)
+            groundConstraint.StateBiases[1] = 0.6f;  // Ground (positive bias)
 
-            hierarchicalConstraints.AddGlobalConstraint(groundConstraint);
-
-            // Add mountain range constraint
-            GlobalConstraint mountainConstraint = new GlobalConstraint
-            {
-                Name = "Mountain Range",
-                Type = ConstraintType.HeightMap,
-                WorldCenter = new Vector3(WorldSize.x * ChunkSize / 4, WorldSize.y * ChunkSize / 2, WorldSize.z * ChunkSize / 2),
-                WorldSize = new Vector3(WorldSize.x * ChunkSize / 3, WorldSize.y * ChunkSize * 0.7f, WorldSize.z * ChunkSize / 3),
-                BlendRadius = ChunkSize * 3,
-                Strength = 0.85f,
-                MinHeight = WorldSize.y * ChunkSize / 4,
-                MaxHeight = WorldSize.y * ChunkSize
-            };
-
-            mountainConstraint.StateBiases[0] = -0.9f; // Strong negative bias for air inside mountains
-            mountainConstraint.StateBiases[4] = 0.9f;  // Strong positive bias for rock
-            mountainConstraint.StateBiases[1] = 0.4f;  // Moderate bias for ground (base of mountains)
-
-            hierarchicalConstraints.AddGlobalConstraint(mountainConstraint);
-
-            // Add river/water body constraint
-            GlobalConstraint riverConstraint = new GlobalConstraint
-            {
-                Name = "River",
-                Type = ConstraintType.BiomeRegion,
-                WorldCenter = new Vector3(WorldSize.x * ChunkSize * 0.6f, WorldSize.y * ChunkSize * 0.15f, WorldSize.z * ChunkSize / 2),
-                WorldSize = new Vector3(WorldSize.x * ChunkSize * 0.25f, WorldSize.y * ChunkSize * 0.1f, WorldSize.z * ChunkSize * 0.8f),
-                BlendRadius = ChunkSize * 2,
-                Strength = 0.85f
-            };
-
-            riverConstraint.StateBiases[3] = 0.95f;  // Very strong bias for water
-            riverConstraint.StateBiases[5] = 0.7f;   // Strong bias for sand (river banks)
-            riverConstraint.StateBiases[0] = -0.8f;  // Negative bias for air underwater
-
-            hierarchicalConstraints.AddGlobalConstraint(riverConstraint);
-
-            // Precompute constraints for each chunk
-            foreach (var chunk in chunks.Values)
-            {
-                hierarchicalConstraints.PrecomputeChunkConstraints(chunk, MaxCellStates);
-            }
+            system.AddGlobalConstraint(groundConstraint);
         }
 
         /*
@@ -509,258 +497,8 @@ namespace WFC.Generation
          * - chunk: The chunk to apply constraints to
          * - random: Seeded random number generator for deterministic generation
          */
-        private void ApplyRegionalConstraints(Chunk chunk, System.Random random)
-        {
-            // Global coordinates for consistent noise
-            Vector3 worldPos = new Vector3(
-                chunk.Position.x * ChunkSize,
-                chunk.Position.y * ChunkSize,
-                chunk.Position.z * ChunkSize
-            );
-
-            // Use noise functions to determine biome types but NOT height variation
-            float elevationNoise = Mathf.PerlinNoise(worldPos.x * 0.005f, worldPos.z * 0.005f);
-            float moistureNoise = Mathf.PerlinNoise(worldPos.x * 0.01f + 500, worldPos.z * 0.01f + 500);
-
-            // Apply FLAT terrain by default - this ensures a single height layer
-            ApplyFlatGroundTerrain(chunk, random);
-
-            // Apply biome-specific features without significant height changes
-            if (elevationNoise > 0.7f && chunk.Position.y == 0)
-            {
-                // Only allow terrain features on the bottom layer (y=0)
-                ApplyMountainFeatures(chunk, elevationNoise, random);
-            }
-            else if (moistureNoise > 0.7f && elevationNoise < 0.4f && chunk.Position.y == 0)
-            {
-                // Only allow water on the bottom layer (y=0)
-                ApplyWaterFeatures(chunk, moistureNoise, random);
-            }
-        }
-
-        // Create flat ground terrain
-        private void ApplyFlatGroundTerrain(Chunk chunk, System.Random random)
-        {
-            // Only generate terrain at the bottom layer (y=0)
-            if (chunk.Position.y != 0)
-            {
-                // For all other y-levels, just fill with air
-                for (int x = 0; x < chunk.Size; x++)
-                {
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            Cell cell = chunk.GetCell(x, y, z);
-                            if (!cell.CollapsedState.HasValue)
-                            {
-                                cell.Collapse(0); // Air
-                            }
-                        }
-                    }
-                }
-                return;
-            }
-
-            // Create a ground constraint
-            GlobalConstraint groundConstraint = new GlobalConstraint
-            {
-                Name = $"Ground_{chunk.Position}",
-                Type = ConstraintType.BiomeRegion,
-                WorldCenter = new Vector3(
-                    chunk.Position.x * ChunkSize + ChunkSize / 2,
-                    chunk.Position.y * ChunkSize + ChunkSize / 2,
-                    chunk.Position.z * ChunkSize + ChunkSize / 2
-                ),
-                WorldSize = new Vector3(ChunkSize, ChunkSize, ChunkSize),
-                BlendRadius = ChunkSize * 1.5f,
-                Strength = 0.8f
-            };
-
-            // Add bias for ground
-            groundConstraint.StateBiases[1] = 0.9f;  // Strong bias for ground
-
-            // Simple ground terrain - flat with small noise variation for interest
-            int baseHeight = chunk.Size / 2; // Fixed base height for all terrain
-
-            for (int x = 0; x < chunk.Size; x++)
-            {
-                for (int z = 0; z < chunk.Size; z++)
-                {
-                    // Small height variation for natural look, but keep it modest
-                    float heightVar = Mathf.PerlinNoise(
-                        (chunk.Position.x * chunk.Size + x) * 0.05f,
-                        (chunk.Position.z * chunk.Size + z) * 0.05f) * 2.0f;
-
-                    int terrainHeight = Mathf.FloorToInt(baseHeight + heightVar);
-
-                    // Set cells based on height, ensuring a single main layer
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        Cell cell = chunk.GetCell(x, y, z);
-                        if (!cell.CollapsedState.HasValue)
-                        {
-                            if (y <= terrainHeight)
-                            {
-                                cell.Collapse(1); // Ground
-                            }
-                            else
-                            {
-                                cell.Collapse(0); // Air above ground
-                            }
-                        }
-                    }
-                }
-            }
-
-            hierarchicalConstraints.AddGlobalConstraint(groundConstraint);
-        }
 
 
-        // Mountains as features without excessive height
-        private void ApplyMountainFeatures(Chunk chunk, float intensity, System.Random random)
-        {
-            // Never make terrain in upper chunks
-            if (chunk.Position.y > 0) return;
-
-            GlobalConstraint mountainConstraint = new GlobalConstraint
-            {
-                Name = $"Mountain_{chunk.Position}",
-                Type = ConstraintType.BiomeRegion, // Changed from HeightMap to BiomeRegion
-                WorldCenter = new Vector3(
-                    chunk.Position.x * ChunkSize + ChunkSize / 2,
-                    chunk.Position.y * ChunkSize + ChunkSize / 2,
-                    chunk.Position.z * ChunkSize + ChunkSize / 2
-                ),
-                WorldSize = new Vector3(ChunkSize, ChunkSize, ChunkSize),
-                BlendRadius = ChunkSize * 1.5f,
-                Strength = 0.7f
-            };
-
-            // Add biases for mountain terrain
-            mountainConstraint.StateBiases[0] = -0.9f; // Discourage empty
-            mountainConstraint.StateBiases[4] = 0.8f;  // Encourage rock
-
-            // Base height adjustment for mountains - still keep it relatively flat
-            int baseHeight = (chunk.Size / 2) + 1;
-
-            for (int x = 0; x < chunk.Size; x++)
-            {
-                for (int z = 0; z < chunk.Size; z++)
-                {
-                    // Use noise for small variations
-                    float noise = Mathf.PerlinNoise(
-                        (chunk.Position.x * ChunkSize + x) * 0.025f,
-                        (chunk.Position.z * ChunkSize + z) * 0.025f);
-
-                    // Limit vertical height variation
-                    int rockHeight = Mathf.FloorToInt(baseHeight + (noise * 3.0f));
-
-                    // Create terrain with rock features
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        Cell cell = chunk.GetCell(x, y, z);
-                        if (!cell.CollapsedState.HasValue)
-                        {
-                            if (y <= rockHeight)
-                            {
-                                if (y > baseHeight - 2)
-                                {
-                                    cell.Collapse(4); // Rock for upper portions
-                                }
-                                else
-                                {
-                                    cell.Collapse(1); // Ground for lower portions
-                                }
-                            }
-                            else
-                            {
-                                cell.Collapse(0); // Air above
-                            }
-                        }
-                    }
-                }
-            }
-
-            hierarchicalConstraints.AddGlobalConstraint(mountainConstraint);
-        }
-
-        // Water features without excessive depth
-        private void ApplyWaterFeatures(Chunk chunk, float intensity, System.Random random)
-        {
-            // Never make terrain in upper chunks
-            if (chunk.Position.y > 0) return;
-
-            GlobalConstraint waterConstraint = new GlobalConstraint
-            {
-                Name = $"Water_{chunk.Position}",
-                Type = ConstraintType.BiomeRegion,
-                WorldCenter = new Vector3(
-                    chunk.Position.x * ChunkSize + ChunkSize / 2,
-                    chunk.Position.y * ChunkSize + ChunkSize / 3,
-                    chunk.Position.z * ChunkSize + ChunkSize / 2
-                ),
-                WorldSize = new Vector3(ChunkSize, ChunkSize / 2, ChunkSize),
-                BlendRadius = ChunkSize * 1.5f,
-                Strength = 0.8f
-            };
-
-            // Add biases for water terrain
-            waterConstraint.StateBiases[3] = 0.9f;  // Water
-            waterConstraint.StateBiases[5] = 0.6f;  // Sand for shores
-
-            // Fixed water level for consistency
-            int waterLevel = chunk.Size / 3;
-
-            for (int x = 0; x < chunk.Size; x++)
-            {
-                for (int z = 0; z < chunk.Size; z++)
-                {
-                    // Calculate distance from edge for shore formation
-                    float distFromEdge = Mathf.Min(
-                        Mathf.Min(x, chunk.Size - 1 - x),
-                        Mathf.Min(z, chunk.Size - 1 - z)
-                    );
-
-                    // Apply noise to shore distance
-                    float shoreNoise = Mathf.PerlinNoise(
-                        (chunk.Position.x * chunk.Size + x) * 0.1f + 500f,
-                        (chunk.Position.z * chunk.Size + z) * 0.1f + 500f);
-
-                    float shoreWidth = 2.0f + (shoreNoise * 1.5f);
-
-                    // Create water and shores
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        Cell cell = chunk.GetCell(x, y, z);
-                        if (!cell.CollapsedState.HasValue)
-                        {
-                            if (y <= waterLevel)
-                            {
-                                if (y == waterLevel && distFromEdge < shoreWidth)
-                                {
-                                    cell.Collapse(5); // Sand shores
-                                }
-                                else if (y <= waterLevel - 1)
-                                {
-                                    cell.Collapse(3); // Water (only 1 block deep)
-                                }
-                                else
-                                {
-                                    cell.Collapse(3); // Water surface
-                                }
-                            }
-                            else
-                            {
-                                cell.Collapse(0); // Air above water
-                            }
-                        }
-                    }
-                }
-            }
-
-            hierarchicalConstraints.AddGlobalConstraint(waterConstraint);
-        }
 
         /*
          * SetupAdjacencyRules
@@ -788,50 +526,45 @@ namespace WFC.Generation
                     for (int d = 0; d < 6; d++)
                         adjacencyRules[i, j, d] = false;
 
-            // Group solid states (1, 2, 4, 5)
-            int[] solidStates = { 1, 2, 4, 5 }; // Ground, grass, rock, sand
+            // Load adjacency rules from active terrain definition
+            TerrainDefinition currentTerrain = TerrainManager.Current?.CurrentTerrain;
 
-            // All solid states can connect to each other
-            foreach (int stateA in solidStates)
+            if (currentTerrain != null && currentTerrain.AdjacencyRules != null)
             {
-                foreach (int stateB in solidStates)
+                // Copy rules from terrain definition
+                var rules = currentTerrain.AdjacencyRules;
+                for (int i = 0; i < MaxCellStates; i++)
                 {
-                    SetAdjacentAll(stateA, stateB, true);
+                    for (int j = 0; j < MaxCellStates; j++)
+                    {
+                        for (int d = 0; d < 6; d++)
+                        {
+                            if (i < rules.GetLength(0) && j < rules.GetLength(1) && d < rules.GetLength(2))
+                            {
+                                adjacencyRules[i, j, d] = rules[i, j, d];
+                            }
+                        }
+                    }
+                }
+                Debug.Log("Loaded adjacency rules from terrain definition");
+            }
+            else
+            {
+                // Fallback to very basic adjacency rules for backward compatibility
+                Debug.LogWarning("No terrain definition found, using default adjacency rules");
+
+                // Air can be adjacent to any state
+                for (int i = 0; i < MaxCellStates; i++)
+                {
+                    SetAdjacentAll(0, i, true);
+                }
+
+                // Same state adjacency is always allowed
+                for (int i = 0; i < MaxCellStates; i++)
+                {
+                    SetAdjacentAll(i, i, true);
                 }
             }
-
-            // Air can only be above solid states and water, not adjacent horizontally
-            foreach (int state in solidStates)
-            {
-                adjacencyRules[0, state, (int)Direction.Down] = true; // Air above solid
-                adjacencyRules[state, 0, (int)Direction.Up] = true;   // Solid below air
-            }
-
-            // Water adjacencies - only horizontal with solid states
-            foreach (int state in solidStates)
-            {
-                adjacencyRules[3, state, (int)Direction.Left] = true;
-                adjacencyRules[3, state, (int)Direction.Right] = true;
-                adjacencyRules[3, state, (int)Direction.Forward] = true;
-                adjacencyRules[3, state, (int)Direction.Back] = true;
-
-                adjacencyRules[state, 3, (int)Direction.Left] = true;
-                adjacencyRules[state, 3, (int)Direction.Right] = true;
-                adjacencyRules[state, 3, (int)Direction.Forward] = true;
-                adjacencyRules[state, 3, (int)Direction.Back] = true;
-            }
-
-            // Water is below air
-            adjacencyRules[0, 3, (int)Direction.Down] = true;
-            adjacencyRules[3, 0, (int)Direction.Up] = true;
-
-            // Same state adjacencies
-            SetAdjacentAll(0, 0, true); // Air to air
-            SetAdjacentAll(1, 1, true); // Ground to ground
-            SetAdjacentAll(2, 2, true); // Grass to grass
-            SetAdjacentAll(3, 3, true); // Water to water
-            SetAdjacentAll(4, 4, true); // Rock to rock
-            SetAdjacentAll(5, 5, true); // Sand to sand
         }
 
         // Set adjacency rules for two states in all directions
@@ -869,7 +602,7 @@ namespace WFC.Generation
             {
                 int chunkSeed = GenerateChunkSeed(chunk.Position);
                 System.Random random = new System.Random(chunkSeed);
-                ApplyRegionalConstraints(chunk, random);
+                //ApplyRegionalConstraints(chunk, random);
             }
         }
 
@@ -1138,6 +871,11 @@ namespace WFC.Generation
         // Check if two states are compatible based on adjacency rules
         public bool AreStatesCompatible(int stateA, int stateB, Direction direction)
         {
+            // Check bounds
+            if (stateA >= MaxCellStates || stateB >= MaxCellStates)
+                return false;
+
+            // Check the adjacency rules table
             return adjacencyRules[stateA, stateB, (int)direction];
         }
 
@@ -1393,124 +1131,6 @@ namespace WFC.Generation
 
                 // Could offer to automatically reinitialize here
             }
-        }
-
-        public bool ValidateAlgorithmState()
-        {
-            bool isValid = true;
-
-            // Check all chunks for constraint violations
-            foreach (var chunk in chunks.Values)
-            {
-                for (int x = 0; x < chunk.Size; x++)
-                {
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            Cell cell = chunk.GetCell(x, y, z);
-                            if (cell.CollapsedState.HasValue)
-                            {
-                                // Validate this cell doesn't violate constraints with neighbors
-                                if (!ValidateCellConstraints(cell, chunk, x, y, z))
-                                {
-                                    isValid = false;
-                                    Debug.LogError($"Constraint violation at {chunk.Position}, local: {x},{y},{z}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            return isValid;
-        }
-
-        private bool ValidateCellConstraints(Cell cell, Chunk chunk, int x, int y, int z)
-        {
-            if (!cell.CollapsedState.HasValue)
-                return true;
-
-            int state = cell.CollapsedState.Value;
-
-            // Check all neighboring cells
-            foreach (Direction dir in Enum.GetValues(typeof(Direction)))
-            {
-                Vector3Int offset = dir.ToVector3Int();
-                Vector3Int neighborPos = new Vector3Int(x, y, z) + offset;
-
-                // Skip if outside chunk
-                if (!IsPositionInChunk(neighborPos, chunk.Size))
-                    continue;
-
-                Cell neighbor = chunk.GetCell(neighborPos.x, neighborPos.y, neighborPos.z);
-
-                // Skip if neighbor not collapsed
-                if (!neighbor.CollapsedState.HasValue)
-                    continue;
-
-                // Check compatibility
-                if (!AreStatesCompatible(state, neighbor.CollapsedState.Value, dir))
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-
-        // Check if position is within chunk bounds
-        public void ResetGeneration()
-        {
-            // Clear the propagation queue
-            propagationQueue = new PriorityQueue<PropagationEvent, float>();
-
-            // Reset all chunks and cells
-            foreach (var chunk in chunks.Values)
-            {
-                chunk.IsFullyCollapsed = false;
-
-                for (int x = 0; x < chunk.Size; x++)
-                {
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            Cell cell = chunk.GetCell(x, y, z);
-                            cell.SetPossibleStates(Enumerable.Range(0, MaxCellStates).ToHashSet());
-                        }
-                    }
-                }
-
-                // Reset boundary buffers
-                foreach (var buffer in chunk.BoundaryBuffers.Values)
-                {
-                    foreach (var bufferCell in buffer.BufferCells)
-                    {
-                        bufferCell.SetPossibleStates(Enumerable.Range(0, MaxCellStates).ToHashSet());
-                    }
-                }
-            }
-
-            // Re-initialize hierarchical constraints
-            InitializeHierarchicalConstraints();
-
-            // Synchronize all buffers
-            foreach (var chunk in chunks.Values)
-            {
-                foreach (var buffer in chunk.BoundaryBuffers.Values)
-                {
-                    SynchronizeBuffer(buffer);
-                }
-            }
-
-            Debug.Log("WFC generation reset");
-        }
-
-        // Check if position is within chunk bounds
-        public Material[] GetStateMaterials()
-        {
-            return stateMaterials;
         }
     }
 }
