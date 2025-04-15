@@ -58,7 +58,7 @@ namespace WFC.Terrain
             int heightRange = chunk.Size * 2 / 3;
 
             // Get mountain height factor from definition
-            float mountainFactor = terrainDefinition.mountainHeight;
+            float mountainFactor = terrainDefinition.mountainHeight * 1.5f;
 
             // Global world position for consistent generation
             float worldOffsetX = chunk.Position.x * chunk.Size;
@@ -85,7 +85,7 @@ namespace WFC.Terrain
                     }
 
                     // Apply power curve for more dramatic mountains
-                    combinedNoise = Mathf.Pow(combinedNoise, 2.2f);
+                    combinedNoise = Mathf.Pow(combinedNoise, 1.8f);
 
                     // Create valley by depressing height in the center of the world
                     float worldSizeEstimate = 32 * 16; // Rough world size estimate
@@ -99,8 +99,18 @@ namespace WFC.Terrain
                         valleyFactor = Mathf.SmoothStep(0.2f, 1.0f, valleyFactor);
                     }
 
+
                     // Apply valley and mountain factors
                     float heightFactor = combinedNoise * valleyFactor * mountainFactor;
+
+                    if (valleyFactor > 0.7f)
+                    {
+                        heightFactor = combinedNoise * Mathf.Pow(valleyFactor, 0.7f) * mountainFactor;
+                    }
+                    else
+                    {
+                        heightFactor = combinedNoise * valleyFactor * mountainFactor;
+                    }
 
                     // Convert to actual height
                     heightMap[x, z] = baseGroundLevel + Mathf.FloorToInt(heightFactor * heightRange);
@@ -126,7 +136,7 @@ namespace WFC.Terrain
 
             // River width parameter from definition
             float riverWidthCells = terrainDefinition.riverWidth * chunk.Size;
-            int riverWidth = Mathf.Max(2, Mathf.FloorToInt(riverWidthCells));
+            int riverWidth = Mathf.Max(3, Mathf.FloorToInt(riverWidthCells));
 
             // Create river along Z axis in center of chunk
             int centerX = chunk.Size / 2;
@@ -155,7 +165,7 @@ namespace WFC.Terrain
                         // Lower the terrain for the river
                         if (heightMap[x, z] > chunk.Size / 4)
                         {
-                            heightMap[x, z] = chunk.Size / 4;
+                            heightMap[x, z] = chunk.Size / 5; // Lower river bed (was /4)
                         }
                     }
                 }

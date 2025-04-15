@@ -13,6 +13,15 @@ namespace WFC.Terrain
         public float riverWidth = 0.1f;
         public float forestDensity = 0.6f;
 
+        [Header("Material References")]
+        public Material groundMaterial;
+        public Material grassMaterial;
+        public Material waterMaterial;
+        public Material rockMaterial;
+        public Material sandMaterial;
+        public Material forestMaterial;
+        public Material snowMaterial;
+        public Material cliffMaterial;
         public enum TerrainStateId
         {
             Air = 0,
@@ -141,7 +150,63 @@ namespace WFC.Terrain
             // Register mountain valley specific states
             var registry = TerrainStateRegistry.Instance;
 
-            // Additional state registration logic if needed
+            // Set up materials array if needed
+            if (registry.StateMaterials.Length <= (int)TerrainStateId.Cliff)
+            {
+                Debug.LogWarning("StateMaterials array too small, materials may not be properly assigned");
+            }
+
+            // Add reference to base materials
+            if (registry.StateMaterials[(int)TerrainStateId.Ground] == null && groundMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.Ground] = groundMaterial;
+
+            // Assign materials to states
+            if (grassMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.Grass] = grassMaterial;
+
+            if (waterMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.Water] = waterMaterial;
+
+            if (rockMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.Rock] = rockMaterial;
+
+            if (sandMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.Sand] = sandMaterial;
+
+            if (forestMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.Forest] = forestMaterial;
+
+            if (snowMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.SnowCap] = snowMaterial;
+
+            if (cliffMaterial != null)
+                registry.StateMaterials[(int)TerrainStateId.Cliff] = cliffMaterial;
+
+            // Register all terrain states for the mountain valley terrain
+            registry.RegisterState(new TerrainStateConfig
+            {
+                Name = "Grass",
+                Id = (int)TerrainStateId.Grass,
+                Density = 0.8f,
+                Color = new Color(0.2f, 0.8f, 0.2f),
+            }, "MountainValley");
+
+            registry.RegisterState(new TerrainStateConfig
+            {
+                Name = "Water",
+                Id = (int)TerrainStateId.Water,
+                Density = 0.65f,
+                Color = new Color(0.2f, 0.4f, 0.8f),
+                IsLiquid = true
+            }, "MountainValley");
+
+            registry.RegisterState(new TerrainStateConfig
+            {
+                Name = "Rock",
+                Id = (int)TerrainStateId.Rock,
+                Density = 0.9f,
+                Color = new Color(0.6f, 0.6f, 0.6f)
+            }, "MountainValley");
         }
     }
 }

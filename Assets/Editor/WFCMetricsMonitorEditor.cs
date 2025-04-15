@@ -3,6 +3,17 @@ using UnityEditor;
 using WFC.Metrics;
 using System.Collections.Generic;
 using System.Linq;
+using WFC.Core;
+using WFC.Generation;
+using System.IO;
+using WFC.Chunking;
+using System;
+using Unity.EditorCoroutines.Editor;
+using System.Collections;
+using WFC.MarchingCubes;
+using WFC.Performance;
+using WFC.Processing;
+using WFC.Configuration;
 
 [CustomEditor(typeof(WFCMetricsMonitor))]
 public class WFCMetricsMonitorEditor : Editor
@@ -11,15 +22,33 @@ public class WFCMetricsMonitorEditor : Editor
     private bool showCountMetrics = true;
     private bool showRatioMetrics = true;
     private bool showTestControls = true;
+    private bool showTestResults = true;
 
-    // Cache for performance metrics
-    private Dictionary<string, float> performanceMetrics = new Dictionary<string, float>();
-    private Dictionary<string, int> countMetrics = new Dictionary<string, int>();
-    private Dictionary<string, float> ratioMetrics = new Dictionary<string, float>();
+    // Test configuration
+    private bool[] enabledTests = new bool[] { true, true, true, true, true, true };
+    private string[] testNames = new string[] {
+        "Chunk Generation Performance",
+        "Boundary Coherence Performance",
+        "Mesh Generation Performance",
+        "Parallel Processing Efficiency",
+        "World Size Scaling",
+        "LOD Performance Impact"
+    };
 
-    // Cache for time series data (simple graphs)
-    private Dictionary<string, List<float>> metricHistory = new Dictionary<string, List<float>>();
-    private int maxHistoryPoints = 30;
+    // Test result holders - these will be displayed in the editor after tests run
+    private List<WFCMetricsMonitor.ChunkGenerationResult> chunkGenResults;
+    private List<WFCMetricsMonitor.BoundaryCoherenceResult> boundaryResults;
+    private List<WFCMetricsMonitor.MeshGenerationResult> meshGenResults;
+    private List<WFCMetricsMonitor.ParallelProcessingResult> parallelResults;
+    private List<WFCMetricsMonitor.WorldSizeScalingResult> worldSizeResults;
+    private List<WFCMetricsMonitor.LODPerformanceResult> lodResults;
+    private List<EditorCoroutine> activeCoroutines = new List<EditorCoroutine>();
+
+
+    // Status tracking
+    private string currentTestStatus = "Ready to run tests";
+    private float testProgress = 0f;
+    private bool isRunningTests = false;
 
     public override void OnInspectorGUI()
     {
@@ -31,274 +60,803 @@ public class WFCMetricsMonitorEditor : Editor
         EditorGUILayout.Space(10);
         EditorGUILayout.LabelField("WFC System Metrics", EditorStyles.boldLabel);
 
-        // Get metrics through reflection
-        UpdateMetricsCache(monitor);
+        // Draw performance metrics sections
+        DrawMetricsSections(monitor);
 
-        // Performance Metrics Section
-        showPerformanceMetrics = EditorGUILayout.Foldout(showPerformanceMetrics, "Performance Metrics", true);
-        if (showPerformanceMetrics)
-        {
-            EditorGUI.indentLevel++;
-
-            foreach (var metric in performanceMetrics.OrderBy(m => m.Key))
-            {
-                string unit = metric.Key.Contains("Time") ? "ms" :
-                              metric.Key.Contains("Memory") ? "MB" : "";
-
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField(metric.Key + ":", GUILayout.Width(180));
-
-                // Get color based on value (green = good, red = bad)
-                Color valueColor = Color.white;
-                if (metric.Key.Contains("Time"))
-                {
-                    valueColor = metric.Value < 16.7f ? Color.green :
-                                (metric.Value < 33.3f ? Color.yellow : Color.red);
-                }
-                else if (metric.Key.Contains("Coherence"))
-                {
-                    valueColor = metric.Value > 0.9f ? Color.green :
-                                (metric.Value > 0.7f ? Color.yellow : Color.red);
-                }
-
-                GUIStyle style = new GUIStyle(EditorStyles.boldLabel);
-                style.normal.textColor = valueColor;
-
-                EditorGUILayout.LabelField($"{metric.Value:F2} {unit}", style);
-                EditorGUILayout.EndHorizontal();
-
-                // Draw progress bar for appropriate metrics
-                if (metric.Key.Contains("Time") || metric.Key.Contains("Coherence"))
-                {
-                    float normalizedValue;
-
-                    if (metric.Key.Contains("Time"))
-                    {
-                        // Normalize time to 60fps (16.7ms) target
-                        normalizedValue = Mathf.Clamp01(metric.Value / 33.3f);
-                    }
-                    else if (metric.Key.Contains("Coherence"))
-                    {
-                        normalizedValue = Mathf.Clamp01(metric.Value);
-                    }
-                    else
-                    {
-                        normalizedValue = 0.5f; // Default
-                    }
-
-                    Rect rect = EditorGUILayout.GetControlRect(false, 5);
-                    EditorGUI.DrawRect(rect, Color.gray);
-
-                    // Draw colored progress
-                    Color barColor = Color.Lerp(Color.red, Color.green,
-                        metric.Key.Contains("Time") ? 1 - normalizedValue : normalizedValue);
-
-                    Rect fillRect = new Rect(rect.x, rect.y, rect.width * normalizedValue, rect.height);
-                    EditorGUI.DrawRect(fillRect, barColor);
-                }
-
-                // Show history graph for certain metrics
-                if (metricHistory.ContainsKey(metric.Key) && metricHistory[metric.Key].Count > 1)
-                {
-                    DrawSimpleGraph(metric.Key, metricHistory[metric.Key]);
-                }
-            }
-
-            EditorGUI.indentLevel--;
-        }
-
-        // Count Metrics Section
-        showCountMetrics = EditorGUILayout.Foldout(showCountMetrics, "Count Metrics", true);
-        if (showCountMetrics)
-        {
-            EditorGUI.indentLevel++;
-
-            foreach (var metric in countMetrics.OrderBy(m => m.Key))
-            {
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField(metric.Key + ":", GUILayout.Width(180));
-                EditorGUILayout.LabelField(metric.Value.ToString("N0"), EditorStyles.boldLabel);
-                EditorGUILayout.EndHorizontal();
-            }
-
-            EditorGUI.indentLevel--;
-        }
-
-        // Ratio Metrics Section
-        showRatioMetrics = EditorGUILayout.Foldout(showRatioMetrics, "Ratio Metrics", true);
-        if (showRatioMetrics)
-        {
-            EditorGUI.indentLevel++;
-
-            foreach (var metric in ratioMetrics.OrderBy(m => m.Key))
-            {
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField(metric.Key + ":", GUILayout.Width(180));
-
-                // Get color based on value
-                Color valueColor = metric.Value > 0.9f ? Color.green :
-                                  (metric.Value > 0.7f ? Color.yellow : Color.red);
-
-                GUIStyle style = new GUIStyle(EditorStyles.boldLabel);
-                style.normal.textColor = valueColor;
-
-                EditorGUILayout.LabelField($"{metric.Value:P1}", style);
-                EditorGUILayout.EndHorizontal();
-
-                // Draw progress bar
-                Rect rect = EditorGUILayout.GetControlRect(false, 5);
-                EditorGUI.DrawRect(rect, Color.gray);
-
-                Rect fillRect = new Rect(rect.x, rect.y, rect.width * metric.Value, rect.height);
-                EditorGUI.DrawRect(fillRect, valueColor);
-            }
-
-            EditorGUI.indentLevel--;
-        }
-
-        // Test Controls Section
-        showTestControls = EditorGUILayout.Foldout(showTestControls, "Test Controls", true);
+        // Test Configuration Section
+        showTestControls = EditorGUILayout.Foldout(showTestControls, "Performance Test Configuration", true);
         if (showTestControls)
         {
-            EditorGUILayout.Space(5);
-
-            EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("Run Performance Test", GUILayout.Height(30)))
-            {
-                monitor.RunPerformanceTest();
-            }
-
-            if (GUILayout.Button("Save Current Metrics", GUILayout.Height(30)))
-            {
-                monitor.SaveCurrentMetrics();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            if (GUILayout.Button("Reset Metrics", GUILayout.Height(30)))
-            {
-                monitor.ResetMetrics();
-            }
-
-            EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField("Export Options", EditorStyles.boldLabel);
-
-            if (GUILayout.Button("Export Metrics Table", GUILayout.Height(25)))
-            {
-                ExportMetricsTable();
-            }
+            EditorGUI.indentLevel++;
+            DrawTestConfiguration();
+            EditorGUI.indentLevel--;
         }
+
+        // Test Results Section
+        showTestResults = EditorGUILayout.Foldout(showTestResults, "Performance Test Results", true);
+        if (showTestResults)
+        {
+            EditorGUI.indentLevel++;
+            DrawTestResults();
+            EditorGUI.indentLevel--;
+        }
+
+        // Test Controls and Status
+        DrawTestControls(monitor);
 
         // Repaint the inspector to keep metrics updated
         Repaint();
     }
 
-    private void UpdateMetricsCache(WFCMetricsMonitor monitor)
+    private EditorCoroutine StartTrackedCoroutine(IEnumerator routine)
     {
-        try
+        EditorCoroutine coroutine = EditorCoroutineUtility.StartCoroutine(routine, this);
+        activeCoroutines.Add(coroutine);
+        return coroutine;
+    }
+    private void DrawMetricsSections(WFCMetricsMonitor monitor)
+    {
+        // Get metrics through reflection
+        Dictionary<string, float> performanceMetrics = GetField<Dictionary<string, float>>(monitor, "performanceMetrics");
+        Dictionary<string, int> countMetrics = GetField<Dictionary<string, int>>(monitor, "countMetrics");
+        Dictionary<string, float> ratioMetrics = GetField<Dictionary<string, float>>(monitor, "ratioMetrics");
+
+        // Performance Metrics Section
+        showPerformanceMetrics = EditorGUILayout.Foldout(showPerformanceMetrics, "Performance Metrics", true);
+        if (showPerformanceMetrics && performanceMetrics != null)
         {
-            // Get metrics through reflection
-            var performanceField = monitor.GetType().GetField("performanceMetrics",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            var countField = monitor.GetType().GetField("countMetrics",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            var ratioField = monitor.GetType().GetField("ratioMetrics",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-            if (performanceField != null)
-                performanceMetrics = performanceField.GetValue(monitor) as Dictionary<string, float> ?? new Dictionary<string, float>();
-
-            if (countField != null)
-                countMetrics = countField.GetValue(monitor) as Dictionary<string, int> ?? new Dictionary<string, int>();
-
-            if (ratioField != null)
-                ratioMetrics = ratioField.GetValue(monitor) as Dictionary<string, float> ?? new Dictionary<string, float>();
-
-            // Update history for each metric (simple time series tracking)
-            foreach (var metric in performanceMetrics)
-            {
-                if (!metricHistory.ContainsKey(metric.Key))
-                    metricHistory[metric.Key] = new List<float>();
-
-                var history = metricHistory[metric.Key];
-                history.Add(metric.Value);
-
-                // Keep only last N points
-                if (history.Count > maxHistoryPoints)
-                    history.RemoveAt(0);
-            }
+            EditorGUI.indentLevel++;
+            DrawMetricsTable(performanceMetrics);
+            EditorGUI.indentLevel--;
         }
-        catch (System.Exception e)
+
+        // Count Metrics Section
+        showCountMetrics = EditorGUILayout.Foldout(showCountMetrics, "Count Metrics", true);
+        if (showCountMetrics && countMetrics != null)
         {
-            Debug.LogError($"Error updating metrics cache: {e.Message}");
+            EditorGUI.indentLevel++;
+            DrawMetricsTable(countMetrics);
+            EditorGUI.indentLevel--;
+        }
+
+        // Ratio Metrics Section
+        showRatioMetrics = EditorGUILayout.Foldout(showRatioMetrics, "Ratio Metrics", true);
+        if (showRatioMetrics && ratioMetrics != null)
+        {
+            EditorGUI.indentLevel++;
+            DrawMetricsTable(ratioMetrics);
+            EditorGUI.indentLevel--;
         }
     }
 
-    private void DrawSimpleGraph(string metricName, List<float> values)
+    private void DrawMetricsTable<T>(Dictionary<string, T> metrics)
     {
-        if (values.Count < 2)
+        if (metrics == null || metrics.Count == 0)
+        {
+            EditorGUILayout.LabelField("No metrics available");
             return;
-
-        // Get min and max for scaling
-        float min = values.Min();
-        float max = values.Max();
-        if (max - min < 0.01f)
-            max = min + 1f; // Prevent division by zero
-
-        // Graph area
-        Rect graphRect = EditorGUILayout.GetControlRect(false, 40);
-        EditorGUI.DrawRect(graphRect, new Color(0.1f, 0.1f, 0.1f, 0.5f));
-
-        // Draw graph lines
-        for (int i = 1; i < values.Count; i++)
-        {
-            // Calculate positions
-            float prevX = graphRect.x + graphRect.width * ((i - 1) / (float)(values.Count - 1));
-            float prevY = graphRect.y + graphRect.height * (1 - Mathf.InverseLerp(min, max, values[i - 1]));
-
-            float currX = graphRect.x + graphRect.width * (i / (float)(values.Count - 1));
-            float currY = graphRect.y + graphRect.height * (1 - Mathf.InverseLerp(min, max, values[i]));
-
-            // Determine color based on metric type
-            Color lineColor = Color.cyan;
-            if (metricName.Contains("Time"))
-                lineColor = Color.yellow;
-            else if (metricName.Contains("Memory"))
-                lineColor = Color.magenta;
-            else if (metricName.Contains("Coherence"))
-                lineColor = Color.green;
-
-            // Draw line
-            Handles.color = lineColor;
-            Handles.DrawLine(new Vector3(prevX, prevY), new Vector3(currX, currY));
         }
 
-        // Draw min/max labels
-        GUIStyle smallLabel = new GUIStyle(EditorStyles.miniLabel);
-        smallLabel.normal.textColor = Color.white;
+        foreach (var metric in metrics.OrderBy(m => m.Key))
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(metric.Key + ":", GUILayout.Width(180));
 
-        EditorGUI.LabelField(
-            new Rect(graphRect.x, graphRect.y, 50, 15),
-            max.ToString("F1"),
-            smallLabel);
+            string valueStr;
+            if (metric.Value is float floatVal)
+            {
+                valueStr = floatVal.ToString("F2");
+                if (metric.Key.Contains("Time"))
+                    valueStr += " ms";
+                else if (metric.Key.Contains("Memory"))
+                    valueStr += " MB";
+                else if (metric.Key.Contains("Percentage") || metric.Key.Contains("Rate"))
+                    valueStr += "%";
+            }
+            else
+            {
+                valueStr = metric.Value.ToString();
+            }
 
-        EditorGUI.LabelField(
-            new Rect(graphRect.x, graphRect.y + graphRect.height - 15, 50, 15),
-            min.ToString("F1"),
-            smallLabel);
+            EditorGUILayout.LabelField(valueStr, EditorStyles.boldLabel);
+            EditorGUILayout.EndHorizontal();
+        }
     }
 
-    private void ExportMetricsTable()
+    private void DrawTestConfiguration()
     {
+        EditorGUILayout.LabelField("Select tests to run:", EditorStyles.boldLabel);
+
+        for (int i = 0; i < testNames.Length; i++)
+        {
+            enabledTests[i] = EditorGUILayout.ToggleLeft(testNames[i], enabledTests[i]);
+        }
+
+        EditorGUILayout.Space(5);
+        EditorGUILayout.HelpBox("Note: Running all tests may take several minutes. Each test series will be saved to a CSV file.", MessageType.Info);
+
+        // Get the test configuration from the monitor
         WFCMetricsMonitor monitor = (WFCMetricsMonitor)target;
 
-        // Call the SaveCurrentMetrics method to ensure values are up to date
-        monitor.SaveCurrentMetrics();
+        // Show chunk sizes from monitor
+        var testChunkSizes = GetField<int[]>(monitor, "testChunkSizes");
+        if (testChunkSizes != null)
+        {
+            EditorGUILayout.LabelField("Chunk Sizes to Test:", string.Join(", ", testChunkSizes));
+        }
 
-        EditorUtility.DisplayDialog(
-            "Metrics Export",
-            "Metrics have been exported to the file specified in the WFCMetricsMonitor component.",
-            "OK");
+        // Show thread counts from monitor
+        var testThreadCounts = GetField<int[]>(monitor, "testThreadCounts");
+        if (testThreadCounts != null)
+        {
+            EditorGUILayout.LabelField("Thread Counts to Test:", string.Join(", ", testThreadCounts));
+        }
+
+        // Show world sizes from monitor
+        var testWorldSizes = GetField<Vector3Int[]>(monitor, "testWorldSizes");
+        if (testWorldSizes != null)
+        {
+            string worldSizesStr = string.Join(", ", testWorldSizes.Select(v => $"{v.x}×{v.y}×{v.z}"));
+            EditorGUILayout.LabelField("World Sizes to Test:", worldSizesStr);
+        }
+    }
+
+    private void DrawTestResults()
+    {
+        EditorGUILayout.LabelField("Test Results Summary", EditorStyles.boldLabel);
+
+        if (chunkGenResults != null && chunkGenResults.Count > 0)
+        {
+            DrawChunkGenerationResults();
+        }
+
+        if (boundaryResults != null && boundaryResults.Count > 0)
+        {
+            DrawBoundaryCoherenceResults();
+        }
+
+        if (meshGenResults != null && meshGenResults.Count > 0)
+        {
+            DrawMeshGenerationResults();
+        }
+
+        if (parallelResults != null && parallelResults.Count > 0)
+        {
+            DrawParallelProcessingResults();
+        }
+
+        if (worldSizeResults != null && worldSizeResults.Count > 0)
+        {
+            DrawWorldSizeScalingResults();
+        }
+
+        if (lodResults != null && lodResults.Count > 0)
+        {
+            DrawLODPerformanceResults();
+        }
+
+        if ((chunkGenResults == null || chunkGenResults.Count == 0) &&
+            (boundaryResults == null || boundaryResults.Count == 0) &&
+            (meshGenResults == null || meshGenResults.Count == 0) &&
+            (parallelResults == null || parallelResults.Count == 0) &&
+            (worldSizeResults == null || worldSizeResults.Count == 0) &&
+            (lodResults == null || lodResults.Count == 0))
+        {
+            EditorGUILayout.LabelField("No test results available. Run tests to generate results.");
+        }
+    }
+
+    private void DrawChunkGenerationResults()
+    {
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("8.6.1.1 Chunk Generation Performance", EditorStyles.boldLabel);
+
+        // Header row
+        EditorGUILayout.BeginHorizontal();
+        DrawHeaderCell("Chunk Size");
+        DrawHeaderCell("Processing Time (ms)");
+        DrawHeaderCell("Memory Usage (MB)");
+        DrawHeaderCell("Cells Collapsed (%)");
+        DrawHeaderCell("Propagation Events");
+        DrawHeaderCell("Iterations");
+        EditorGUILayout.EndHorizontal();
+
+        // Data rows
+        foreach (var result in chunkGenResults)
+        {
+            EditorGUILayout.BeginHorizontal();
+            DrawCell($"{result.chunkSize}×{result.chunkSize}×{result.chunkSize}");
+            DrawCell($"{result.processingTime:F2}");
+            DrawCell($"{result.memoryUsage:F2}");
+            DrawCell($"{result.cellsCollapsedPercent:F1}");
+            DrawCell($"{result.propagationEvents}");
+            DrawCell($"{result.iterationsRequired}");
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawBoundaryCoherenceResults()
+    {
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("8.6.1.2 Boundary Coherence Performance", EditorStyles.boldLabel);
+
+        // Header row
+        EditorGUILayout.BeginHorizontal();
+        DrawHeaderCell("Number of Chunks");
+        DrawHeaderCell("Boundary Updates");
+        DrawHeaderCell("Buffer Syncs");
+        DrawHeaderCell("Conflicts Detected");
+        DrawHeaderCell("Conflicts Resolved");
+        DrawHeaderCell("Coherence Score (%)");
+        EditorGUILayout.EndHorizontal();
+
+        // Data rows
+        foreach (var result in boundaryResults)
+        {
+            EditorGUILayout.BeginHorizontal();
+            DrawCell($"{result.worldSize.x}×{result.worldSize.y}×{result.worldSize.z}");
+            DrawCell($"{result.boundaryUpdates}");
+            DrawCell($"{result.bufferSynchronizations}");
+            DrawCell($"{result.conflictsDetected}");
+            DrawCell($"{result.conflictsResolved}");
+            DrawCell($"{result.coherenceScore:F1}");
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawMeshGenerationResults()
+    {
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("8.6.1.3 Mesh Generation Performance", EditorStyles.boldLabel);
+
+        // Header row
+        EditorGUILayout.BeginHorizontal();
+        DrawHeaderCell("Chunk Size");
+        DrawHeaderCell("Density Field Gen (ms)");
+        DrawHeaderCell("Marching Cubes (ms)");
+        DrawHeaderCell("Total Mesh Time (ms)");
+        DrawHeaderCell("Vertices");
+        DrawHeaderCell("Triangles");
+        EditorGUILayout.EndHorizontal();
+
+        // Data rows
+        foreach (var result in meshGenResults)
+        {
+            EditorGUILayout.BeginHorizontal();
+            DrawCell($"{result.chunkSize}×{result.chunkSize}×{result.chunkSize}");
+            DrawCell($"{result.densityFieldGenerationTime:F2}");
+            DrawCell($"{result.marchingCubesTime:F2}");
+            DrawCell($"{result.totalMeshTime:F2}");
+            DrawCell($"{result.vertices}");
+            DrawCell($"{result.triangles}");
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawParallelProcessingResults()
+    {
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("8.6.1.4 Parallel Processing Efficiency", EditorStyles.boldLabel);
+
+        // Header row
+        EditorGUILayout.BeginHorizontal();
+        DrawHeaderCell("Thread Count");
+        DrawHeaderCell("Processing Time (ms)");
+        DrawHeaderCell("Speedup Factor");
+        DrawHeaderCell("Sync Overhead (ms)");
+        DrawHeaderCell("Memory Overhead (%)");
+        DrawHeaderCell("Max Concurrent Chunks");
+        EditorGUILayout.EndHorizontal();
+
+        // Data rows
+        foreach (var result in parallelResults)
+        {
+            EditorGUILayout.BeginHorizontal();
+            DrawCell($"{result.threadCount}");
+            DrawCell($"{result.processingTime:F2}");
+            DrawCell($"{result.speedupFactor:F2}");
+            DrawCell($"{result.synchronizationOverhead:F2}");
+            DrawCell($"{result.memoryOverheadPercent:F1}");
+            DrawCell($"{result.maxConcurrentChunks}");
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawWorldSizeScalingResults()
+    {
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("8.6.1.5 World Size Scaling", EditorStyles.boldLabel);
+
+        // Header row
+        EditorGUILayout.BeginHorizontal();
+        DrawHeaderCell("World Size");
+        DrawHeaderCell("Memory Usage (MB)");
+        DrawHeaderCell("Generation Time (s)");
+        DrawHeaderCell("FPS Impact");
+        DrawHeaderCell("Chunks Loaded");
+        DrawHeaderCell("Loading Distance");
+        EditorGUILayout.EndHorizontal();
+
+        // Data rows
+        foreach (var result in worldSizeResults)
+        {
+            EditorGUILayout.BeginHorizontal();
+            DrawCell($"{result.worldSize.x}×{result.worldSize.y}×{result.worldSize.z}");
+            DrawCell($"{result.totalMemoryUsage:F2}");
+            DrawCell($"{result.generationTime:F2}");
+            DrawCell($"{result.fpsImpact:F1}");
+            DrawCell($"{result.chunksLoaded}");
+            DrawCell($"{result.loadingDistance:F1}");
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawLODPerformanceResults()
+    {
+        EditorGUILayout.Space(5);
+        EditorGUILayout.LabelField("8.6.1.6 LOD Performance Impact", EditorStyles.boldLabel);
+
+        // Header row
+        EditorGUILayout.BeginHorizontal();
+        DrawHeaderCell("LOD Level");
+        DrawHeaderCell("Distance Range");
+        DrawHeaderCell("Vertex Reduction (%)");
+        DrawHeaderCell("Speed Increase (%)");
+        DrawHeaderCell("Memory Reduction (%)");
+        DrawHeaderCell("Visual Impact (1-10)");
+        EditorGUILayout.EndHorizontal();
+
+        // Data rows
+        foreach (var result in lodResults)
+        {
+            EditorGUILayout.BeginHorizontal();
+            DrawCell(result.lodLevel == 0 ? "0 (highest)" : $"{result.lodLevel}");
+            DrawCell($"{result.distanceRange:F0}+");
+            DrawCell($"{result.vertexReductionPercent:F1}");
+            DrawCell($"{result.generationSpeedIncreasePercent:F1}");
+            DrawCell($"{result.memoryReductionPercent:F1}");
+            DrawCell($"{result.visualQualityImpact}");
+            EditorGUILayout.EndHorizontal();
+        }
+    }
+
+    private void DrawHeaderCell(string text)
+    {
+        GUIStyle style = new GUIStyle(EditorStyles.label);
+        style.fontStyle = FontStyle.Bold;
+        style.alignment = TextAnchor.MiddleCenter;
+
+        EditorGUILayout.LabelField(text, style, GUILayout.MinWidth(100));
+    }
+
+    private void DrawCell(string text)
+    {
+        GUIStyle style = new GUIStyle(EditorStyles.label);
+        style.alignment = TextAnchor.MiddleCenter;
+
+        EditorGUILayout.LabelField(text, style, GUILayout.MinWidth(100));
+    }
+
+    private void DrawTestControls(WFCMetricsMonitor monitor)
+    {
+        EditorGUILayout.Space(10);
+
+        if (GUILayout.Button("Connect Dependencies", GUILayout.Height(30)))
+        {
+            ConnectDependencies(monitor);
+        }
+
+        // Test status area
+        EditorGUILayout.LabelField("Test Status:", EditorStyles.boldLabel);
+        EditorGUILayout.LabelField(currentTestStatus);
+
+        if (isRunningTests)
+        {
+            // Progress bar
+            Rect progressRect = EditorGUILayout.GetControlRect(false, 20);
+            EditorGUI.ProgressBar(progressRect, testProgress, $"{(testProgress * 100):F0}%");
+        }
+
+        EditorGUILayout.Space(5);
+
+        // Test control buttons
+        EditorGUILayout.BeginHorizontal();
+
+        if (!isRunningTests)
+        {
+            if (GUILayout.Button("Run Selected Tests", GUILayout.Height(30)))
+            {
+                RunSelectedTests(monitor);
+            }
+
+            if (GUILayout.Button("Export Results", GUILayout.Height(30)))
+            {
+                ExportAllResults(monitor);
+            }
+        }
+        else
+        {
+            if (GUILayout.Button("Cancel Tests", GUILayout.Height(30)))
+            {
+                CancelTests(monitor);
+            }
+        }
+
+        EditorGUILayout.EndHorizontal();
+    }
+
+    private void ConnectDependencies(WFCMetricsMonitor monitor)
+    {
+        Debug.Log("Attempting to connect dependencies...");
+
+        // Force create a mock WFCGenerator if needed
+        GameObject mockObj = new GameObject("WFC_TestGenerator");
+        var generator = mockObj.AddComponent<WFCGenerator>();
+
+        // Connect other dependencies
+        var manager = FindObjectOfType<ChunkManager>();
+        var meshGen = FindObjectOfType<MeshGenerator>();
+        var parallel = FindObjectOfType<ParallelWFCManager>();
+        var monitors = FindObjectOfType<PerformanceMonitor>();
+
+        // Set fields via reflection
+        SetField(monitor, "wfcGenerator", generator);
+        SetField(monitor, "chunkManager", manager);
+        SetField(monitor, "meshGenerator", meshGen);
+        SetField(monitor, "parallelManager", parallel);
+        SetField(monitor, "performanceMonitor", monitors);
+
+        // Initialize test fields
+        monitor.InitializeDefaultAdjacencyRules();
+        monitor.InitializeInternalAdjacencyRules();
+
+        Debug.Log("Dependencies connected!");
+    }
+
+    
+    private void SetField(object obj, string fieldName, object value)
+    {
+        if (obj == null) return;
+
+        var field = obj.GetType().GetField(fieldName,
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Instance);
+
+        if (field != null)
+            field.SetValue(obj, value);
+    }
+
+    private void RunSelectedTests(WFCMetricsMonitor monitor)
+    {
+        // Count enabled tests for progress tracking
+        int totalEnabledTests = enabledTests.Count(t => t);
+        if (totalEnabledTests == 0)
+        {
+            currentTestStatus = "No tests selected. Please select at least one test to run.";
+            return;
+        }
+
+        isRunningTests = true;
+        testProgress = 0f;
+        currentTestStatus = "Preparing to run tests...";
+
+        // Start test coroutine
+        EditorCoroutineUtility.StartCoroutine(RunTestsCoroutine(monitor, totalEnabledTests), this);
+    }
+
+    private System.Collections.IEnumerator RunTestsCoroutine(WFCMetricsMonitor monitor, int totalEnabledTests)
+    {
+        int completedTests = 0;
+
+        // Run Chunk Generation test
+        if (enabledTests[0])
+        {
+            currentTestStatus = "Running Chunk Generation Performance tests...";
+            yield return StartTrackedCoroutine(
+                InvokeTestMethod(monitor, "RunChunkGenerationTest"));
+
+            // Get results through reflection
+            chunkGenResults = GetField<List<WFCMetricsMonitor.ChunkGenerationResult>>(monitor, "chunkGenerationResults");
+
+            completedTests++;
+            testProgress = (float)completedTests / totalEnabledTests;
+        }
+
+        // Run Boundary Coherence test
+        if (enabledTests[1])
+        {
+            currentTestStatus = "Running Boundary Coherence Performance tests...";
+            yield return StartTrackedCoroutine(
+                InvokeTestMethod(monitor, "RunBoundaryCoherenceTest"));
+
+            // Get results through reflection
+            boundaryResults = GetField<List<WFCMetricsMonitor.BoundaryCoherenceResult>>(monitor, "boundaryCoherenceResults");
+
+            completedTests++;
+            testProgress = (float)completedTests / totalEnabledTests;
+        }
+
+        // Run Mesh Generation test
+        if (enabledTests[2])
+        {
+            currentTestStatus = "Running Mesh Generation Performance tests...";
+            yield return StartTrackedCoroutine(
+                InvokeTestMethod(monitor, "RunMeshGenerationTest"));
+
+            // Get results through reflection
+            meshGenResults = GetField<List<WFCMetricsMonitor.MeshGenerationResult>>(monitor, "meshGenerationResults");
+
+            completedTests++;
+            testProgress = (float)completedTests / totalEnabledTests;
+        }
+
+        // Run Parallel Processing test
+        if (enabledTests[3])
+        {
+            currentTestStatus = "Running Parallel Processing Efficiency tests...";
+            yield return StartTrackedCoroutine(
+                InvokeTestMethod(monitor, "RunParallelProcessingTest"));
+
+            // Get results through reflection
+            parallelResults = GetField<List<WFCMetricsMonitor.ParallelProcessingResult>>(monitor, "parallelProcessingResults");
+
+            completedTests++;
+            testProgress = (float)completedTests / totalEnabledTests;
+        }
+
+        // Run World Size Scaling test
+        if (enabledTests[4])
+        {
+            currentTestStatus = "Running World Size Scaling tests...";
+            yield return StartTrackedCoroutine(
+                InvokeTestMethod(monitor, "RunWorldSizeScalingTest"));
+
+            // Get results through reflection
+            worldSizeResults = GetField<List<WFCMetricsMonitor.WorldSizeScalingResult>>(monitor, "worldSizeScalingResults");
+
+            completedTests++;
+            testProgress = (float)completedTests / totalEnabledTests;
+        }
+
+        // Run LOD Performance test
+        if (enabledTests[5])
+        {
+            currentTestStatus = "Running LOD Performance Impact tests...";
+            yield return StartTrackedCoroutine(
+                InvokeTestMethod(monitor, "RunLODPerformanceTest"));
+
+            // Get results through reflection
+            lodResults = GetField<List<WFCMetricsMonitor.LODPerformanceResult>>(monitor, "lodPerformanceResults");
+
+            completedTests++;
+            testProgress = (float)completedTests / totalEnabledTests;
+        }
+
+        // Tests complete
+        isRunningTests = false;
+        testProgress = 1.0f;
+        currentTestStatus = $"Test suite complete. Ran {completedTests} of {totalEnabledTests} selected tests.";
+
+        // Export results
+        ExportAllResults(monitor);
+
+        yield return null;
+    }
+
+    private System.Collections.IEnumerator InvokeTestMethod(WFCMetricsMonitor monitor, string methodName)
+    {
+        var method = monitor.GetType().GetMethod(methodName);
+        if (method != null)
+        {
+            var coroutine = (System.Collections.IEnumerator)method.Invoke(monitor, null);
+            yield return StartTrackedCoroutine(coroutine);
+        }
+        else
+        {
+            Debug.LogError($"Method {methodName} not found on WFCMetricsMonitor");
+            yield return null;
+        }
+    }
+
+    private void CancelTests(WFCMetricsMonitor monitor)
+    {
+        // Stop all coroutines
+        foreach (var coroutine in activeCoroutines)
+        {
+            EditorCoroutineUtility.StopCoroutine(coroutine);
+        }
+        activeCoroutines.Clear();
+
+        // Set the isTestRunning field to false through reflection
+        var field = monitor.GetType().GetField("isTestRunning",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+        if (field != null)
+            field.SetValue(monitor, false);
+
+        isRunningTests = false;
+        currentTestStatus = "Tests cancelled by user.";
+    }
+
+    private void ExportAllResults(WFCMetricsMonitor monitor)
+    {
+        // Check if any results exist
+        bool hasResults = false;
+
+        if (chunkGenResults != null && chunkGenResults.Count > 0)
+        {
+            ExportChunkGenerationResults();
+            hasResults = true;
+        }
+
+        if (boundaryResults != null && boundaryResults.Count > 0)
+        {
+            ExportBoundaryCoherenceResults();
+            hasResults = true;
+        }
+
+        if (meshGenResults != null && meshGenResults.Count > 0)
+        {
+            ExportMeshGenerationResults();
+            hasResults = true;
+        }
+
+        if (parallelResults != null && parallelResults.Count > 0)
+        {
+            ExportParallelProcessingResults();
+            hasResults = true;
+        }
+
+        if (worldSizeResults != null && worldSizeResults.Count > 0)
+        {
+            ExportWorldSizeScalingResults();
+            hasResults = true;
+        }
+
+        if (lodResults != null && lodResults.Count > 0)
+        {
+            ExportLODPerformanceResults();
+            hasResults = true;
+        }
+
+        if (hasResults)
+        {
+            EditorUtility.DisplayDialog("Export Complete",
+                "Test results have been exported to CSV files in the project's persistent data path.", "OK");
+        }
+        else
+        {
+            EditorUtility.DisplayDialog("Export Failed",
+                "No test results available to export. Run tests first.", "OK");
+        }
+    }
+
+    private void ExportChunkGenerationResults()
+    {
+        string outputPath = Path.Combine(Application.persistentDataPath, "ChunkGenerationResults.csv");
+
+        using (StreamWriter writer = new StreamWriter(outputPath))
+        {
+            writer.WriteLine("ChunkSize,ProcessingTime(ms),MemoryUsage(MB),CellsCollapsedPercent,PropagationEvents,IterationsRequired");
+
+            foreach (var result in chunkGenResults)
+            {
+                writer.WriteLine($"{result.chunkSize},{result.processingTime:F2},{result.memoryUsage:F2}," +
+                                $"{result.cellsCollapsedPercent:F2},{result.propagationEvents},{result.iterationsRequired}");
+            }
+        }
+
+        Debug.Log($"Chunk Generation results exported to: {outputPath}");
+    }
+
+    private void ExportBoundaryCoherenceResults()
+    {
+        string outputPath = Path.Combine(Application.persistentDataPath, "BoundaryCoherenceResults.csv");
+
+        using (StreamWriter writer = new StreamWriter(outputPath))
+        {
+            writer.WriteLine("WorldSize,BoundaryUpdates,BufferSynchronizations,ConflictsDetected,ConflictsResolved,CoherenceScore");
+
+            foreach (var result in boundaryResults)
+            {
+                writer.WriteLine($"{result.worldSize.x}x{result.worldSize.y}x{result.worldSize.z}," +
+                                $"{result.boundaryUpdates},{result.bufferSynchronizations}," +
+                                $"{result.conflictsDetected},{result.conflictsResolved},{result.coherenceScore:F2}");
+            }
+        }
+
+        Debug.Log($"Boundary Coherence results exported to: {outputPath}");
+    }
+
+    private void ExportMeshGenerationResults()
+    {
+        string outputPath = Path.Combine(Application.persistentDataPath, "MeshGenerationResults.csv");
+
+        using (StreamWriter writer = new StreamWriter(outputPath))
+        {
+            writer.WriteLine("ChunkSize,DensityFieldGeneration(ms),MarchingCubes(ms),TotalMeshTime(ms),Vertices,Triangles,MemoryUsage(MB)");
+
+            foreach (var result in meshGenResults)
+            {
+                writer.WriteLine($"{result.chunkSize},{result.densityFieldGenerationTime:F2},{result.marchingCubesTime:F2}," +
+                                $"{result.totalMeshTime:F2},{result.vertices},{result.triangles},{result.memoryUsage:F2}");
+            }
+        }
+
+        Debug.Log($"Mesh Generation results exported to: {outputPath}");
+    }
+
+    private void ExportParallelProcessingResults()
+    {
+        string outputPath = Path.Combine(Application.persistentDataPath, "ParallelProcessingResults.csv");
+
+        using (StreamWriter writer = new StreamWriter(outputPath))
+        {
+            writer.WriteLine("ThreadCount,ProcessingTime(ms),SpeedupFactor,SynchronizationOverhead(ms),MemoryOverheadPercent,MaxConcurrentChunks");
+
+            foreach (var result in parallelResults)
+            {
+                writer.WriteLine($"{result.threadCount},{result.processingTime:F2},{result.speedupFactor:F2}," +
+                                $"{result.synchronizationOverhead:F2},{result.memoryOverheadPercent:F2},{result.maxConcurrentChunks}");
+            }
+        }
+
+        Debug.Log($"Parallel Processing results exported to: {outputPath}");
+    }
+
+    private void ExportWorldSizeScalingResults()
+    {
+        string outputPath = Path.Combine(Application.persistentDataPath, "WorldSizeScalingResults.csv");
+
+        using (StreamWriter writer = new StreamWriter(outputPath))
+        {
+            writer.WriteLine("WorldSize,TotalMemoryUsage(MB),GenerationTime(s),FPSImpact,ChunksLoaded,ChunksProcessedPerFrame,LoadingDistance");
+
+            foreach (var result in worldSizeResults)
+            {
+                writer.WriteLine($"{result.worldSize.x}x{result.worldSize.y}x{result.worldSize.z}," +
+                                $"{result.totalMemoryUsage:F2},{result.generationTime:F2},{result.fpsImpact:F2}," +
+                                $"{result.chunksLoaded},{result.chunksProcessedPerFrame:F2},{result.loadingDistance:F2}");
+            }
+        }
+
+        Debug.Log($"World Size Scaling results exported to: {outputPath}");
+    }
+
+    private void ExportLODPerformanceResults()
+    {
+        string outputPath = Path.Combine(Application.persistentDataPath, "LODPerformanceResults.csv");
+
+        using (StreamWriter writer = new StreamWriter(outputPath))
+        {
+            writer.WriteLine("LODLevel,DistanceRange,VertexReductionPercent,GenerationSpeedIncreasePercent,MemoryReductionPercent,VisualQualityImpact");
+
+            foreach (var result in lodResults)
+            {
+                writer.WriteLine($"{result.lodLevel},{result.distanceRange:F0},{result.vertexReductionPercent:F2}," +
+                                $"{result.generationSpeedIncreasePercent:F2},{result.memoryReductionPercent:F2},{result.visualQualityImpact}");
+            }
+        }
+
+        Debug.Log($"LOD Performance results exported to: {outputPath}");
+    }
+
+    /// <summary>
+    /// Helper method to get a field value using reflection
+    /// </summary>
+    private T GetField<T>(object obj, string fieldName)
+    {
+        if (obj == null)
+            return default;
+
+        var field = obj.GetType().GetField(fieldName,
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.Public);
+
+        if (field != null)
+            return (T)field.GetValue(obj);
+
+        return default;
     }
 }

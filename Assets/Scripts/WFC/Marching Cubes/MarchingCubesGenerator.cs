@@ -194,8 +194,8 @@ namespace WFC.MarchingCubes
                     }
                 }
 
-                Debug.Log($"Density field stats: {valuesAboveThreshold} above threshold, {valuesBelowThreshold} below threshold");
-                Debug.Log($"Density range: min={minDensity:F3}, max={maxDensity:F3}, threshold={surfaceLevel:F3}");
+                //Debug.Log($"Density field stats: {valuesAboveThreshold} above threshold, {valuesBelowThreshold} below threshold");
+                //Debug.Log($"Density range: min={minDensity:F3}, max={maxDensity:F3}, threshold={surfaceLevel:F3}");
 
                 // Early exit if there's no surface crossing
                 if (valuesAboveThreshold == 0 || valuesBelowThreshold == 0)

@@ -31,15 +31,20 @@ namespace WFC.Terrain
 
         public void InitializeTerrainGenerator()
         {
-            if (currentTerrain is MountainValleyTerrainDefinition mountainValley)
+            if (currentTerrain != null)
             {
-                terrainGenerator = new MountainValleyGenerator(mountainValley);
-                Debug.Log($"Initialized Mountain Valley terrain generator with {mountainValley.name}");
-            }
-            // Add more terrain type checks here
-            else
-            {
-                Debug.LogWarning("Unknown terrain type, no generator initialized");
+                // Register states first
+                currentTerrain.RegisterStates();
+
+                if (currentTerrain is MountainValleyTerrainDefinition mountainValley)
+                {
+                    terrainGenerator = new MountainValleyGenerator(mountainValley);
+                    Debug.Log($"Initialized Mountain Valley terrain generator with {mountainValley.name}");
+                }
+                else
+                {
+                    Debug.LogWarning("Unknown terrain type, no generator initialized");
+                }
             }
         }
 

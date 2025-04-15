@@ -5,6 +5,7 @@ using WFC.Core;
 using WFC.Generation;
 using WFC.Performance;
 using WFC.Chunking;
+using WFC.Terrain;
 
 namespace WFC.MarchingCubes
 {
@@ -193,18 +194,18 @@ namespace WFC.MarchingCubes
                 int dominantState = GetDominantState(chunk);
                 if (wfcGenerator != null && dominantState >= 0)
                 {
-                    //Material[] stateMaterials = wfcGenerator.GetStateMaterials();
+                    Material[] stateMaterials = TerrainStateRegistry.Instance.StateMaterials;
 
-                    //if (stateMaterials != null && stateMaterials.Length > dominantState && stateMaterials[dominantState] != null)
-                    //{
-                        //meshRenderer.material = stateMaterials[dominantState];
-                        //if (enableDetailedLogging) Debug.Log($"Applied material for state {dominantState} to chunk {chunkPos}");
-                    //}
-                    //else
-                    //{
-                        //meshRenderer.material = terrainMaterial;
-                        //if (enableDetailedLogging) Debug.Log($"Using fallback material for chunk {chunkPos} - state {dominantState}");
-                    //}
+                    if (stateMaterials != null && stateMaterials.Length > dominantState && stateMaterials[dominantState] != null)
+                    {
+                        meshRenderer.material = stateMaterials[dominantState];
+                        if (enableDetailedLogging) Debug.Log($"Applied material for state {dominantState} to chunk {chunkPos}");
+                    }
+                    else
+                    {
+                        meshRenderer.material = terrainMaterial;
+                        if (enableDetailedLogging) Debug.Log($"Using fallback material for chunk {chunkPos} - state {dominantState}");
+                    }
                     Debug.LogError($"Material for state {dominantState} not found. Using default material.");
                 }
                 else

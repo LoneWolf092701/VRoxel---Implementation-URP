@@ -14,7 +14,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   terrainName: Default Terrain
   maxStateCount: 12
-  mountainHeight: 1
+  mountainHeight: 10
   valleyWidth: 0.3
   riverWidth: 0.1
   forestDensity: 0.6
+  groundMaterial: {fileID: 2100000, guid: ae29ac02d08992344b9095971167e1c6, type: 2}
+  grassMaterial: {fileID: 2100000, guid: ae29ac02d08992344b9095971167e1c6, type: 2}
+  waterMaterial: {fileID: 0}
+  rockMaterial: {fileID: 0}
+  sandMaterial: {fileID: 0}
+  forestMaterial: {fileID: 0}
+  snowMaterial: {fileID: 0}
+  cliffMaterial: {fileID: 0}

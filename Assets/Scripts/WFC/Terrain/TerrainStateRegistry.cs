@@ -55,7 +55,7 @@ namespace WFC.Terrain
                 Id = STATE_AIR,
                 IsTraversable = true,
                 Density = 0.1f,
-                DefaultMaterial = "Materials/Air"
+                //DefaultMaterial = "Materials/Air"
             }, "Core");
 
             RegisterState(new TerrainStateConfig
@@ -64,27 +64,11 @@ namespace WFC.Terrain
                 Id = STATE_GROUND,
                 IsTraversable = false,
                 Density = 0.8f,
-                DefaultMaterial = "Materials/Ground"
+                //DefaultMaterial = "Materials/Ground"
             }, "Core");
 
             // Initialize basic materials
-            InitializeDefaultMaterials();
-        }
-
-        private void InitializeDefaultMaterials()
-        {
-            // Create default state materials
-            stateMaterials[STATE_AIR] = CreateDefaultMaterial("Air", new Color(1f, 1f, 1f, 0.1f));
-            stateMaterials[STATE_GROUND] = CreateDefaultMaterial("Ground", new Color(0.5f, 0.4f, 0.3f));
-        }
-
-        private Material CreateDefaultMaterial(string name, Color color)
-        {
-            // Create a basic material
-            Material mat = new Material(Shader.Find("Standard"));
-            mat.name = name;
-            mat.color = color;
-            return mat;
+            //InitializeDefaultMaterials();
         }
 
         /// <summary>
@@ -106,22 +90,6 @@ namespace WFC.Terrain
             stateConfigs[config.Id] = config;
             stateNameToId[config.Name] = config.Id;
             stateToTerrainType[config.Id] = terrainType;
-
-            // Create a material for this state if it doesn't exist
-            if (config.Id < stateMaterials.Length && stateMaterials[config.Id] == null)
-            {
-                stateMaterials[config.Id] = CreateDefaultMaterial(config.Name, config.Color);
-
-                // Try to load material if specified
-                if (!string.IsNullOrEmpty(config.DefaultMaterial))
-                {
-                    Material loadedMat = Resources.Load<Material>(config.DefaultMaterial);
-                    if (loadedMat != null)
-                    {
-                        stateMaterials[config.Id] = loadedMat;
-                    }
-                }
-            }
 
             Debug.Log($"Registered terrain state: {config.Name} (ID: {config.Id}) for terrain: {terrainType}");
 
@@ -202,7 +170,7 @@ namespace WFC.Terrain
                 Id = STATE_AIR,
                 IsTraversable = true,
                 Density = 0.1f,
-                DefaultMaterial = "Materials/Air"
+                //DefaultMaterial = "Materials/Air"
             }, "Core");
 
             RegisterState(new TerrainStateConfig
@@ -211,7 +179,7 @@ namespace WFC.Terrain
                 Id = STATE_GROUND,
                 IsTraversable = false,
                 Density = 0.8f,
-                DefaultMaterial = "Materials/Ground"
+                //DefaultMaterial = "Materials/Ground"
             }, "Core");
         }
     }

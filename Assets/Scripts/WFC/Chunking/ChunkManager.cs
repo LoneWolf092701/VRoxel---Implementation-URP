@@ -1192,7 +1192,8 @@ namespace WFC.Chunking
             // Calculate chunk coordinates of viewer
             Vector3Int viewerChunk = new Vector3Int(
             Mathf.FloorToInt(viewerPosition.x / ChunkSize),
-            0, // IMPORTANT: Force y=0 to only create ground-level chunks
+             Mathf.FloorToInt(viewerPosition.y / ChunkSize), // <-- RESTORE 
+            //0, // IMPORTANT: Force y=0 to only create ground-level chunks
             Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
 
@@ -1204,11 +1205,11 @@ namespace WFC.Chunking
 
             for (int x = viewerChunk.x - loadChunks; x <= viewerChunk.x + loadChunks; x++)
             {
-                int y = 0;
-
-                //for (int y = viewerChunk.y - loadChunks; y <= viewerChunk.y + loadChunks; y++)
-                //{
-                for (int z = viewerChunk.z - loadChunks; z <= viewerChunk.z + loadChunks; z++)
+                for (int y = Mathf.Max(0, viewerChunk.y - loadChunks); y <= viewerChunk.y + loadChunks; y++)
+                {
+                    //for (int y = viewerChunk.y - loadChunks; y <= viewerChunk.y + loadChunks; y++)
+                    //{
+                    for (int z = viewerChunk.z - loadChunks; z <= viewerChunk.z + loadChunks; z++)
                     {
                         Vector3Int pos = new Vector3Int(x, y, z);
 
@@ -1225,7 +1226,8 @@ namespace WFC.Chunking
                             chunksToLoad.Add(pos);
                         }
                     }
-                //}
+                }
+            
             }
 
             // If no chunks found, create a 3x3x3 grid around the player
@@ -2380,7 +2382,7 @@ namespace WFC.Chunking
             if (currentState != ChunkLifecycleState.None &&
                 currentState != ChunkLifecycleState.Error)
             {
-                Debug.Log($"Chunk at {position} is already being handled (state: {currentState})");
+                //Debug.Log($"Chunk at {position} is already being handled (state: {currentState})");
                 return;
             }
 
@@ -2395,7 +2397,7 @@ namespace WFC.Chunking
             chunkTasks.Enqueue(task, task.Priority);
             UpdateChunkState(position, ChunkLifecycleState.Pending);
 
-            Debug.Log($"Forced creation of chunk at {position}");
+            //Debug.Log($"Forced creation of chunk at {position}");
         }
 
         /// <summary>
@@ -2489,25 +2491,57 @@ namespace WFC.Chunking
         // Coroutine to create chunks gradually
         private IEnumerator GradualChunkCreation(Vector3Int centerChunk)
         {
+            // Get current terrain definition
+            MountainValleyTerrainDefinition terrainDef = TerrainManager.Current?.CurrentTerrain as MountainValleyTerrainDefinition;
+            int verticalChunks = 1; // Default to 1 layer
+
+            // If we have a mountain terrain, create multiple vertical chunks
+            if (terrainDef != null)
+            {
+                // Calculate vertical chunks based on mountain height
+                verticalChunks = Mathf.CeilToInt(terrainDef.mountainHeight * 2);
+            }
+
             for (int x = -2; x <= 2; x++)
             {
-               int y = 0; // Only create in the same Y plane for now
-                          //for (int y = -2; y <= 2; y++)
-                          //{
                 for (int z = -2; z <= 2; z++)
+                {
+                    // Skip the center chunk at y=0 - already created
+                    if (x == 0 && z == 0) continue;
+
+                    // Create ground level chunk
+                    Vector3Int groundChunkPos = new Vector3Int(
+                        centerChunk.x + x,
+                        0, // Ground level
+                        centerChunk.z + z
+                    );
+                    CreateChunkAt(groundChunkPos);
+
+                    // For mountain areas, also create chunks above
+                    if (verticalChunks > 1)
                     {
-                        // Skip the center chunk - already created
-                        if (x == 0 && y == 0 && z == 0) continue;
+                        // Sample noise to determine if this area should have mountain chunks
+                        float worldX = (centerChunk.x + x) * ChunkSize;
+                        float worldZ = (centerChunk.z + z) * ChunkSize;
+                        float mountainNoise = Mathf.PerlinNoise(worldX * 0.02f, worldZ * 0.02f);
 
-                        Vector3Int chunkPos = new Vector3Int(
-                                   centerChunk.x + x,
-                                   y, // Keep at y=0
-                                   centerChunk.z + z
-                               ); 
-                        CreateChunkAt(chunkPos);
+                        // Only create vertical chunks for mountain areas
+                        if (mountainNoise > 0.25f)      //0.65f
+                        {
+                            for (int y = 1; y < verticalChunks; y++)
+                            {
+                                Vector3Int mountainChunkPos = new Vector3Int(
+                                    centerChunk.x + x,
+                                    y,
+                                    centerChunk.z + z
+                                );
+                                CreateChunkAt(mountainChunkPos);
+                                yield return null; // Wait a frame between chunks
+                            }
+                        }
+                    }
 
-                        // Wait a frame between chunks to prevent freezing
-                        yield return null;
+                    yield return null; // Wait a frame between chunks
                 }
             }
         }

@@ -871,6 +871,14 @@ namespace WFC.Generation
         // Check if two states are compatible based on adjacency rules
         public bool AreStatesCompatible(int stateA, int stateB, Direction direction)
         {
+            // Check if adjacencyRules is initialized
+            if (adjacencyRules == null)
+            {
+                // Initialize rules lazily if needed
+                adjacencyRules = new bool[MaxCellStates, MaxCellStates, 6]; // 6 directions
+                SetupAdjacencyRules();
+            }
+
             // Check bounds
             if (stateA >= MaxCellStates || stateB >= MaxCellStates)
                 return false;
@@ -1130,6 +1138,74 @@ namespace WFC.Generation
                                 "Consider reinitializing the world.");
 
                 // Could offer to automatically reinitialize here
+            }
+        }
+
+        // Generatig Trees
+        public void GenerateTreeModels(Chunk chunk)
+        {
+            // Skip if not a ground-level chunk
+            if (chunk.Position.y != 0) return;
+
+            // Get references to tree prefabs
+            GameObject[] treePrefabs = Resources.LoadAll<GameObject>("TreePrefabs");
+            if (treePrefabs.Length == 0)
+            {
+                Debug.LogWarning("No tree prefabs found in Resources/TreePrefabs folder");
+                return;
+            }
+
+            // Create parent object for trees
+            string treeParentName = $"Trees_Chunk_{chunk.Position.x}_{chunk.Position.y}_{chunk.Position.z}";
+            GameObject treeParent = new GameObject(treeParentName);
+            treeParent.transform.position = new Vector3(
+                chunk.Position.x * ChunkSize,
+                chunk.Position.y * ChunkSize,
+                chunk.Position.z * ChunkSize
+            );
+
+            // Sample for forest cells (state 6)
+            for (int x = 0; x < chunk.Size; x++)
+            {
+                for (int z = 0; z < chunk.Size; z++)
+                {
+                    // Detect top surface for each column
+                    int maxForestY = -1;
+
+                    for (int y = chunk.Size - 1; y >= 0; y--)
+                    {
+                        Cell cell = chunk.GetCell(x, y, z);
+                        if (cell != null && cell.CollapsedState.HasValue && cell.CollapsedState.Value == 6) // Forest state
+                        {
+                            maxForestY = y;
+                            break;
+                        }
+                    }
+
+                    // Skip if no forest cell found in this column
+                    if (maxForestY < 0) continue;
+
+                    // Place tree with some randomization
+                    float randomValue = UnityEngine.Random.value;
+                    if (randomValue < 0.3f) // Control tree density
+                    {
+                        // Calculate world position
+                        Vector3 treePos = new Vector3(
+                            chunk.Position.x * ChunkSize + x + UnityEngine.Random.Range(-0.3f, 0.3f),
+                            chunk.Position.y * ChunkSize + maxForestY + 0.5f, // Offset above ground
+                            chunk.Position.z * ChunkSize + z + UnityEngine.Random.Range(-0.3f, 0.3f)
+                        );
+
+                        // Select random tree prefab
+                        GameObject treePrefab = treePrefabs[UnityEngine.Random.Range(0, treePrefabs.Length)];
+
+                        // Instantiate and randomize scale/rotation
+                        GameObject tree = Instantiate(treePrefab, treePos, Quaternion.identity, treeParent.transform);
+                        float scale = UnityEngine.Random.Range(0.8f, 1.2f);
+                        tree.transform.localScale = Vector3.one * scale;
+                        tree.transform.Rotate(0, UnityEngine.Random.Range(0, 360), 0);
+                    }
+                }
             }
         }
     }

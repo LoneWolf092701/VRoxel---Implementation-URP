@@ -361,18 +361,106 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 12079610c64d72d42945757e718494b1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcGenerator: {fileID: 1124905181}
+  wfcGenerator: {fileID: 1148750571}
   chunkManager: {fileID: 1218634540}
   meshGenerator: {fileID: 1411155122}
+  parallelManager: {fileID: 93430298}
+  performanceMonitor: {fileID: 1408270512}
   enableMonitoring: 1
   logMetricsToConsole: 1
   saveMetricsToFile: 1
   metricsFilePath: WFC_Metrics.txt
   monitoringInterval: 5
   testChunkSize: 16
-  testWorldSizeX: 4
-  testWorldSizeY: 2
-  testWorldSizeZ: 4
+  testChunkSizes: 08000000100000002000000040000000
+  testThreadCounts: 01000000020000000400000008000000
+  testWorldSizes:
+  - {x: 4, y: 1, z: 4}
+  - {x: 8, y: 1, z: 8}
+  - {x: 16, y: 1, z: 16}
+  - {x: 32, y: 1, z: 32}
+  chunkGenerationResults: []
+  boundaryCoherenceResults:
+  - worldSize: {x: 2, y: 1, z: 2}
+    boundaryUpdates: 969
+    bufferSynchronizations: 969
+    conflictsDetected: 11
+    conflictsResolved: 11
+    coherenceScore: 71.052635
+  - worldSize: {x: 2, y: 2, z: 2}
+    boundaryUpdates: 1909
+    bufferSynchronizations: 1909
+    conflictsDetected: 27
+    conflictsResolved: 27
+    coherenceScore: 68.965515
+  - worldSize: {x: 3, y: 3, z: 3}
+    boundaryUpdates: 6588
+    bufferSynchronizations: 6588
+    conflictsDetected: 117
+    conflictsResolved: 117
+    coherenceScore: 71.300446
+  - worldSize: {x: 4, y: 4, z: 4}
+    boundaryUpdates: 15789
+    bufferSynchronizations: 15789
+    conflictsDetected: 319
+    conflictsResolved: 319
+    coherenceScore: 70.2725
+  meshGenerationResults:
+  - chunkSize: 8
+    densityFieldGenerationTime: 3.6010742
+    marchingCubesTime: 0.4272461
+    totalMeshTime: 4.0283203
+    vertices: 384
+    triangles: 128
+    memoryUsage: 167.6836
+  - chunkSize: 16
+    densityFieldGenerationTime: 38.45215
+    marchingCubesTime: 2.4414062
+    totalMeshTime: 40.893555
+    vertices: 1722
+    triangles: 574
+    memoryUsage: 168.4375
+  - chunkSize: 32
+    densityFieldGenerationTime: 348.02246
+    marchingCubesTime: 23.4375
+    totalMeshTime: 371.45996
+    vertices: 6456
+    triangles: 2152
+    memoryUsage: 166.69531
+  - chunkSize: 64
+    densityFieldGenerationTime: 3072.4487
+    marchingCubesTime: 160.03418
+    totalMeshTime: 3232.483
+    vertices: 26928
+    triangles: 8976
+    memoryUsage: 151.19922
+  parallelProcessingResults: []
+  worldSizeScalingResults: []
+  lodPerformanceResults:
+  - lodLevel: 0
+    distanceRange: 0
+    vertexReductionPercent: -150
+    generationSpeedIncreasePercent: 33.746174
+    memoryReductionPercent: 68.90756
+    visualQualityImpact: 0
+  - lodLevel: 1
+    distanceRange: 50
+    vertexReductionPercent: 100
+    generationSpeedIncreasePercent: 60.643932
+    memoryReductionPercent: 48.333332
+    visualQualityImpact: 2
+  - lodLevel: 2
+    distanceRange: 100
+    vertexReductionPercent: 100
+    generationSpeedIncreasePercent: 81.42977
+    memoryReductionPercent: 0
+    visualQualityImpact: 4
+  - lodLevel: 3
+    distanceRange: 200
+    vertexReductionPercent: 100
+    generationSpeedIncreasePercent: 81.76309
+    memoryReductionPercent: 0
+    visualQualityImpact: 6
 --- !u!1 &291866357
 GameObject:
   m_ObjectHideFlags: 0
@@ -996,7 +1084,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8b54efc3c76410d44bb34c34eaa46314, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  configOverride: {fileID: 0}
+  configOverride: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
   stateMaterials:
   - {fileID: 2100000, guid: 105f66618763aec48b8615d33caa874c, type: 2}
   - {fileID: 2100000, guid: db34227cb6dd4f147852853b4dd8b878, type: 2}
@@ -1020,6 +1108,60 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1450287014}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1148750570
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1148750572}
+  - component: {fileID: 1148750571}
+  m_Layer: 0
+  m_Name: WFC_TestGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!114 &1148750571
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1148750570}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b54efc3c76410d44bb34c34eaa46314, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  configOverride: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
+  stateMaterials:
+  - {fileID: 2100000, guid: 105f66618763aec48b8615d33caa874c, type: 2}
+  - {fileID: 2100000, guid: db34227cb6dd4f147852853b4dd8b878, type: 2}
+  - {fileID: 2100000, guid: 09b0c3bd0bc126841bcce4f4b704c7e4, type: 2}
+  - {fileID: 2100000, guid: 6e7756f5e22c4da4487f069235f081d8, type: 2}
+  - {fileID: 2100000, guid: 283c92b3c94677441b4614a7101792e2, type: 2}
+  - {fileID: 2100000, guid: 59a74a368f5c6fd43ab0c5fb100bbbf3, type: 2}
+  - {fileID: 2100000, guid: a8b64633af1e1514c9e928867fa252fb, type: 2}
+  terrainManager: {fileID: 226482519}
+--- !u!4 &1148750572
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1148750570}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1218634539
 GameObject:
@@ -1332,6 +1474,7 @@ Transform:
   - {fileID: 983494138}
   - {fileID: 1314112787}
   - {fileID: 1229439649}
+  - {fileID: 2026703228}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1450287015
@@ -1346,22 +1489,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a5ce0d5300cd82f42a8b9d6c27bd2aa6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  configManager: {fileID: 1229439650}
-  terrainManager: {fileID: 226482519}
-  constraintInitializer: {fileID: 1703491499}
-  wfcGenerator: {fileID: 1124905181}
-  parallelManager: {fileID: 93430298}
-  performanceMonitor: {fileID: 1408270512}
-  chunkManager: {fileID: 1218634540}
-  meshGenerator: {fileID: 1411155122}
-  initDelayBetweenSteps: 0.5
-  debugLogging: 1
-  chunkProcessingDelay: 5
-  maxInitRetries: 3
-  configInitialized: 0
-  wfcGeneratorInitialized: 0
-  chunkManagerInitialized: 0
-  meshGeneratorInitialized: 0
 --- !u!1 &1466852793
 GameObject:
   m_ObjectHideFlags: 0
@@ -1918,13 +2045,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 47d6f693de2b4b54abb66b6219cc80e6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcGenerator: {fileID: 1124905181}
-  createMountainRange: 1
-  createForest: 1
-  createTransitionZones: 1
-  fallbackWorldSizeX: 20
-  fallbackWorldSizeY: 20
-  fallbackWorldSizeZ: 1
 --- !u!1 &1885611900
 GameObject:
   m_ObjectHideFlags: 0
@@ -2182,6 +2302,51 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2018647268}
   m_CullTransparentMesh: 1
+--- !u!1 &2026703227
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2026703228}
+  - component: {fileID: 2026703229}
+  m_Layer: 0
+  m_Name: WFCConfigManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2026703228
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2026703227}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1450287014}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2026703229
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2026703227}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 853ef69f7726ba943866ca02bb5f3f2a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  configAsset: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -2191,3 +2356,4 @@ SceneRoots:
   - {fileID: 207340127}
   - {fileID: 266812409}
   - {fileID: 1450287014}
+  - {fileID: 1148750572}

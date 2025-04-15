@@ -167,7 +167,7 @@ namespace WFC.MarchingCubes
                         float noise = 0;
 
                         // First octave - large features
-                        float amplitude1 = 0.15f; // Increased from 0.05f
+                        float amplitude1 = 0.25f; // Increased from 0.05f
                         float frequency1 = 0.05f;
                         noise += Mathf.PerlinNoise(worldX * frequency1, worldZ * frequency1) * amplitude1;
 

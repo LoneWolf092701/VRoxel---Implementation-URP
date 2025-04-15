@@ -143,7 +143,7 @@ public class WFCUIController : MonoBehaviour
     {
         if (wfcGenerator != null)
         {
-            wfcGenerator.ResetGeneration();
+            //wfcGenerator.ResetGeneration();
             Debug.Log("WFC algorithm reset");
         }
         else
