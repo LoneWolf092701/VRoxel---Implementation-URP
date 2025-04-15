@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
-using WFC.Boundary; // For BoundaryBuffer
+using WFC.Boundary;
 
 namespace WFC.Core
 {

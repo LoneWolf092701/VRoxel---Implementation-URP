@@ -39,10 +39,14 @@ namespace WFC.MarchingCubes
         public delegate void MeshGeneratedHandler(Vector3Int chunkPos);
         public event MeshGeneratedHandler OnMeshGenerated;
 
+        [SerializeField] private GlobalHeightmapController heightmapController;
+
         private void Start()
         {
-            // Initialize generators
-            densityGenerator = new DensityFieldGenerator();
+            TerrainDefinition terrainDef = TerrainManager.Current?.CurrentTerrain;
+
+            // Initialize with proper terrain definition
+            densityGenerator = new DensityFieldGenerator(terrainDef);
             marchingCubes = new MarchingCubesGenerator();
 
             // Apply surface level settings
@@ -144,6 +148,14 @@ namespace WFC.MarchingCubes
         // This method generates the mesh for a specific chunk
         public void GenerateChunkMesh(Vector3Int chunkPos, Chunk chunk)
         {
+            if (chunk.Position.y > 0 && heightmapController != null &&
+            !heightmapController.ShouldGenerateMeshAt(chunkPos, chunk.Size))
+            {
+                // Mark as not dirty so no more mesh generation attempts occur
+                chunk.IsDirty = false;
+                return;
+            }
+
             if (performanceMonitor != null)
                 performanceMonitor.StartComponentTiming("MeshGeneration");
 
@@ -204,9 +216,9 @@ namespace WFC.MarchingCubes
                     else
                     {
                         meshRenderer.material = terrainMaterial;
+                        Debug.LogError($"Material for state {dominantState} not found. Using default material.");
                         if (enableDetailedLogging) Debug.Log($"Using fallback material for chunk {chunkPos} - state {dominantState}");
                     }
-                    Debug.LogError($"Material for state {dominantState} not found. Using default material.");
                 }
                 else
                 {

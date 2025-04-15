@@ -104,16 +104,17 @@ namespace WFC.Generation
         private void Awake()
         {
             stateRegistry = TerrainStateRegistry.Instance;
+            if (TerrainManager.Current == null && terrainManager != null)
+            {
+                terrainManager.InitializeTerrainGenerator();
+                currentTerrainDefinition = terrainManager.CurrentTerrain;
+                // Explicitly get terrainGenerator from manager
+                terrainGenerator = terrainManager.TerrainGenerator;
+            }
             if (stateRegistry == null)
             {
                 Debug.LogError("WFCGenerator: TerrainStateRegistry not found! Creating default instance.");
                 stateRegistry = new TerrainStateRegistry();
-            }
-
-            if (TerrainManager.Current != null && TerrainManager.Current.TerrainGenerator != null)
-            {
-                terrainGenerator = TerrainManager.Current.TerrainGenerator;
-                Debug.Log($"Using terrain generator: {TerrainManager.Current.name}");
             }
 
             // Get the configuration - use override if specified, otherwise use global config
@@ -133,6 +134,18 @@ namespace WFC.Generation
             }
 
             StartCoroutine(DelayedInitialization());
+
+            if (terrainGenerator == null)
+            {
+                if (TerrainManager.Current?.CurrentTerrain is MountainValleyTerrainDefinition mountainValley)
+                {
+                    terrainGenerator = new MountainValleyGenerator(mountainValley);
+                }
+                else
+                {
+                    Debug.LogWarning("No terrain generator available - using default constraints");
+                }
+            }
 
         }
 
@@ -209,6 +222,12 @@ namespace WFC.Generation
                 PropagationEvent evt = propagationQueue.Dequeue();
                 ProcessPropagationEvent(evt);
                 processedEvents++;
+
+                // Force boundary updates for boundary events
+                if (evt.IsBoundaryEvent && evt.Cell.IsBoundary)
+                {
+                    boundaryManager.SynchronizeAllBuffers();
+                }
             }
         }
 
@@ -369,71 +388,6 @@ namespace WFC.Generation
             }
         }
 
-        /*
-         * InitializeWorld
-         * ----------------------------------------------------------------------------
-         * Initializes the entire world grid and core WFC systems. This function:
-         * 
-         * 1. Sets up the adjacency rules matrix determining which states can be neighbors
-         * 2. Creates all chunks based on configured world dimensions
-         * 3. Initializes cells in each chunk with all possible states
-         * 4. Connects neighboring chunks to establish the world topology
-         * 5. Creates boundary buffers for seamless chunk transitions
-         * 6. Initializes the boundary management system
-         * 7. Sets up the hierarchical constraint system for terrain features
-         * 
-         * This is the foundation of the entire WFC system, establishing the world structure
-         * before any cell collapse or terrain generation begins.
-         */
-        //private void InitializeWorld()
-        //{
-        //    // Initialize adjacency rules
-        //    adjacencyRules = new bool[MaxCellStates, MaxCellStates, 6]; // 6 directions
-        //    SetupAdjacencyRules();
-
-        //    // Create chunks based on configuration
-        //    for (int x = 0; x < WorldSize.x; x++)
-        //    {
-        //        for (int y = 0; y < WorldSize.y; y++)
-        //        {
-        //            for (int z = 0; z < WorldSize.z; z++)
-        //            {
-        //                Vector3Int chunkPos = new Vector3Int(x, y, z);
-        //                Chunk chunk = new Chunk(chunkPos, ChunkSize);
-
-        //                // Initialize with all possible states
-        //                var allStates = Enumerable.Range(0, MaxCellStates);
-        //                chunk.InitializeCells(allStates);
-
-        //                chunks.Add(chunkPos, chunk);
-        //            }
-        //        }
-        //    }
-
-        //    // Connect chunk neighbors
-        //    ConnectChunkNeighbors();
-
-        //    // Initialize boundary buffers
-        //    InitializeBoundaryBuffers();
-
-        //    // Create boundary manager
-        //    boundaryManager = new BoundaryBufferManager((IWFCAlgorithm)this);
-
-        //    InitializeHierarchicalConstraints();
-        //}
-
-        private int GenerateChunkSeed(Vector3Int chunkPos)
-        {
-            // Create a deterministic seed from chunk position
-            // This ensures the same terrain is always generated for the same chunk
-            int baseSeed = WFCConfigManager.Config.World.randomSeed;
-            int chunkSeed = baseSeed +
-                            chunkPos.x * 73856093 ^
-                            chunkPos.y * 19349663 ^
-                            chunkPos.z * 83492791;
-            return chunkSeed;
-        }
-
         // In WFCGenerator.cs - InitializeHierarchicalConstraints method
         private void InitializeHierarchicalConstraints()
         {
@@ -473,31 +427,6 @@ namespace WFC.Generation
 
             system.AddGlobalConstraint(groundConstraint);
         }
-
-        /*
-         * ApplyRegionalConstraints
-         * ----------------------------------------------------------------------------
-         * Applies biome-specific constraints to a chunk based on procedural noise.
-         * 
-         * Process:
-         * 1. Samples different noise functions for elevation, moisture, temperature
-         * 2. Determines which biome type to generate based on noise values
-         * 3. Dispatches to appropriate biome generation functions:
-         *    - Mountains for high elevation
-         *    - Water bodies for high moisture + low elevation
-         *    - Forests for high moisture + moderate temperature
-         *    - Deserts for low moisture + high temperature
-         *    - Plains for other areas
-         * 
-         * Each biome generation method creates appropriate terrain features
-         * and adds constraints to the hierarchical constraint system to
-         * guide the WFC algorithm toward that biome type.
-         * 
-         * Parameters:
-         * - chunk: The chunk to apply constraints to
-         * - random: Seeded random number generator for deterministic generation
-         */
-
 
 
         /*
@@ -574,35 +503,6 @@ namespace WFC.Generation
             {
                 adjacencyRules[stateA, stateB, d] = canBeAdjacent;
                 adjacencyRules[stateB, stateA, d] = canBeAdjacent;
-            }
-        }
-
-        // Connect chunk neighbors based on adjacency rules
-        private void ConnectChunkNeighbors()
-        {
-            foreach (var chunkEntry in chunks)
-            {
-                Vector3Int pos = chunkEntry.Key;
-                Chunk chunk = chunkEntry.Value;
-
-                // Check each direction for neighbors
-                foreach (Direction dir in Enum.GetValues(typeof(Direction)))
-                {
-                    Vector3Int offset = dir.ToVector3Int();
-                    Vector3Int neighborPos = pos + offset;
-
-                    if (chunks.TryGetValue(neighborPos, out Chunk neighbor))
-                    {
-                        chunk.Neighbors[dir] = neighbor;
-                    }
-                }
-            }
-
-            foreach (var chunk in chunks.Values)
-            {
-                int chunkSeed = GenerateChunkSeed(chunk.Position);
-                System.Random random = new System.Random(chunkSeed);
-                //ApplyRegionalConstraints(chunk, random);
             }
         }
 
@@ -727,144 +627,6 @@ namespace WFC.Generation
                         return; // Cell is now collapsed
                     }
                 }
-            }
-        }
-
-        private void InitializeBoundaryBuffers()
-        {
-            foreach (var chunk in chunks.Values)
-            {
-                foreach (Direction dir in Enum.GetValues(typeof(Direction)))
-                {
-                    if (!chunk.Neighbors.ContainsKey(dir))
-                        continue;
-
-                    Chunk neighbor = chunk.Neighbors[dir];
-
-                    // Create buffer for this boundary
-                    BoundaryBuffer buffer = new BoundaryBuffer(dir, chunk);
-                    buffer.AdjacentChunk = neighbor;
-
-                    // Get boundary cells based on direction
-                    List<Cell> boundaryCells = GetBoundaryCells(chunk, dir);
-                    buffer.BoundaryCells = boundaryCells;
-
-                    // Create buffer cells (virtual cells that mirror neighbor's boundary)
-                    Direction oppositeDir = dir.GetOpposite();
-                    List<Cell> neighborBoundaryCells = GetBoundaryCells(neighbor, oppositeDir);
-
-                    // Create buffer cells with same number of elements as boundary cells
-                    for (int i = 0; i < boundaryCells.Count; i++)
-                    {
-                        Vector3Int pos = new Vector3Int(-1, -1, -1); // Invalid position for buffer cells
-                        Cell bufferCell = new Cell(pos, new int[0]);
-                        buffer.BufferCells.Add(bufferCell);
-                    }
-
-                    chunk.BoundaryBuffers[dir] = buffer;
-                }
-            }
-
-            // Sync buffer cells with their corresponding boundaries
-            foreach (var chunk in chunks.Values)
-            {
-                foreach (var buffer in chunk.BoundaryBuffers.Values)
-                {
-                    SynchronizeBuffer(buffer);
-                }
-            }
-        }
-
-        // Get boundary cells based on direction
-        private List<Cell> GetBoundaryCells(Chunk chunk, Direction direction)
-        {
-            List<Cell> cells = new List<Cell>();
-            int size = chunk.Size;
-
-            switch (direction)
-            {
-                case Direction.Left:
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            cells.Add(chunk.GetCell(0, y, z));
-                        }
-                    }
-                    break;
-
-                case Direction.Right:
-                    for (int y = 0; y < chunk.Size; y++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            cells.Add(chunk.GetCell(chunk.Size - 1, y, z));
-                        }
-                    }
-                    break;
-
-                case Direction.Down:
-                    for (int x = 0; x < chunk.Size; x++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            cells.Add(chunk.GetCell(x, 0, z));
-                        }
-                    }
-                    break;
-
-                case Direction.Up:
-                    for (int x = 0; x < chunk.Size; x++)
-                    {
-                        for (int z = 0; z < chunk.Size; z++)
-                        {
-                            cells.Add(chunk.GetCell(x, chunk.Size - 1, z));
-                        }
-                    }
-                    break;
-
-                case Direction.Back:
-                    for (int x = 0; x < chunk.Size; x++)
-                    {
-                        for (int y = 0; y < chunk.Size; y++)
-                        {
-                            cells.Add(chunk.GetCell(x, y, 0));
-                        }
-                    }
-                    break;
-
-                case Direction.Forward:
-                    for (int x = 0; x < chunk.Size; x++)
-                    {
-                        for (int y = 0; y < chunk.Size; y++)
-                        {
-                            cells.Add(chunk.GetCell(x, y, chunk.Size - 1));
-                        }
-                    }
-                    break;
-            }
-
-            return cells;
-        }
-
-        // Synchronize buffer cells with their corresponding boundary cells
-        private void SynchronizeBuffer(BoundaryBuffer buffer)
-        {
-            if (buffer.AdjacentChunk == null)
-                return;
-
-            Direction oppositeDir = buffer.Direction.GetOpposite();
-            BoundaryBuffer adjacentBuffer = buffer.AdjacentChunk.BoundaryBuffers[oppositeDir];
-
-            for (int i = 0; i < buffer.BoundaryCells.Count; i++)
-            {
-                // Update buffer cells to reflect adjacent boundary cells
-                HashSet<int> adjacentStates = new HashSet<int>(adjacentBuffer.BoundaryCells[i].PossibleStates);
-                buffer.BufferCells[i].SetPossibleStates(adjacentStates);
-
-                // And vice versa
-                HashSet<int> localStates = new HashSet<int>(buffer.BoundaryCells[i].PossibleStates);
-                adjacentBuffer.BufferCells[i].SetPossibleStates(localStates);
             }
         }
 

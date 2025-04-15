@@ -55,6 +55,8 @@ namespace WFC.Chunking
         [SerializeField] private WFCGenerator wfcGenerator;
         [SerializeField] private PerformanceMonitor performanceMonitor;
         [SerializeField] private MeshGenerator meshGenerator;
+        private BoundaryBufferManager boundaryManager;
+
 
         [Header("Prediction Settings")]
         [SerializeField] private int movementHistorySize = 60; // Store 60 frames of movement history
@@ -124,6 +126,8 @@ namespace WFC.Chunking
         private Vector3 lastChunkGenerationPosition;
         private float chunkGenerationDistance = 10f; // Distance player must move before generating new chunks
 
+        [SerializeField] private GlobalHeightmapController heightmapController;
+
         // World properties
         public Vector3Int WorldSize => new Vector3Int(
             activeConfig.World.worldSizeX,
@@ -138,6 +142,7 @@ namespace WFC.Chunking
 
         private void Start()
         {
+
             // Get the configuration - use override if specified, otherwise use global config
             activeConfig = configOverride != null ? configOverride : WFCConfigManager.Config;
 
@@ -167,9 +172,6 @@ namespace WFC.Chunking
             // Use a more robust delayed initialization approach
             StartCoroutine(RobustDelayedChunkGeneration());
 
-            // Explicitly prevent origin chunk generation during startup
-            //Vector3Int originChunk = Vector3Int.zero;
-            //UpdateChunkState(originChunk, ChunkLifecycleState.Error);
             Vector3Int viewerChunk = new Vector3Int(
                 Mathf.FloorToInt(viewerPosition.x / ChunkSize),
                 Mathf.FloorToInt(viewerPosition.y / ChunkSize),
@@ -180,6 +182,9 @@ namespace WFC.Chunking
             CreateChunkAt(viewerChunk); // Force creation of the initial chunk
 
             lastChunkGenerationPosition = Vector3.zero; // Initialize this to ensure the generation happens
+
+            // Initialization
+            boundaryManager = new BoundaryBufferManager((IWFCAlgorithm)wfcGenerator);
 
             Debug.Log($"ChunkManager Start completed. Initial viewer position: {(viewer != null ? viewer.position.ToString() : "No viewer")}");
             
@@ -984,6 +989,7 @@ namespace WFC.Chunking
                 performanceMonitor.EndComponentTiming("AssignLODLevels");
         }
 
+        // Apply LOD settings based on the current LOD level
         private void ApplyLODSettings(Chunk chunk)
         {
             // Get LOD-specific settings
@@ -1205,8 +1211,9 @@ namespace WFC.Chunking
 
             for (int x = viewerChunk.x - loadChunks; x <= viewerChunk.x + loadChunks; x++)
             {
-                for (int y = Mathf.Max(0, viewerChunk.y - loadChunks); y <= viewerChunk.y + loadChunks; y++)
-                {
+                //for (int y = Mathf.Max(0, viewerChunk.y - loadChunks); y <= viewerChunk.y + loadChunks; y++)
+                //{
+                for (int y = 0; y <= 0; y++)
                     //for (int y = viewerChunk.y - loadChunks; y <= viewerChunk.y + loadChunks; y++)
                     //{
                     for (int z = viewerChunk.z - loadChunks; z <= viewerChunk.z + loadChunks; z++)
@@ -1226,7 +1233,7 @@ namespace WFC.Chunking
                             chunksToLoad.Add(pos);
                         }
                     }
-                }
+                //}
             
             }
 
@@ -1472,6 +1479,8 @@ namespace WFC.Chunking
 
                 // Initialize boundary buffers
                 InitializeBoundaryBuffers(chunk);
+
+                boundaryManager.SynchronizeAllBuffers();
 
                 // Get WFC generator reference if not already set
                 if (wfcGenerator == null)
@@ -1994,65 +2003,6 @@ namespace WFC.Chunking
                     performanceMonitor.EndComponentTiming("MeshGeneration");
             }
         }
-
-        // Helper method to determine the dominant state in a chunk
-        private int GetDominantState(Chunk chunk)
-        {
-            if (chunk == null) return 1; // Default to ground
-
-            Dictionary<int, int> stateCounts = new Dictionary<int, int>();
-            int totalCells = 0;
-
-            // Sample cells to estimate state distribution
-            int sampleSize = Mathf.Min(27, chunk.Size * chunk.Size * chunk.Size);
-            int samplesPerDimension = Mathf.CeilToInt(Mathf.Pow(sampleSize, 1f / 3f));
-            float step = chunk.Size / (float)samplesPerDimension;
-
-            for (int x = 0; x < samplesPerDimension; x++)
-            {
-                for (int y = 0; y < samplesPerDimension; y++)
-                {
-                    for (int z = 0; z < samplesPerDimension; z++)
-                    {
-                        int sampleX = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(x * step));
-                        int sampleY = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(y * step));
-                        int sampleZ = Mathf.Min(chunk.Size - 1, Mathf.FloorToInt(z * step));
-
-                        Cell cell = chunk.GetCell(sampleX, sampleY, sampleZ);
-                        if (cell != null && cell.CollapsedState.HasValue)
-                        {
-                            int state = cell.CollapsedState.Value;
-
-                            // Skip empty/air state for material determination
-                            if (state != 0)
-                            {
-                                if (!stateCounts.ContainsKey(state))
-                                    stateCounts[state] = 0;
-
-                                stateCounts[state]++;
-                                totalCells++;
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Find the dominant state (skip air/state 0)
-            int maxCount = 0;
-            int dominantState = 1; // Default to ground
-
-            foreach (var pair in stateCounts)
-            {
-                if (pair.Value > maxCount)
-                {
-                    maxCount = pair.Value;
-                    dominantState = pair.Key;
-                }
-            }
-
-            return dominantState;
-        }
-
         #endregion
 
         #region Helper Methods
@@ -2374,6 +2324,12 @@ namespace WFC.Chunking
         /// </summary>
         public void CreateChunkAt(Vector3Int position)
         {
+            if (position.y > 0 && heightmapController != null &&
+            !heightmapController.ShouldGenerateMeshAt(position, ChunkSize))
+            {
+                return;
+            }
+
             // Force position to be at ground level
             position.y = 0;
 
@@ -2472,10 +2428,15 @@ namespace WFC.Chunking
         */
         public void CreateChunksAroundPlayer()
         {
+            // Initialize heightmap controller if needed
+            if (heightmapController != null && !heightmapController.IsInitialized)
+            {
+                heightmapController.Initialize();
+            }
+
             Vector3Int viewerChunk = new Vector3Int(
                 Mathf.FloorToInt(viewer.position.x / ChunkSize),
                 0,
-                //Mathf.FloorToInt(viewer.position.y / ChunkSize),
                 Mathf.FloorToInt(viewer.position.z / ChunkSize)
             );
 
@@ -2491,57 +2452,41 @@ namespace WFC.Chunking
         // Coroutine to create chunks gradually
         private IEnumerator GradualChunkCreation(Vector3Int centerChunk)
         {
-            // Get current terrain definition
-            MountainValleyTerrainDefinition terrainDef = TerrainManager.Current?.CurrentTerrain as MountainValleyTerrainDefinition;
-            int verticalChunks = 1; // Default to 1 layer
-
-            // If we have a mountain terrain, create multiple vertical chunks
-            if (terrainDef != null)
+            // Create ground level chunks first in a radius around player
+            for (int x = -2; x <= 2; x++)
             {
-                // Calculate vertical chunks based on mountain height
-                verticalChunks = Mathf.CeilToInt(terrainDef.mountainHeight * 2);
+                for (int z = -2; z <= 2; z++)
+                {
+                    Vector3Int groundChunkPos = new Vector3Int(centerChunk.x + x, 0, centerChunk.z + z);
+                    if (!loadedChunks.ContainsKey(groundChunkPos))
+                    {
+                        CreateChunkAt(groundChunkPos);
+                        yield return null;
+                    }
+                }
             }
+
+            // Now selectively create vertical chunks based on the heightmap
+            int maxVerticalChunks = 4; // Reasonable limit
 
             for (int x = -2; x <= 2; x++)
             {
                 for (int z = -2; z <= 2; z++)
                 {
-                    // Skip the center chunk at y=0 - already created
-                    if (x == 0 && z == 0) continue;
-
-                    // Create ground level chunk
-                    Vector3Int groundChunkPos = new Vector3Int(
-                        centerChunk.x + x,
-                        0, // Ground level
-                        centerChunk.z + z
-                    );
-                    CreateChunkAt(groundChunkPos);
-
-                    // For mountain areas, also create chunks above
-                    if (verticalChunks > 1)
+                    // Check each vertical position
+                    for (int y = 1; y < maxVerticalChunks; y++)
                     {
-                        // Sample noise to determine if this area should have mountain chunks
-                        float worldX = (centerChunk.x + x) * ChunkSize;
-                        float worldZ = (centerChunk.z + z) * ChunkSize;
-                        float mountainNoise = Mathf.PerlinNoise(worldX * 0.02f, worldZ * 0.02f);
+                        Vector3Int chunkPos = new Vector3Int(centerChunk.x + x, y, centerChunk.z + z);
 
-                        // Only create vertical chunks for mountain areas
-                        if (mountainNoise > 0.25f)      //0.65f
+                        // Only create chunk if heightmap indicates terrain should be here
+                        if (heightmapController != null &&
+                            heightmapController.ShouldGenerateMeshAt(chunkPos, ChunkSize) &&
+                            !loadedChunks.ContainsKey(chunkPos))
                         {
-                            for (int y = 1; y < verticalChunks; y++)
-                            {
-                                Vector3Int mountainChunkPos = new Vector3Int(
-                                    centerChunk.x + x,
-                                    y,
-                                    centerChunk.z + z
-                                );
-                                CreateChunkAt(mountainChunkPos);
-                                yield return null; // Wait a frame between chunks
-                            }
+                            CreateChunkAt(chunkPos);
+                            yield return null;
                         }
                     }
-
-                    yield return null; // Wait a frame between chunks
                 }
             }
         }

@@ -119,6 +119,7 @@ namespace WFC.MarchingCubes
 
         public MarchingCubesGenerator()
         {
+            surfaceLevel = 0.5f;
             InitializeTables();
         }
 

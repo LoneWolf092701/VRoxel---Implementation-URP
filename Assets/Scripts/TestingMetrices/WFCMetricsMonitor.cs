@@ -48,24 +48,24 @@ namespace WFC.Metrics
         };
         private bool[,,] internalAdjacencyRules;
         private int internalMaxStates = 10;
-        // Test results
+
         [Header("Test Results")]
-        // 8.6.1.1 Chunk Generation Performance
+        // Chunk Generation Performance
         public List<ChunkGenerationResult> chunkGenerationResults = new List<ChunkGenerationResult>();
 
-        // 8.6.1.2 Boundary Coherence Performance
+        // Boundary Coherence Performance
         public List<BoundaryCoherenceResult> boundaryCoherenceResults = new List<BoundaryCoherenceResult>();
 
-        // 8.6.1.3 Mesh Generation Performance
+        // Mesh Generation Performance
         public List<MeshGenerationResult> meshGenerationResults = new List<MeshGenerationResult>();
 
-        // 8.6.1.4 Parallel Processing Efficiency
+        // Parallel Processing Efficiency
         public List<ParallelProcessingResult> parallelProcessingResults = new List<ParallelProcessingResult>();
 
-        // 8.6.1.5 World Size Scaling
+        // World Size Scaling
         public List<WorldSizeScalingResult> worldSizeScalingResults = new List<WorldSizeScalingResult>();
 
-        // 8.6.1.6 LOD Performance Impact
+        // LOD Performance Impact
         public List<LODPerformanceResult> lodPerformanceResults = new List<LODPerformanceResult>();
 
         // Metrics data containers
@@ -87,7 +87,7 @@ namespace WFC.Metrics
         private bool isTestRunning = false;
         private TestType currentTestType = TestType.None;
         private int currentTestIndex = 0;
-        //private System.Diagnostics.Stopwatch testStopwatch = new System.Diagnostics.Stopwatch();
+
         private Stopwatch testStopwatch = new Stopwatch();
 
         // Default adjacency rules for when WFCGenerator is not available
@@ -186,7 +186,7 @@ namespace WFC.Metrics
         private void Start()
         {
             FindReferences();
-            EnsureWFCGenerator(); // Add this line
+            EnsureWFCGenerator();
             InitializeMetrics();
             lastMeasurementTime = Time.time;
         }
@@ -248,7 +248,8 @@ namespace WFC.Metrics
                 if (logMetricsToConsole)
                     LogMetricsToConsole();
 
-                if (saveMetricsToFile && measurementCount % 5 == 0) // Save every 5 measurements
+                // Save every 5 measurements
+                if (saveMetricsToFile && measurementCount % 5 == 0) 
                     SaveMetricsToFile();
             }
 
@@ -264,8 +265,8 @@ namespace WFC.Metrics
             // Find main components if not assigned
             if (wfcGenerator == null)
             {
-                wfcGenerator = FindObjectOfType<WFCGenerator>(true); // Include inactive objects
-                Debug.Log($"Found WFCGenerator: {(wfcGenerator != null ? "Yes" : "No")}");
+                wfcGenerator = FindObjectOfType<WFCGenerator>(true);
+                Debug.Log($"Found WFCGenerator: {(wfcGenerator != null ? "Yesss :)" : "No!")}");
             }
 
             if (chunkManager == null)
@@ -331,19 +332,13 @@ namespace WFC.Metrics
 
                 if (WFCConfigManager.Config == null)
                 {
-                    Debug.LogWarning("WFCConfigManager.Config is null - some tests may fail");
+                    Debug.LogWarning("WFCConfigManager.Config is null");
                     // Try to find and initialize it if possible
                     var configManager = FindObjectOfType<WFCConfigManager>(true);
-                    if (configManager != null)
-                    {
-                        Debug.Log("Found WFCConfigManager, attempting to initialize config");
-                        // Call initialization method if available via reflection
-                    }
                 }
             }
         }
-        public void SetDependencies(WFCGenerator generator, ChunkManager manager, MeshGenerator meshGen,
-                            ParallelWFCManager parallel, PerformanceMonitor perfMon)
+        public void SetDependencies(WFCGenerator generator, ChunkManager manager, MeshGenerator meshGen, ParallelWFCManager parallel, PerformanceMonitor perfMon)
         {
             wfcGenerator = generator;
             chunkManager = manager;
@@ -473,24 +468,19 @@ namespace WFC.Metrics
                     }
                 }
 
-                performanceMetrics["BoundaryCoherence"] = totalBoundaries > 0 ?
-                    totalCoherence / totalBoundaries : 1f;
+                performanceMetrics["BoundaryCoherence"] = totalBoundaries > 0 ? totalCoherence / totalBoundaries : 1f;
                 countMetrics["BoundaryUpdates"] = totalBoundaries;
                 countMetrics["BoundaryConflicts"] = boundaryConflicts;
-                ratioMetrics["BoundaryCoherenceRate"] = totalBoundaries > 0 ?
-                    1f - ((float)boundaryConflicts / totalBoundaries) : 1f;
+                ratioMetrics["BoundaryCoherenceRate"] = totalBoundaries > 0 ? 1f - ((float)boundaryConflicts / totalBoundaries) : 1f;
             }
 
             // Get constraint metrics
             if (constraintSystem != null)
             {
                 var stats = constraintSystem.Statistics;
-                countMetrics["ConstraintsApplied"] = stats.GlobalConstraintsApplied +
-                                                      stats.RegionConstraintsApplied +
-                                                      stats.LocalConstraintsApplied;
+                countMetrics["ConstraintsApplied"] = stats.GlobalConstraintsApplied + stats.RegionConstraintsApplied + stats.LocalConstraintsApplied;
 
-                ratioMetrics["ConstraintSatisfactionRate"] = stats.CellsAffected > 0 ?
-                    (float)stats.CellsCollapsed / stats.CellsAffected : 1f;
+                ratioMetrics["ConstraintSatisfactionRate"] = stats.CellsAffected > 0 ? (float)stats.CellsCollapsed / stats.CellsAffected : 1f;
             }
 
             // Get mesh metrics
@@ -501,8 +491,7 @@ namespace WFC.Metrics
                 int meshCount = 0;
 
                 // Try to get mesh objects through reflection
-                var meshObjectsField = meshGenerator.GetType().GetField("chunkMeshObjects",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var meshObjectsField = meshGenerator.GetType().GetField("chunkMeshObjects", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
                 if (meshObjectsField != null)
                 {
@@ -529,25 +518,23 @@ namespace WFC.Metrics
                 countMetrics["TotalTriangles"] = totalTriangles;
 
                 // Get mesh generation time from component timing if available
-                if (meshGenerator.GetType().GetField("averageMeshGenerationTime",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance) is var field && field != null)
+                if (meshGenerator.GetType().GetField("averageMeshGenerationTime", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance) is var field && field != null)
                 {
                     performanceMetrics["MeshGenerationTime"] = (float)field.GetValue(meshGenerator) * 1000f; // ms
                 }
             }
 
             // Calculate efficiency metrics
-            ratioMetrics["ProcessingEfficiency"] = countMetrics["ProcessingChunks"] > 0 ?
-                (float)countMetrics["LoadedChunks"] / countMetrics["ProcessingChunks"] : 1f;
+            ratioMetrics["ProcessingEfficiency"] = countMetrics["ProcessingChunks"] > 0 ? (float)countMetrics["LoadedChunks"] / countMetrics["ProcessingChunks"] : 1f;
         }
 
         #region Test Methods
 
         // Run all tests in sequence
-        public void RunAllTests()
-        {
-            StartCoroutine(RunAllTestsCoroutine());
-        }
+        //public void RunAllTests()
+        //{
+        //    StartCoroutine(RunAllTestsCoroutine());
+        //}
         public void InitializeInternalAdjacencyRules()
         {
             internalMaxStates = 10;
@@ -593,23 +580,6 @@ namespace WFC.Metrics
                     internalAdjacencyRules[i + 1, i, d] = true;
                 }
             }
-        }
-
-        public void InitializeTesting()
-        {
-            // Create fallback reference objects if needed
-            if (wfcGenerator == null)
-            {
-                Debug.Log("Creating test WFCGenerator");
-                GameObject mockObj = new GameObject("TestWFCGenerator");
-                wfcGenerator = mockObj.AddComponent<WFCGenerator>();
-            }
-
-            // Initialize rules
-            InitializeDefaultAdjacencyRules();
-            InitializeInternalAdjacencyRules();
-
-            Debug.Log("Testing initialized");
         }
         private IEnumerator RunAllTestsCoroutine()
         {
@@ -803,7 +773,7 @@ namespace WFC.Metrics
             int propagationEventCount = 0;
             int iterations = 0;
             bool madeProgress = true;
-            Exception caughtException = null; // Store any caught exception
+            Exception caughtException = null;
 
             // Start timing
             testStopwatch = new Stopwatch();
@@ -880,7 +850,7 @@ namespace WFC.Metrics
                         if (cell.CollapsedState.HasValue)
                             continue;
 
-                        // Skip cells with only one state (will be collapsed in propagation)
+                        // Skip cells with only one state
                         if (cell.PossibleStates.Count <= 1)
                             continue;
 
@@ -959,7 +929,6 @@ namespace WFC.Metrics
 
             foreach (int targetState in cell.PossibleStates)
             {
-                // Use our local AreStatesCompatible method
                 bool isCompatible = AreStatesCompatible(targetState, constraintState, direction);
 
                 if (isCompatible)
@@ -1075,15 +1044,12 @@ namespace WFC.Metrics
                     InitializeBoundaryBuffers(chunk);
                 }
 
-                // Create a test boundary manager
-                //MockBoundaryManager boundaryManager = new MockBoundaryManager();
-
                 // Collapse some cells to create boundaries
                 int cellsCollapsed = 0;
                 // Partially collapse chunks to create boundaries
                 foreach (var chunk in testChunks.Values)
                 {
-                    // Collapse ~20% of cells randomly
+                    // Collapse 20% of cells randomly
                     int cellsToCollapse = (chunk.Size * chunk.Size * chunk.Size) / 5;
                     for (int i = 0; i < cellsToCollapse; i++)
                     {
@@ -1303,7 +1269,6 @@ namespace WFC.Metrics
                 Cell adjacentCell = adjacentBuffer.BoundaryCells[index];
                 if (adjacentCell.CollapsedState.HasValue)
                 {
-                    // Use our local AreStatesCompatible method
                     bool compatible = AreStatesCompatible(
                         cell.CollapsedState.Value,
                         adjacentCell.CollapsedState.Value,
@@ -1380,7 +1345,6 @@ namespace WFC.Metrics
                         {
                             totalBoundaryCells++;
 
-                            // Use our local AreStatesCompatible method
                             bool compatible = AreStatesCompatible(
                                 cell1.CollapsedState.Value,
                                 cell2.CollapsedState.Value,
@@ -1436,7 +1400,7 @@ namespace WFC.Metrics
             var possibleStates = Enumerable.Range(0, WFCConfigManager.Config.World.maxStates);
             chunk.InitializeCells(possibleStates);
 
-            // Create simple terrain pattern (ground with air above it)
+            // Create simple terrain pattern
             for (int x = 0; x < chunkSize; x++)
             {
                 for (int z = 0; z < chunkSize; z++)
@@ -1454,7 +1418,7 @@ namespace WFC.Metrics
                 }
             }
 
-            // Add some noise to make the terrain more interesting
+            // Add some noise
             int noiseCount = chunkSize * chunkSize / 4;
             for (int i = 0; i < noiseCount; i++)
             {
@@ -1558,6 +1522,44 @@ namespace WFC.Metrics
         {
             UnityEngine.Debug.Log($"Testing parallel processing with {threadCount} threads");
 
+            // Create a fallback if needed
+            if (parallelProcessor == null && wfcGenerator != null)
+            {
+                Debug.LogWarning("ParallelProcessor not found - creating a mock version for testing");
+
+                try
+                {
+                    // Create adapter for WFCGenerator
+                    IWFCAlgorithm algorithm = new WFCAlgorithmAdapter(wfcGenerator);
+                    parallelProcessor = new ParallelWFCProcessor(algorithm, threadCount);
+                    parallelProcessor.Start();
+                    Debug.Log("Created mock ParallelProcessor for testing");
+                }
+                catch (Exception e)
+                {
+                    Debug.LogError($"Failed to create mock ParallelProcessor: {e.Message}");
+                }
+            }
+
+            if (parallelProcessor == null)
+            {
+                Debug.LogError("Could not set up parallel processor - adding default result instead");
+
+                // Add a dummy result instead of skipping
+                ParallelProcessingResult dummyResult = new ParallelProcessingResult
+                {
+                    threadCount = threadCount,
+                    processingTime = 0,
+                    speedupFactor = threadCount == 1 ? 1 : 0,
+                    synchronizationOverhead = 0,
+                    memoryOverheadPercent = 0,
+                    maxConcurrentChunks = 0
+                };
+
+                parallelProcessingResults.Add(dummyResult);
+                yield break;
+            }
+
             // Create a set of test chunks
             List<Chunk> testChunks = new List<Chunk>();
             int chunkSize = 32; // Use fixed size for this test
@@ -1579,8 +1581,7 @@ namespace WFC.Metrics
             if (parallelManager != null)
             {
                 // Try to reflect into parallelManager to get/set processor
-                var processorField = parallelManager.GetType().GetField("parallelProcessor",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var processorField = parallelManager.GetType().GetField("parallelProcessor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
                 if (processorField != null)
                 {
@@ -1731,8 +1732,7 @@ namespace WFC.Metrics
             // Reset original processor if needed
             if (parallelManager != null && testProcessor != null)
             {
-                var processorField = parallelManager.GetType().GetField("parallelProcessor",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var processorField = parallelManager.GetType().GetField("parallelProcessor", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
                 if (processorField != null)
                 {
@@ -1751,7 +1751,7 @@ namespace WFC.Metrics
 
         public IEnumerator RunWorldSizeScalingTest()
         {
-            Debug.Log("Running World Size Scaling Test...");
+            Debug.Log("Running World Size Scaling Test :)");
             isTestRunning = true;
             currentTestType = TestType.WorldSizeScaling;
             currentTestIndex = 0;
@@ -1901,8 +1901,7 @@ namespace WFC.Metrics
                 return 0f;
 
             // Try to get the load distance via reflection
-            var field = chunkManager.GetType().GetField("currentLoadDistance",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var field = chunkManager.GetType().GetField("currentLoadDistance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
             if (field != null)
                 return (float)field.GetValue(chunkManager);
@@ -1916,8 +1915,7 @@ namespace WFC.Metrics
                 return;
 
             // Try to set the load distance via reflection
-            var field = chunkManager.GetType().GetField("currentLoadDistance",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var field = chunkManager.GetType().GetField("currentLoadDistance", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
             if (field != null)
                 field.SetValue(chunkManager, distance);
@@ -1929,8 +1927,7 @@ namespace WFC.Metrics
                 yield break;
 
             // Try to call reset method on chunk manager
-            var resetMethod = chunkManager.GetType().GetMethod("ResetChunkSystem",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            var resetMethod = chunkManager.GetType().GetMethod("ResetChunkSystem", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
 
             if (resetMethod != null)
             {
@@ -1944,8 +1941,7 @@ namespace WFC.Metrics
                 foreach (var chunkPos in chunks.Keys.ToList())
                 {
                     // Try to call unload method
-                    var unloadMethod = chunkManager.GetType().GetMethod("UnloadChunk",
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    var unloadMethod = chunkManager.GetType().GetMethod("UnloadChunk", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
                     if (unloadMethod != null)
                         unloadMethod.Invoke(chunkManager, new object[] { chunkPos });
@@ -1961,15 +1957,13 @@ namespace WFC.Metrics
 
         public IEnumerator RunLODPerformanceTest()
         {
-            UnityEngine.Debug.Log("Running LOD Performance Test...");
+            UnityEngine.Debug.Log("Running LOD Performance Test :)");
             isTestRunning = true;
             currentTestType = TestType.LODPerformance;
             currentTestIndex = 0;
 
             // Skip if configuration is not available
-            if (WFCConfigManager.Config == null ||
-                WFCConfigManager.Config.Performance == null ||
-                WFCConfigManager.Config.Performance.lodSettings == null)
+            if (WFCConfigManager.Config == null || WFCConfigManager.Config.Performance == null || WFCConfigManager.Config.Performance.lodSettings == null)
             {
                 UnityEngine.Debug.LogWarning("LOD performance test skipped - no LOD settings found in configuration");
                 isTestRunning = false;
@@ -2067,9 +2061,7 @@ namespace WFC.Metrics
 
             lodPerformanceResults.Add(result);
 
-            UnityEngine.Debug.Log($"LOD performance test for level {lodLevel} completed: " +
-                     $"{vertexReductionPercent:F2}% vertex reduction, " +
-                     $"{generationSpeedIncreasePercent:F2}% generation speed increase");
+            UnityEngine.Debug.Log($"LOD performance test for level {lodLevel} completed: " + $"{vertexReductionPercent:F2}% vertex reduction, " + $"{generationSpeedIncreasePercent:F2}% generation speed increase");
         }
 
         private void ApplyLODSettings(Chunk chunk)
@@ -2175,31 +2167,24 @@ namespace WFC.Metrics
 
         private void UpdateTestProgress()
         {
-            // Update UI or other progress indicators based on current test
             switch (currentTestType)
             {
                 case TestType.ChunkGeneration:
-                    // Progress = currentTestIndex / testChunkSizes.Length
                     break;
 
                 case TestType.BoundaryCoherence:
-                    // Progress based on current test index
                     break;
 
                 case TestType.MeshGeneration:
-                    // Progress based on current test index
                     break;
 
                 case TestType.ParallelProcessing:
-                    // Progress based on current test index
                     break;
 
                 case TestType.WorldSizeScaling:
-                    // Progress based on current test index
                     break;
 
                 case TestType.LODPerformance:
-                    // Progress based on current test index
                     break;
             }
         }
@@ -2241,7 +2226,7 @@ namespace WFC.Metrics
             {
                 StringBuilder sb = new StringBuilder();
 
-                // Add header if file doesn't exist
+                // Add header
                 if (!File.Exists(metricsFilePath))
                 {
                     sb.Append("Timestamp,");
@@ -2298,18 +2283,6 @@ namespace WFC.Metrics
             catch (Exception e)
             {
                 UnityEngine.Debug.LogError($"Error saving metrics to file: {e.Message}");
-            }
-        }
-
-        // Event handler for chunk state changes
-        private void OnChunkStateChanged(Vector3Int chunkPos, ChunkManager.ChunkLifecycleState oldState, ChunkManager.ChunkLifecycleState newState)
-        {
-            // Track chunk generation time
-            if (oldState == ChunkManager.ChunkLifecycleState.Loading &&
-                newState == ChunkManager.ChunkLifecycleState.Active)
-            {
-                // Chunk finished processing
-                // Could add timing logic here
             }
         }
 
@@ -2522,7 +2495,7 @@ namespace WFC.Metrics
 
             public void AddPropagationEvent(PropagationEvent evt)
             {
-                // No-op for testing
+                // for testing
             }
 
             public Dictionary<Vector3Int, Chunk> GetChunks()
@@ -2531,7 +2504,7 @@ namespace WFC.Metrics
             }
         }
 
-        // Simple Stopwatch class since Unity doesn't have one built-in
+        // Simple Stopwatch class
         private class Stopwatch
         {
             private float startTime;

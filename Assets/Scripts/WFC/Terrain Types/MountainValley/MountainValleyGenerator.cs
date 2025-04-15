@@ -22,6 +22,8 @@ namespace WFC.Terrain
             float[] noiseScales = { 0.005f, 0.02f, 0.1f };
             float[] noiseWeights = { 0.7f, 0.25f, 0.05f };
 
+            int chunkWorldY = chunk.Position.y * chunk.Size;
+
             // Generate height map
             int[,] terrainHeight = GenerateTerrainHeightMap(chunk, random, noiseScales, noiseWeights);
 
@@ -37,14 +39,43 @@ namespace WFC.Terrain
             {
                 for (int z = 0; z < chunk.Size; z++)
                 {
-                    int height = terrainHeight[x, z];
-                    float slope = slopeMap[x, z];
-                    float moisture = moistureMap[x, z];
+                    int localHeight = terrainHeight[x, z];
 
-                    // Apply different states based on environment
-                    bool isRiver = riverCells.Contains(new Vector2Int(x, z));
+                    // Convert local height to absolute world height
+                    int worldHeight = localHeight + (chunk.Position.y * chunk.Size);
 
-                    ApplyColumnStates(chunk, x, z, height, slope, moisture, isRiver);
+                    // Check if this terrain column even reaches this chunk's elevation
+                    if (chunkWorldY > 0)
+                    {
+                        // For chunks above ground level:
+                        if (worldHeight < chunkWorldY)
+                        {
+                            // This terrain is below this chunk's elevation - make all air
+                            ApplyAllAir(chunk, x, z);
+                            continue;
+                        }
+
+                        // Adjust local height for this chunk's elevation
+                        localHeight = worldHeight - chunkWorldY;
+
+                        // Cap if exceeds chunk size
+                        localHeight = Mathf.Min(localHeight, chunk.Size);
+                    }
+
+                    // Now apply with corrected height
+                    ApplyColumnStates(chunk, x, z, localHeight, slopeMap[x, z], moistureMap[x, z], false);
+                }
+            }
+        }
+
+        private void ApplyAllAir(Chunk chunk, int x, int z)
+        {
+            for (int y = 0; y < chunk.Size; y++)
+            {
+                Cell cell = chunk.GetCell(x, y, z);
+                if (cell != null)
+                {
+                    cell.Collapse((int)TerrainStateId.Air);
                 }
             }
         }
@@ -63,6 +94,7 @@ namespace WFC.Terrain
             // Global world position for consistent generation
             float worldOffsetX = chunk.Position.x * chunk.Size;
             float worldOffsetZ = chunk.Position.z * chunk.Size;
+            int worldOffsetY = chunk.Position.y * chunk.Size;
 
             // Valley shape factor
             float valleyWidth = terrainDefinition.valleyWidth * chunk.Size;
@@ -99,9 +131,9 @@ namespace WFC.Terrain
                         valleyFactor = Mathf.SmoothStep(0.2f, 1.0f, valleyFactor);
                     }
 
-
                     // Apply valley and mountain factors
                     float heightFactor = combinedNoise * valleyFactor * mountainFactor;
+                    int absoluteHeight = baseGroundLevel + Mathf.FloorToInt(heightFactor * heightRange);
 
                     if (valleyFactor > 0.7f)
                     {
@@ -113,7 +145,7 @@ namespace WFC.Terrain
                     }
 
                     // Convert to actual height
-                    heightMap[x, z] = baseGroundLevel + Mathf.FloorToInt(heightFactor * heightRange);
+                    heightMap[x, z] = absoluteHeight;
                 }
             }
 
@@ -122,56 +154,8 @@ namespace WFC.Terrain
 
         private HashSet<Vector2Int> GenerateRiverPath(Chunk chunk, int[,] heightMap, System.Random random)
         {
-            HashSet<Vector2Int> riverCells = new HashSet<Vector2Int>();
+            return new HashSet<Vector2Int>();
 
-            // Only generate river in chunks near the center of the valley
-            float worldOffsetX = chunk.Position.x * chunk.Size;
-            float worldSizeEstimate = 32 * 16; // Rough world size estimate
-            float distanceFromCenter = Mathf.Abs(worldOffsetX - worldSizeEstimate / 2);
-
-            if (distanceFromCenter > terrainDefinition.valleyWidth * worldSizeEstimate / 2)
-            {
-                return riverCells; // No river in this chunk
-            }
-
-            // River width parameter from definition
-            float riverWidthCells = terrainDefinition.riverWidth * chunk.Size;
-            int riverWidth = Mathf.Max(3, Mathf.FloorToInt(riverWidthCells));
-
-            // Create river along Z axis in center of chunk
-            int centerX = chunk.Size / 2;
-
-            // Apply some meandering
-            float[] riverOffsets = new float[chunk.Size];
-            for (int z = 0; z < chunk.Size; z++)
-            {
-                float worldZ = chunk.Position.z * chunk.Size + z;
-                float meander = Mathf.PerlinNoise(worldZ * 0.05f, 0) * 2 - 1;
-                riverOffsets[z] = meander * (chunk.Size / 10); // Limit meandering
-            }
-
-            // Mark river cells
-            for (int z = 0; z < chunk.Size; z++)
-            {
-                int riverCenterX = centerX + Mathf.FloorToInt(riverOffsets[z]);
-
-                for (int rx = -riverWidth / 2; rx <= riverWidth / 2; rx++)
-                {
-                    int x = riverCenterX + rx;
-                    if (x >= 0 && x < chunk.Size)
-                    {
-                        riverCells.Add(new Vector2Int(x, z));
-
-                        // Lower the terrain for the river
-                        if (heightMap[x, z] > chunk.Size / 4)
-                        {
-                            heightMap[x, z] = chunk.Size / 5; // Lower river bed (was /4)
-                        }
-                    }
-                }
-            }
-
-            return riverCells;
         }
 
         private float[,] CalculateSlopes(int[,] heightMap)
@@ -223,21 +207,12 @@ namespace WFC.Terrain
                     // Base moisture from noise
                     moisture[x, z] = Mathf.PerlinNoise(worldX * 0.02f, worldZ * 0.02f);
 
-                    // Increase moisture near rivers
                     if (riverCells.Count > 0)
                     {
-                        float closestDistance = float.MaxValue;
-                        foreach (var riverPos in riverCells)
-                        {
-                            float distance = Vector2.Distance(
-                                new Vector2(x, z),
-                                new Vector2(riverPos.x, riverPos.y));
-                            closestDistance = Mathf.Min(closestDistance, distance);
-                        }
-
-                        // Apply moisture gradient near rivers
-                        float riverInfluence = Mathf.Max(0, 1 - (closestDistance / (size * 0.2f)));
-                        moisture[x, z] = Mathf.Lerp(moisture[x, z], 1.0f, riverInfluence);
+                        // Valley center has higher moisture but not as extreme as water
+                        float valleyInfluence = Mathf.Abs(x - (size / 2)) / (float)size;
+                        valleyInfluence = 1.0f - Mathf.Clamp01(valleyInfluence * 2.0f);
+                        moisture[x, z] = Mathf.Lerp(moisture[x, z], 0.7f, valleyInfluence * 0.5f);
                     }
                 }
             }
@@ -247,43 +222,33 @@ namespace WFC.Terrain
 
         private void ApplyColumnStates(Chunk chunk, int x, int z, int height, float slope, float moisture, bool isRiver)
         {
+            if (height <= 0)
+            {
+                for (int y = 0; y < chunk.Size; y++)
+                {
+                    Cell cell = chunk.GetCell(x, y, z);
+                    if (cell != null)
+                        cell.Collapse((int)TerrainStateId.Air);
+                }
+                return;
+            }
+
             // Height bounds check
             height = Mathf.Clamp(height, 1, chunk.Size - 1);
 
             // Determine surface type based on height, slope and moisture
             TerrainStateId surfaceState;
 
-            // First check if this is a river cell
+            // Former river cells now get appropriate land terrain
             if (isRiver)
             {
-                // Apply water and riverbed
-                for (int y = 0; y < chunk.Size; y++)
-                {
-                    Cell cell = chunk.GetCell(x, y, z);
-                    if (cell == null) continue;
-
-                    if (y < height - 1)
-                    {
-                        // River bottom is sand
-                        if (y == height - 2)
-                            cell.Collapse((int)TerrainStateId.Sand);
-                        else
-                            cell.Collapse((int)TerrainStateId.Ground);
-                    }
-                    else if (y == height - 1)
-                    {
-                        cell.Collapse((int)TerrainStateId.Water);
-                    }
-                    else
-                    {
-                        cell.Collapse((int)TerrainStateId.Air);
-                    }
-                }
-                return;
+                // Convert to valley floor with grass or sand based on moisture
+                if (moisture > 0.5f)
+                    surfaceState = TerrainStateId.Grass;
+                else
+                    surfaceState = TerrainStateId.Sand;
             }
-
-            // Not river - determine surface type
-            if (slope > 0.7f)
+            else if (slope > 0.7f)
             {
                 surfaceState = TerrainStateId.Cliff;
             }
@@ -330,11 +295,9 @@ namespace WFC.Terrain
                 }
                 else if (y == height - 2)
                 {
-                    // Layer below surface
-                    if (surfaceState == TerrainStateId.Rock || surfaceState == TerrainStateId.Cliff)
-                        cell.Collapse((int)TerrainStateId.Rock);
-                    else
-                        cell.Collapse((int)TerrainStateId.Ground);
+                    cell.Collapse((int)(surfaceState == TerrainStateId.Rock ||
+                            surfaceState == TerrainStateId.Cliff ?
+                            TerrainStateId.Rock : TerrainStateId.Ground));
                 }
                 else if (y == height - 1)
                 {
@@ -380,10 +343,10 @@ namespace WFC.Terrain
             mountainRange.StateBiases[(int)TerrainStateId.Cliff] = 0.7f;
             mountainRange.StateBiases[(int)TerrainStateId.SnowCap] = 0.6f;
 
-            // 2. River valley constraint
-            GlobalConstraint riverValley = new GlobalConstraint
+            // 2. Valley floor constraint (replacing river valley)
+            GlobalConstraint valleyFloor = new GlobalConstraint
             {
-                Name = "River Valley",
+                Name = "Valley Floor",
                 Type = ConstraintType.BiomeRegion,
                 WorldCenter = new Vector3(
                     worldSize.x * chunkSize * 0.5f,
@@ -399,9 +362,10 @@ namespace WFC.Terrain
                 Strength = 0.8f
             };
 
-            riverValley.StateBiases[(int)TerrainStateId.Water] = 0.9f;
-            riverValley.StateBiases[(int)TerrainStateId.Sand] = 0.7f;
-            riverValley.StateBiases[(int)TerrainStateId.Grass] = 0.6f;
+            // Replace water with ground/grass/sand instead
+            valleyFloor.StateBiases[(int)TerrainStateId.Sand] = 0.7f;
+            valleyFloor.StateBiases[(int)TerrainStateId.Grass] = 0.9f; // Higher bias for grass
+            valleyFloor.StateBiases[(int)TerrainStateId.Ground] = 0.5f;
 
             // 3. Forest distribution constraint
             GlobalConstraint forestDistribution = new GlobalConstraint
@@ -427,7 +391,7 @@ namespace WFC.Terrain
 
             // Add all constraints
             system.AddGlobalConstraint(mountainRange);
-            system.AddGlobalConstraint(riverValley);
+            system.AddGlobalConstraint(valleyFloor);
             system.AddGlobalConstraint(forestDistribution);
         }
     }

@@ -73,13 +73,13 @@ public class WFCMetricsMonitorEditor : Editor
         }
 
         // Test Results Section
-        showTestResults = EditorGUILayout.Foldout(showTestResults, "Performance Test Results", true);
-        if (showTestResults)
-        {
-            EditorGUI.indentLevel++;
-            DrawTestResults();
-            EditorGUI.indentLevel--;
-        }
+        //showTestResults = EditorGUILayout.Foldout(showTestResults, "Performance Test Results", true);
+        //if (showTestResults)
+        //{
+        //    EditorGUI.indentLevel++;
+        //    DrawTestResults();
+        //    EditorGUI.indentLevel--;
+        //}
 
         // Test Controls and Status
         DrawTestControls(monitor);
@@ -201,241 +201,241 @@ public class WFCMetricsMonitorEditor : Editor
         }
     }
 
-    private void DrawTestResults()
-    {
-        EditorGUILayout.LabelField("Test Results Summary", EditorStyles.boldLabel);
+    //private void DrawTestResults()
+    //{
+        //EditorGUILayout.LabelField("Test Results Summary", EditorStyles.boldLabel);
 
-        if (chunkGenResults != null && chunkGenResults.Count > 0)
-        {
-            DrawChunkGenerationResults();
-        }
+        //if (chunkGenResults != null && chunkGenResults.Count > 0)
+        //{
+        //    DrawChunkGenerationResults();
+        //}
 
-        if (boundaryResults != null && boundaryResults.Count > 0)
-        {
-            DrawBoundaryCoherenceResults();
-        }
+        //if (boundaryResults != null && boundaryResults.Count > 0)
+        //{
+        //    DrawBoundaryCoherenceResults();
+        //}
 
-        if (meshGenResults != null && meshGenResults.Count > 0)
-        {
-            DrawMeshGenerationResults();
-        }
+        //if (meshGenResults != null && meshGenResults.Count > 0)
+        //{
+        //    DrawMeshGenerationResults();
+        //}
 
-        if (parallelResults != null && parallelResults.Count > 0)
-        {
-            DrawParallelProcessingResults();
-        }
+        //if (parallelResults != null && parallelResults.Count > 0)
+        //{
+        //    DrawParallelProcessingResults();
+        //}
 
-        if (worldSizeResults != null && worldSizeResults.Count > 0)
-        {
-            DrawWorldSizeScalingResults();
-        }
+        //if (worldSizeResults != null && worldSizeResults.Count > 0)
+        //{
+        //    DrawWorldSizeScalingResults();
+        //}
 
-        if (lodResults != null && lodResults.Count > 0)
-        {
-            DrawLODPerformanceResults();
-        }
+        //if (lodResults != null && lodResults.Count > 0)
+        //{
+        //    DrawLODPerformanceResults();
+        //}
 
-        if ((chunkGenResults == null || chunkGenResults.Count == 0) &&
-            (boundaryResults == null || boundaryResults.Count == 0) &&
-            (meshGenResults == null || meshGenResults.Count == 0) &&
-            (parallelResults == null || parallelResults.Count == 0) &&
-            (worldSizeResults == null || worldSizeResults.Count == 0) &&
-            (lodResults == null || lodResults.Count == 0))
-        {
-            EditorGUILayout.LabelField("No test results available. Run tests to generate results.");
-        }
-    }
+        //if ((chunkGenResults == null || chunkGenResults.Count == 0) &&
+        //    (boundaryResults == null || boundaryResults.Count == 0) &&
+        //    (meshGenResults == null || meshGenResults.Count == 0) &&
+        //    (parallelResults == null || parallelResults.Count == 0) &&
+        //    (worldSizeResults == null || worldSizeResults.Count == 0) &&
+        //    (lodResults == null || lodResults.Count == 0))
+        //{
+        //    EditorGUILayout.LabelField("No test results available. Run tests to generate results.");
+        //}
+    //}
 
-    private void DrawChunkGenerationResults()
-    {
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("8.6.1.1 Chunk Generation Performance", EditorStyles.boldLabel);
+    //private void DrawChunkGenerationResults()
+    //{
+    //    EditorGUILayout.Space(5);
+    //    EditorGUILayout.LabelField(" Chunk Generation Performance", EditorStyles.boldLabel);
 
-        // Header row
-        EditorGUILayout.BeginHorizontal();
-        DrawHeaderCell("Chunk Size");
-        DrawHeaderCell("Processing Time (ms)");
-        DrawHeaderCell("Memory Usage (MB)");
-        DrawHeaderCell("Cells Collapsed (%)");
-        DrawHeaderCell("Propagation Events");
-        DrawHeaderCell("Iterations");
-        EditorGUILayout.EndHorizontal();
+    //    // Header row
+    //    EditorGUILayout.BeginHorizontal();
+    //    DrawHeaderCell("Chunk Size");
+    //    DrawHeaderCell("Processing Time (ms)");
+    //    DrawHeaderCell("Memory Usage (MB)");
+    //    DrawHeaderCell("Cells Collapsed (%)");
+    //    DrawHeaderCell("Propagation Events");
+    //    DrawHeaderCell("Iterations");
+    //    EditorGUILayout.EndHorizontal();
 
-        // Data rows
-        foreach (var result in chunkGenResults)
-        {
-            EditorGUILayout.BeginHorizontal();
-            DrawCell($"{result.chunkSize}×{result.chunkSize}×{result.chunkSize}");
-            DrawCell($"{result.processingTime:F2}");
-            DrawCell($"{result.memoryUsage:F2}");
-            DrawCell($"{result.cellsCollapsedPercent:F1}");
-            DrawCell($"{result.propagationEvents}");
-            DrawCell($"{result.iterationsRequired}");
-            EditorGUILayout.EndHorizontal();
-        }
-    }
+    //    // Data rows
+    //    foreach (var result in chunkGenResults)
+    //    {
+    //        EditorGUILayout.BeginHorizontal();
+    //        DrawCell($"{result.chunkSize}×{result.chunkSize}×{result.chunkSize}");
+    //        DrawCell($"{result.processingTime:F2}");
+    //        DrawCell($"{result.memoryUsage:F2}");
+    //        DrawCell($"{result.cellsCollapsedPercent:F1}");
+    //        DrawCell($"{result.propagationEvents}");
+    //        DrawCell($"{result.iterationsRequired}");
+    //        EditorGUILayout.EndHorizontal();
+    //    }
+    //}
 
-    private void DrawBoundaryCoherenceResults()
-    {
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("8.6.1.2 Boundary Coherence Performance", EditorStyles.boldLabel);
+    //private void DrawBoundaryCoherenceResults()
+    //{
+    //    EditorGUILayout.Space(5);
+    //    EditorGUILayout.LabelField(" Boundary Coherence Performance", EditorStyles.boldLabel);
 
-        // Header row
-        EditorGUILayout.BeginHorizontal();
-        DrawHeaderCell("Number of Chunks");
-        DrawHeaderCell("Boundary Updates");
-        DrawHeaderCell("Buffer Syncs");
-        DrawHeaderCell("Conflicts Detected");
-        DrawHeaderCell("Conflicts Resolved");
-        DrawHeaderCell("Coherence Score (%)");
-        EditorGUILayout.EndHorizontal();
+    //    // Header row
+    //    EditorGUILayout.BeginHorizontal();
+    //    DrawHeaderCell("Number of Chunks");
+    //    DrawHeaderCell("Boundary Updates");
+    //    DrawHeaderCell("Buffer Syncs");
+    //    DrawHeaderCell("Conflicts Detected");
+    //    DrawHeaderCell("Conflicts Resolved");
+    //    DrawHeaderCell("Coherence Score (%)");
+    //    EditorGUILayout.EndHorizontal();
 
-        // Data rows
-        foreach (var result in boundaryResults)
-        {
-            EditorGUILayout.BeginHorizontal();
-            DrawCell($"{result.worldSize.x}×{result.worldSize.y}×{result.worldSize.z}");
-            DrawCell($"{result.boundaryUpdates}");
-            DrawCell($"{result.bufferSynchronizations}");
-            DrawCell($"{result.conflictsDetected}");
-            DrawCell($"{result.conflictsResolved}");
-            DrawCell($"{result.coherenceScore:F1}");
-            EditorGUILayout.EndHorizontal();
-        }
-    }
+    //    // Data rows
+    //    foreach (var result in boundaryResults)
+    //    {
+    //        EditorGUILayout.BeginHorizontal();
+    //        DrawCell($"{result.worldSize.x}×{result.worldSize.y}×{result.worldSize.z}");
+    //        DrawCell($"{result.boundaryUpdates}");
+    //        DrawCell($"{result.bufferSynchronizations}");
+    //        DrawCell($"{result.conflictsDetected}");
+    //        DrawCell($"{result.conflictsResolved}");
+    //        DrawCell($"{result.coherenceScore:F1}");
+    //        EditorGUILayout.EndHorizontal();
+    //    }
+    //}
 
-    private void DrawMeshGenerationResults()
-    {
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("8.6.1.3 Mesh Generation Performance", EditorStyles.boldLabel);
+    //private void DrawMeshGenerationResults()
+    //{
+    //    EditorGUILayout.Space(5);
+    //    EditorGUILayout.LabelField(" Mesh Generation Performance", EditorStyles.boldLabel);
 
-        // Header row
-        EditorGUILayout.BeginHorizontal();
-        DrawHeaderCell("Chunk Size");
-        DrawHeaderCell("Density Field Gen (ms)");
-        DrawHeaderCell("Marching Cubes (ms)");
-        DrawHeaderCell("Total Mesh Time (ms)");
-        DrawHeaderCell("Vertices");
-        DrawHeaderCell("Triangles");
-        EditorGUILayout.EndHorizontal();
+    //    // Header row
+    //    EditorGUILayout.BeginHorizontal();
+    //    DrawHeaderCell("Chunk Size");
+    //    DrawHeaderCell("Density Field Gen (ms)");
+    //    DrawHeaderCell("Marching Cubes (ms)");
+    //    DrawHeaderCell("Total Mesh Time (ms)");
+    //    DrawHeaderCell("Vertices");
+    //    DrawHeaderCell("Triangles");
+    //    EditorGUILayout.EndHorizontal();
 
-        // Data rows
-        foreach (var result in meshGenResults)
-        {
-            EditorGUILayout.BeginHorizontal();
-            DrawCell($"{result.chunkSize}×{result.chunkSize}×{result.chunkSize}");
-            DrawCell($"{result.densityFieldGenerationTime:F2}");
-            DrawCell($"{result.marchingCubesTime:F2}");
-            DrawCell($"{result.totalMeshTime:F2}");
-            DrawCell($"{result.vertices}");
-            DrawCell($"{result.triangles}");
-            EditorGUILayout.EndHorizontal();
-        }
-    }
+    //    // Data rows
+    //    foreach (var result in meshGenResults)
+    //    {
+    //        EditorGUILayout.BeginHorizontal();
+    //        DrawCell($"{result.chunkSize}×{result.chunkSize}×{result.chunkSize}");
+    //        DrawCell($"{result.densityFieldGenerationTime:F2}");
+    //        DrawCell($"{result.marchingCubesTime:F2}");
+    //        DrawCell($"{result.totalMeshTime:F2}");
+    //        DrawCell($"{result.vertices}");
+    //        DrawCell($"{result.triangles}");
+    //        EditorGUILayout.EndHorizontal();
+    //    }
+    //}
 
-    private void DrawParallelProcessingResults()
-    {
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("8.6.1.4 Parallel Processing Efficiency", EditorStyles.boldLabel);
+    //private void DrawParallelProcessingResults()
+    //{
+    //    EditorGUILayout.Space(5);
+    //    EditorGUILayout.LabelField(" Parallel Processing Efficiency", EditorStyles.boldLabel);
 
-        // Header row
-        EditorGUILayout.BeginHorizontal();
-        DrawHeaderCell("Thread Count");
-        DrawHeaderCell("Processing Time (ms)");
-        DrawHeaderCell("Speedup Factor");
-        DrawHeaderCell("Sync Overhead (ms)");
-        DrawHeaderCell("Memory Overhead (%)");
-        DrawHeaderCell("Max Concurrent Chunks");
-        EditorGUILayout.EndHorizontal();
+    //    // Header row
+    //    EditorGUILayout.BeginHorizontal();
+    //    DrawHeaderCell("Thread Count");
+    //    DrawHeaderCell("Processing Time (ms)");
+    //    DrawHeaderCell("Speedup Factor");
+    //    DrawHeaderCell("Sync Overhead (ms)");
+    //    DrawHeaderCell("Memory Overhead (%)");
+    //    DrawHeaderCell("Max Concurrent Chunks");
+    //    EditorGUILayout.EndHorizontal();
 
-        // Data rows
-        foreach (var result in parallelResults)
-        {
-            EditorGUILayout.BeginHorizontal();
-            DrawCell($"{result.threadCount}");
-            DrawCell($"{result.processingTime:F2}");
-            DrawCell($"{result.speedupFactor:F2}");
-            DrawCell($"{result.synchronizationOverhead:F2}");
-            DrawCell($"{result.memoryOverheadPercent:F1}");
-            DrawCell($"{result.maxConcurrentChunks}");
-            EditorGUILayout.EndHorizontal();
-        }
-    }
+    //    // Data rows
+    //    foreach (var result in parallelResults)
+    //    {
+    //        EditorGUILayout.BeginHorizontal();
+    //        DrawCell($"{result.threadCount}");
+    //        DrawCell($"{result.processingTime:F2}");
+    //        DrawCell($"{result.speedupFactor:F2}");
+    //        DrawCell($"{result.synchronizationOverhead:F2}");
+    //        DrawCell($"{result.memoryOverheadPercent:F1}");
+    //        DrawCell($"{result.maxConcurrentChunks}");
+    //        EditorGUILayout.EndHorizontal();
+    //    }
+    //}
 
-    private void DrawWorldSizeScalingResults()
-    {
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("8.6.1.5 World Size Scaling", EditorStyles.boldLabel);
+    //private void DrawWorldSizeScalingResults()
+    //{
+    //    EditorGUILayout.Space(5);
+    //    EditorGUILayout.LabelField(" World Size Scaling", EditorStyles.boldLabel);
 
-        // Header row
-        EditorGUILayout.BeginHorizontal();
-        DrawHeaderCell("World Size");
-        DrawHeaderCell("Memory Usage (MB)");
-        DrawHeaderCell("Generation Time (s)");
-        DrawHeaderCell("FPS Impact");
-        DrawHeaderCell("Chunks Loaded");
-        DrawHeaderCell("Loading Distance");
-        EditorGUILayout.EndHorizontal();
+    //    // Header row
+    //    EditorGUILayout.BeginHorizontal();
+    //    DrawHeaderCell("World Size");
+    //    DrawHeaderCell("Memory Usage (MB)");
+    //    DrawHeaderCell("Generation Time (s)");
+    //    DrawHeaderCell("FPS Impact");
+    //    DrawHeaderCell("Chunks Loaded");
+    //    DrawHeaderCell("Loading Distance");
+    //    EditorGUILayout.EndHorizontal();
 
-        // Data rows
-        foreach (var result in worldSizeResults)
-        {
-            EditorGUILayout.BeginHorizontal();
-            DrawCell($"{result.worldSize.x}×{result.worldSize.y}×{result.worldSize.z}");
-            DrawCell($"{result.totalMemoryUsage:F2}");
-            DrawCell($"{result.generationTime:F2}");
-            DrawCell($"{result.fpsImpact:F1}");
-            DrawCell($"{result.chunksLoaded}");
-            DrawCell($"{result.loadingDistance:F1}");
-            EditorGUILayout.EndHorizontal();
-        }
-    }
+    //    // Data rows
+    //    foreach (var result in worldSizeResults)
+    //    {
+    //        EditorGUILayout.BeginHorizontal();
+    //        DrawCell($"{result.worldSize.x}×{result.worldSize.y}×{result.worldSize.z}");
+    //        DrawCell($"{result.totalMemoryUsage:F2}");
+    //        DrawCell($"{result.generationTime:F2}");
+    //        DrawCell($"{result.fpsImpact:F1}");
+    //        DrawCell($"{result.chunksLoaded}");
+    //        DrawCell($"{result.loadingDistance:F1}");
+    //        EditorGUILayout.EndHorizontal();
+    //    }
+    //}
 
-    private void DrawLODPerformanceResults()
-    {
-        EditorGUILayout.Space(5);
-        EditorGUILayout.LabelField("8.6.1.6 LOD Performance Impact", EditorStyles.boldLabel);
+    //private void DrawLODPerformanceResults()
+    //{
+    //    EditorGUILayout.Space(5);
+    //    EditorGUILayout.LabelField(" LOD Performance Impact", EditorStyles.boldLabel);
 
-        // Header row
-        EditorGUILayout.BeginHorizontal();
-        DrawHeaderCell("LOD Level");
-        DrawHeaderCell("Distance Range");
-        DrawHeaderCell("Vertex Reduction (%)");
-        DrawHeaderCell("Speed Increase (%)");
-        DrawHeaderCell("Memory Reduction (%)");
-        DrawHeaderCell("Visual Impact (1-10)");
-        EditorGUILayout.EndHorizontal();
+    //    // Header row
+    //    EditorGUILayout.BeginHorizontal();
+    //    DrawHeaderCell("LOD Level");
+    //    DrawHeaderCell("Distance Range");
+    //    DrawHeaderCell("Vertex Reduction (%)");
+    //    DrawHeaderCell("Speed Increase (%)");
+    //    DrawHeaderCell("Memory Reduction (%)");
+    //    DrawHeaderCell("Visual Impact (1-10)");
+    //    EditorGUILayout.EndHorizontal();
 
-        // Data rows
-        foreach (var result in lodResults)
-        {
-            EditorGUILayout.BeginHorizontal();
-            DrawCell(result.lodLevel == 0 ? "0 (highest)" : $"{result.lodLevel}");
-            DrawCell($"{result.distanceRange:F0}+");
-            DrawCell($"{result.vertexReductionPercent:F1}");
-            DrawCell($"{result.generationSpeedIncreasePercent:F1}");
-            DrawCell($"{result.memoryReductionPercent:F1}");
-            DrawCell($"{result.visualQualityImpact}");
-            EditorGUILayout.EndHorizontal();
-        }
-    }
+    //    // Data rows
+    //    foreach (var result in lodResults)
+    //    {
+    //        EditorGUILayout.BeginHorizontal();
+    //        DrawCell(result.lodLevel == 0 ? "0 (highest)" : $"{result.lodLevel}");
+    //        DrawCell($"{result.distanceRange:F0}+");
+    //        DrawCell($"{result.vertexReductionPercent:F1}");
+    //        DrawCell($"{result.generationSpeedIncreasePercent:F1}");
+    //        DrawCell($"{result.memoryReductionPercent:F1}");
+    //        DrawCell($"{result.visualQualityImpact}");
+    //        EditorGUILayout.EndHorizontal();
+    //    }
+    //}
 
-    private void DrawHeaderCell(string text)
-    {
-        GUIStyle style = new GUIStyle(EditorStyles.label);
-        style.fontStyle = FontStyle.Bold;
-        style.alignment = TextAnchor.MiddleCenter;
+    //private void DrawHeaderCell(string text)
+    //{
+    //    GUIStyle style = new GUIStyle(EditorStyles.label);
+    //    style.fontStyle = FontStyle.Bold;
+    //    style.alignment = TextAnchor.MiddleCenter;
 
-        EditorGUILayout.LabelField(text, style, GUILayout.MinWidth(100));
-    }
+    //    EditorGUILayout.LabelField(text, style, GUILayout.MinWidth(100));
+    //}
 
-    private void DrawCell(string text)
-    {
-        GUIStyle style = new GUIStyle(EditorStyles.label);
-        style.alignment = TextAnchor.MiddleCenter;
+    //private void DrawCell(string text)
+    //{
+    //    GUIStyle style = new GUIStyle(EditorStyles.label);
+    //    style.alignment = TextAnchor.MiddleCenter;
 
-        EditorGUILayout.LabelField(text, style, GUILayout.MinWidth(100));
-    }
+    //    EditorGUILayout.LabelField(text, style, GUILayout.MinWidth(100));
+    //}
 
     private void DrawTestControls(WFCMetricsMonitor monitor)
     {
@@ -487,24 +487,39 @@ public class WFCMetricsMonitorEditor : Editor
 
     private void ConnectDependencies(WFCMetricsMonitor monitor)
     {
-        Debug.Log("Attempting to connect dependencies...");
+        Debug.Log("Attempting to connect dependencies");
 
         // Force create a mock WFCGenerator if needed
         GameObject mockObj = new GameObject("WFC_TestGenerator");
         var generator = mockObj.AddComponent<WFCGenerator>();
 
-        // Connect other dependencies
-        var manager = FindObjectOfType<ChunkManager>();
-        var meshGen = FindObjectOfType<MeshGenerator>();
-        var parallel = FindObjectOfType<ParallelWFCManager>();
-        var monitors = FindObjectOfType<PerformanceMonitor>();
+        // Create other required components
+        var chunkManagerObj = new GameObject("MockChunkManager");
+        var chunkManager = chunkManagerObj.AddComponent<ChunkManager>();
 
-        // Set fields via reflection
+        // Create a mock ParallelWFCManager
+        var parallelObj = new GameObject("MockParallelManager");
+        var parallelManager = parallelObj.AddComponent<ParallelWFCManager>();
+        parallelManager.wfcGenerator = generator; // Connect dependencies
+
+        // Create a MeshGenerator
+        var meshGenObj = new GameObject("MockMeshGenerator");
+        var meshGen = meshGenObj.AddComponent<MeshGenerator>();
+        meshGen.wfcGenerator = generator; // Connect dependencies
+
+        // Connect all components
         SetField(monitor, "wfcGenerator", generator);
-        SetField(monitor, "chunkManager", manager);
+        SetField(monitor, "chunkManager", chunkManager);
         SetField(monitor, "meshGenerator", meshGen);
-        SetField(monitor, "parallelManager", parallel);
-        SetField(monitor, "performanceMonitor", monitors);
+        SetField(monitor, "parallelManager", parallelManager);
+
+        // Initialize WFCGenerator
+        var initMethod = generator.GetType().GetMethod("InitializeRulesOnly",
+            System.Reflection.BindingFlags.NonPublic |
+            System.Reflection.BindingFlags.Instance);
+
+        if (initMethod != null)
+            initMethod.Invoke(generator, null);
 
         // Initialize test fields
         monitor.InitializeDefaultAdjacencyRules();
@@ -513,7 +528,7 @@ public class WFCMetricsMonitorEditor : Editor
         Debug.Log("Dependencies connected!");
     }
 
-    
+
     private void SetField(object obj, string fieldName, object value)
     {
         if (obj == null) return;
@@ -568,8 +583,6 @@ public class WFCMetricsMonitorEditor : Editor
             currentTestStatus = "Running Boundary Coherence Performance tests...";
             yield return StartTrackedCoroutine(
                 InvokeTestMethod(monitor, "RunBoundaryCoherenceTest"));
-
-            // Get results through reflection
             boundaryResults = GetField<List<WFCMetricsMonitor.BoundaryCoherenceResult>>(monitor, "boundaryCoherenceResults");
 
             completedTests++;
@@ -582,8 +595,6 @@ public class WFCMetricsMonitorEditor : Editor
             currentTestStatus = "Running Mesh Generation Performance tests...";
             yield return StartTrackedCoroutine(
                 InvokeTestMethod(monitor, "RunMeshGenerationTest"));
-
-            // Get results through reflection
             meshGenResults = GetField<List<WFCMetricsMonitor.MeshGenerationResult>>(monitor, "meshGenerationResults");
 
             completedTests++;
@@ -596,8 +607,6 @@ public class WFCMetricsMonitorEditor : Editor
             currentTestStatus = "Running Parallel Processing Efficiency tests...";
             yield return StartTrackedCoroutine(
                 InvokeTestMethod(monitor, "RunParallelProcessingTest"));
-
-            // Get results through reflection
             parallelResults = GetField<List<WFCMetricsMonitor.ParallelProcessingResult>>(monitor, "parallelProcessingResults");
 
             completedTests++;
@@ -610,8 +619,6 @@ public class WFCMetricsMonitorEditor : Editor
             currentTestStatus = "Running World Size Scaling tests...";
             yield return StartTrackedCoroutine(
                 InvokeTestMethod(monitor, "RunWorldSizeScalingTest"));
-
-            // Get results through reflection
             worldSizeResults = GetField<List<WFCMetricsMonitor.WorldSizeScalingResult>>(monitor, "worldSizeScalingResults");
 
             completedTests++;
@@ -624,8 +631,6 @@ public class WFCMetricsMonitorEditor : Editor
             currentTestStatus = "Running LOD Performance Impact tests...";
             yield return StartTrackedCoroutine(
                 InvokeTestMethod(monitor, "RunLODPerformanceTest"));
-
-            // Get results through reflection
             lodResults = GetField<List<WFCMetricsMonitor.LODPerformanceResult>>(monitor, "lodPerformanceResults");
 
             completedTests++;
@@ -667,9 +672,8 @@ public class WFCMetricsMonitorEditor : Editor
         }
         activeCoroutines.Clear();
 
-        // Set the isTestRunning field to false through reflection
-        var field = monitor.GetType().GetField("isTestRunning",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        // Set the isTestRunning field to false
+        var field = monitor.GetType().GetField("isTestRunning", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
         if (field != null)
             field.SetValue(monitor, false);
@@ -722,7 +726,7 @@ public class WFCMetricsMonitorEditor : Editor
         if (hasResults)
         {
             EditorUtility.DisplayDialog("Export Complete",
-                "Test results have been exported to CSV files in the project's persistent data path.", "OK");
+                "Test results have been exported to CSV files", "OK");
         }
         else
         {

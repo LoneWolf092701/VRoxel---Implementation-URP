@@ -1,4 +1,3 @@
-// Assets/Scripts/WFC/MarchingCubes/DensityFieldGenerator.cs
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
@@ -468,48 +467,6 @@ namespace WFC.MarchingCubes
                     // Global coordinates for coherent features across chunks
                     float globalX = chunkPos.x * size + x;
                     float globalZ = chunkPos.z * size + z;
-
-                    // Check for mountain feature
-                    float mountainNoise = Mathf.PerlinNoise(globalX * 0.02f, globalZ * 0.02f);
-
-                    if (mountainNoise > 0.65f) // Mountains in ~35% of places
-                    {
-                        // Apply vertical gradient for mountain peaks
-                        for (int y = 0; y <= size; y++)
-                        {
-                            // Higher = more solid for mountains
-                            float heightFactor = (float)y / size; // 0 at bottom, 1 at top
-                            float strength = Mathf.Pow(mountainNoise, 2) * (1.0f - heightFactor);
-
-                            // Increase density more near ground, less at peaks
-                            densityField[x, y, z] += strength * 0.2f;
-                        }
-                    }
-
-                    // Check for water feature
-                    float waterNoise = Mathf.PerlinNoise(globalX * 0.03f + 1000, globalZ * 0.03f + 1000);
-
-                    if (waterNoise > 0.7f && chunkPos.y == 0) // Water only at y=0 chunks
-                    {
-                        // Apply water at a fixed height
-                        int waterLevel = size / 3; // Water at 1/3 of chunk height
-
-                        for (int y = 0; y <= waterLevel; y++)
-                        {
-                            // Ensure density is in water range near surface (0.6-0.7)
-                            // This creates a clear water surface at the water level
-                            if (y == waterLevel)
-                            {
-                                densityField[x, y, z] = Mathf.Lerp(densityField[x, y, z], 0.65f, 0.8f);
-                            }
-                            // Deeper water is more solid
-                            else
-                            {
-                                float depthFactor = 1.0f - ((float)y / waterLevel);
-                                densityField[x, y, z] = Mathf.Lerp(densityField[x, y, z], 0.7f, depthFactor * 0.8f);
-                            }
-                        }
-                    }
                 }
             }
 
@@ -517,73 +474,7 @@ namespace WFC.MarchingCubes
 
             // Add multi-frequency noise to break up regular patterns
             AddMultiFrequencyNoise(densityField, chunk, size);
-
         }
-
-        /// <summary>
-        /// Apply height-based variations to the density field
-        /// </summary>
-        private float ApplyHeightVariation(float baseDensity, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
-        {
-            // Use global coordinates to ensure consistent heights across chunks
-            float globalX = chunkPos.x * chunkSize + x;
-            float globalZ = chunkPos.z * chunkSize + z;
-
-            // Multi-octave noise for more interesting terrain
-            float heightMap = 0;
-
-            // First octave - large features
-            float scale1 = 0.005f;
-            float amplitude1 = 1.0f;
-            heightMap += Mathf.PerlinNoise(globalX * scale1, globalZ * scale1) * amplitude1;
-
-            // Second octave - medium features
-            float scale2 = 0.02f;
-            float amplitude2 = 0.5f;
-            heightMap += Mathf.PerlinNoise(globalX * scale2, globalZ * scale2) * amplitude2;
-
-            // Third octave - small details
-            float scale3 = 0.1f;
-            float amplitude3 = 0.25f;
-            heightMap += Mathf.PerlinNoise(globalX * scale3, globalZ * scale3) * amplitude3;
-
-            // Normalize heightMap to 0-1 range
-            heightMap /= (amplitude1 + amplitude2 + amplitude3);
-
-            // Add dramatic height variation using power function
-            heightMap = Mathf.Pow(heightMap, 2.5f) * 2.0f; // More pronounced peaks
-
-            // Create mountain ridges
-            float ridgeNoise = Mathf.Abs(Mathf.PerlinNoise(globalX * 0.01f, globalZ * 0.01f) * 2 - 1);
-            ridgeNoise = Mathf.Pow(ridgeNoise, 1.5f); // Sharper ridges
-
-            // Combine heightMap with ridge noise
-            float combinedHeight = Mathf.Lerp(heightMap, ridgeNoise, 0.4f) * 12.0f; // Increased height multiplier
-
-            // Calculate height influence with exponential falloff
-            float heightInfluence = Mathf.Exp(-(y - combinedHeight) * 0.5f);
-
-            // Blend the original density with the height influence for more dramatic mountains
-            return Mathf.Lerp(baseDensity, baseDensity * heightInfluence + 0.6f, 0.8f);
-        }
-
-        /// <summary>
-        /// Apply additional terrain features like caves, mountain ridges, and rivers
-        /// </summary>
-        private float ApplyTerrainFeatures(float density, int x, int y, int z, Vector3Int chunkPos, int chunkSize)
-        {
-            // Simplified version - no caves or complex features
-            // Just add minor variation for natural look
-            float globalX = chunkPos.x * chunkSize + x;
-            float globalZ = chunkPos.z * chunkSize + z;
-
-            // Add slight variation to density
-            float variation = Mathf.PerlinNoise(globalX * 0.05f, globalZ * 0.05f) * 0.1f;
-            return density + variation - 0.05f;
-        }
-        /// <summary>
-        /// Smooth corner points where multiple chunks meet
-        /// </summary>
         private void SmoothCorners(float[,,] densityField, Chunk chunk)
         {
             int size = chunk.Size;
@@ -721,12 +612,11 @@ namespace WFC.MarchingCubes
          */
         private float CalculateDensity(Chunk chunk, int x, int y, int z)
         {
-            // For grid points, sample from ALL 8 surrounding cells
             float density = 0.0f;
             int sampleCount = 0;
-            float defaultValue = 0.5f; // Use neutral value when no samples
+            float defaultValue = 0.5f;
 
-            // Sample from all adjacent cells (up to 8 for interior points)
+            // Sample from all adjacent cells
             for (int dx = -1; dx <= 0; dx++)
             {
                 for (int dy = -1; dy <= 0; dy++)
@@ -743,22 +633,22 @@ namespace WFC.MarchingCubes
                             sampleZ < 0 || sampleZ >= chunk.Size)
                             continue;
 
-                        // Get cell and its state
                         Cell cell = chunk.GetCell(sampleX, sampleY, sampleZ);
                         if (cell != null && cell.CollapsedState.HasValue)
                         {
                             int state = cell.CollapsedState.Value;
 
-                            // Get density value from configured dictionary
-                            float stateDensity;
-                            if (stateDensityValues.TryGetValue(state, out stateDensity))
+                            // Get density directly from state density values
+                            if (stateDensityValues.TryGetValue(state, out float stateDensity))
                             {
+                                // For marching cubes: 
+                                // - Lower density values (<0.5) = inside terrain (solid)
+                                // - Higher density values (>0.5) = outside terrain (air)
                                 density += stateDensity;
                             }
                             else
                             {
-                                // If no specific value is defined, use default value
-                                density += 0.5f;
+                                density += 0.5f; // Default to surface threshold
                             }
 
                             sampleCount++;
@@ -767,7 +657,6 @@ namespace WFC.MarchingCubes
                 }
             }
 
-            // Calculate average with fallback to default
             return sampleCount > 0 ? density / sampleCount : defaultValue;
         }
 
@@ -883,37 +772,41 @@ namespace WFC.MarchingCubes
                 return;
             }
 
+            int gradientWidth = 3;
+
             // Perform smoothing only on the common area
             for (int x = 0; x < commonWidth; x++)
             {
                 for (int z = 0; z < commonDepth; z++)
                 {
-                    // CRITICAL: Use identical values exactly at the boundary
                     float averageDensity = (densityField1[x, index1, z] + densityField2[x, index2, z]) / 2.0f;
 
-                    // Set both fields to the same value at the boundary
+                    // Set boundary values
                     densityField1[x, index1, z] = averageDensity;
                     densityField2[x, index2, z] = averageDensity;
 
-                    // Also smooth adjacent cells with a falloff gradient
-                    if (index1 > 0 && index1 < densityField1.GetLength(1) - 1)
+                    // Apply gradient with non-linear falloff
+                    for (int i = 1; i <= gradientWidth; i++)
                     {
-                        float blendFactor = 0.9f; // Less influence as move away from boundary
-                        int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
-                        densityField1[x, inwardIndex, z] = Mathf.Lerp(
-                            densityField1[x, inwardIndex, z],
-                            averageDensity,
-                            blendFactor);
-                    }
+                        // Apply to field 1
+                        if (index1 - i >= 0 && index1 - i < densityField1.GetLength(1))
+                        {
+                            float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            densityField1[x, index1 - i, z] = Mathf.Lerp(
+                                densityField1[x, index1 - i, z],
+                                averageDensity,
+                                blendFactor);
+                        }
 
-                    if (index2 > 0 && index2 < densityField2.GetLength(1) - 1)
-                    {
-                        float blendFactor = 0.7f;
-                        int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
-                        densityField2[x, inwardIndex, z] = Mathf.Lerp(
-                            densityField2[x, inwardIndex, z],
-                            averageDensity,
-                            blendFactor);
+                        // Apply to field 2
+                        if (index2 - i >= 0 && index2 - i < densityField2.GetLength(1))
+                        {
+                            float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            densityField2[x, index2 - i, z] = Mathf.Lerp(
+                                densityField2[x, index2 - i, z],
+                                averageDensity,
+                                blendFactor);
+                        }
                     }
                 }
             }
@@ -1014,6 +907,8 @@ namespace WFC.MarchingCubes
                 return;
             }
 
+            int gradientWidth = 3;
+
             // Perform smoothing only on the common area
             for (int x = 0; x < commonWidth; x++)
             {
@@ -1026,25 +921,28 @@ namespace WFC.MarchingCubes
                     densityField1[x, y, index1] = averageDensity;
                     densityField2[x, y, index2] = averageDensity;
 
-                    // Also smooth adjacent cells with a falloff gradient
-                    if (index1 > 0 && index1 < densityField1.GetLength(2) - 1)
+                    for (int i = 1; i <= gradientWidth; i++)
                     {
-                        float blendFactor = 0.9f;
-                        int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
-                        densityField1[x, y, inwardIndex] = Mathf.Lerp(
-                            densityField1[x, y, inwardIndex],
-                            averageDensity,
-                            blendFactor);
-                    }
+                        // Apply to field 1
+                        if (index1 - i >= 0 && index1 - i < densityField1.GetLength(1))
+                        {
+                            float blendFactor = 0.9f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            //int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
+                            densityField1[x, y, index1 - i] = Mathf.Lerp(
+                                densityField1[x, y, index1 - i],
+                                averageDensity,
+                                blendFactor);
+                        }
 
-                    if (index2 > 0 && index2 < densityField2.GetLength(2) - 1)
-                    {
-                        float blendFactor = 0.7f;
-                        int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
-                        densityField2[x, y, inwardIndex] = Mathf.Lerp(
-                            densityField2[x, y, inwardIndex],
-                            averageDensity,
-                            blendFactor);
+                        if (index2 > 0 && index2 < densityField2.GetLength(2) - 1)
+                        {
+                            float blendFactor = 0.70f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            //int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
+                            densityField2[x, y, index2 - i] = Mathf.Lerp(
+                                densityField2[x, y, index2 - i],
+                                averageDensity,
+                                blendFactor);
+                        }
                     }
                 }
             }
