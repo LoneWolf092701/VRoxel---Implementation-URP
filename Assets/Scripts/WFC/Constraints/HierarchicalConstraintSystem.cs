@@ -498,7 +498,7 @@ namespace WFC.Core
                 BlendRadius = chunkSize,
                 Strength = 0.8f,
                 MinHeight = 0,
-                MaxHeight = chunkSize,    // worldSize.y * chunkSize,
+                MaxHeight = worldSize.y * chunkSize,    // chunkSize,
                 NoiseScale = 0.05f
             };
 

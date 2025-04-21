@@ -9,8 +9,8 @@ namespace WFC.Terrain
     {
         [Header("Heightmap Settings")]
         [SerializeField] private int resolution = 4; // Points per chunk
-        [SerializeField] private float baseHeight = 16f;
-        [SerializeField] private float mountainHeight = 48f;
+        [SerializeField] private float baseHeight = 32f;
+        [SerializeField] private float mountainHeight = 96f;
 
         [Header("Noise Settings")]
         [SerializeField] private float baseNoiseScale = 0.02f;

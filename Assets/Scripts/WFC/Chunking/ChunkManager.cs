@@ -1198,7 +1198,8 @@ namespace WFC.Chunking
             // Calculate chunk coordinates of viewer
             Vector3Int viewerChunk = new Vector3Int(
                 Mathf.FloorToInt(viewerPosition.x / ChunkSize),
-                0, // Force y=0 to only create ground-level chunks initially
+                //0, // Force y=0 to only create ground-level chunks initially
+                Mathf.FloorToInt(viewerPosition.y / ChunkSize),
                 Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
 
@@ -2419,13 +2420,13 @@ namespace WFC.Chunking
             }
 
             // Now selectively create vertical chunks based on the heightmap
-            int maxVerticalChunks = 4; // Reasonable limit
+            int maxVerticalChunks = 8; // Increased from 4
 
-            for (int x = -2; x <= 2; x++)
+            // CHANGE: Increase these ranges to capture more terrain
+            for (int x = -3; x <= 3; x++)
             {
-                for (int z = -2; z <= 2; z++)
+                for (int z = -3; z <= 3; z++)
                 {
-                    // Check each vertical position
                     for (int y = 1; y < maxVerticalChunks; y++)
                     {
                         Vector3Int chunkPos = new Vector3Int(centerChunk.x + x, y, centerChunk.z + z);

@@ -556,14 +556,14 @@ namespace WFC.Generation
             float heightRatio = worldHeight / (WorldSize.y * ChunkSize);
 
             // Force air above certain height
-            if (heightRatio > 0.6f)
+            if (heightRatio > 0.8f)
             {
                 cell.Collapse(0); // Force air at heights
                 return;
             }
 
             // Force solid below certain height
-            if (heightRatio < 0.3f)
+            if (heightRatio < 0.2f)
             {
                 // Look at biases to decide which solid state
                 if (biases.ContainsKey(4) && biases[4] > 0.3f)

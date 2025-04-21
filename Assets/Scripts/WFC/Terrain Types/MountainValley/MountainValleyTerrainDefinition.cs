@@ -9,7 +9,7 @@ namespace WFC.Terrain
     public class MountainValleyTerrainDefinition : TerrainDefinition
     {
         [Header("Mountain Valley Parameters")]
-        public float mountainHeight = 1.0f;
+        public float mountainHeight = 2.5f;
         public float valleyWidth = 0.3f;
         public float forestDensity = 0.6f;
 

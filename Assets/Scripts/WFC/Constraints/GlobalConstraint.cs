@@ -151,7 +151,8 @@ namespace WFC.Core
             if (Type == ConstraintType.HeightMap)
             {
                 // Ignore Y position for determining influence - make terrain flat
-                return StateBiases[state] * influence * 0.5f;
+                return StateBiases[state] * influence;
+                //* 0.5f;
             }
 
             // For other constraint types, proceed normally
