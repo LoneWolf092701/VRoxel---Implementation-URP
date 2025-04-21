@@ -548,7 +548,7 @@ namespace WFC.Core
         }
 
         /// <summary>
-        /// NEW: Create gradient transition between two regions
+        /// Create gradient transition between two regions
         /// </summary>
         public void CreateGradientTransition(Vector3Int startChunk, Vector3Int endChunk, int startState, int endState,
                                              string name = "Transition", float strength = 0.7f, float gradient = 0.5f)

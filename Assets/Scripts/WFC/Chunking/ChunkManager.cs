@@ -1197,98 +1197,50 @@ namespace WFC.Chunking
         {
             // Calculate chunk coordinates of viewer
             Vector3Int viewerChunk = new Vector3Int(
-            Mathf.FloorToInt(viewerPosition.x / ChunkSize),
-             Mathf.FloorToInt(viewerPosition.y / ChunkSize), // <-- RESTORE 
-            //0, // IMPORTANT: Force y=0 to only create ground-level chunks
-            Mathf.FloorToInt(viewerPosition.z / ChunkSize)
+                Mathf.FloorToInt(viewerPosition.x / ChunkSize),
+                0, // Force y=0 to only create ground-level chunks initially
+                Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
 
-            // Find all chunk positions within load distance
             List<Vector3Int> chunksToLoad = new List<Vector3Int>();
 
-            // Calculate load distance in chunks - ensure it's at least 2 for a minimum surrounding grid
-            int loadChunks = Mathf.Max(2, Mathf.CeilToInt(LoadDistance / ChunkSize));
+            // CRITICAL: Start with a smaller radius and gradually expand
+            int initialRadius = 2; // Start with just a 5x5 grid around player
 
-            for (int x = viewerChunk.x - loadChunks; x <= viewerChunk.x + loadChunks; x++)
+            for (int x = viewerChunk.x - initialRadius; x <= viewerChunk.x + initialRadius; x++)
             {
-                //for (int y = Mathf.Max(0, viewerChunk.y - loadChunks); y <= viewerChunk.y + loadChunks; y++)
-                //{
-                for (int y = 0; y <= 0; y++)
-                    //for (int y = viewerChunk.y - loadChunks; y <= viewerChunk.y + loadChunks; y++)
-                    //{
-                    for (int z = viewerChunk.z - loadChunks; z <= viewerChunk.z + loadChunks; z++)
-                    {
-                        Vector3Int pos = new Vector3Int(x, y, z);
-
-                        // Skip if already loaded
-                        if (loadedChunks.ContainsKey(pos))
-                            continue;
-
-                        // Check if within load distance (with a buffer)
-                        Vector3 chunkWorldPos = GetChunkWorldPosition(pos);
-                        float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
-
-                        if (distance <= LoadDistance * 1.2f) // 20% buffer to ensure enough chunks
-                        {
-                            chunksToLoad.Add(pos);
-                        }
-                    }
-                //}
-            
-            }
-
-            // If no chunks found, create a 3x3x3 grid around the player
-            if (chunksToLoad.Count == 0)
-            {
-                Debug.LogWarning("No chunks to load found! Creating a grid around the viewer.");
-
-                // Create a 3x3x3 grid of chunks around the player
-                for (int x = -1; x <= 1; x++)
+                for (int z = viewerChunk.z - initialRadius; z <= viewerChunk.z + initialRadius; z++)
                 {
-                    //for (int y = -1; y <= 1; y++)
-                    //{
-                        for (int z = -1; z <= 1; z++)
-                        {
-                            Vector3Int pos = new Vector3Int(
-                                viewerChunk.x + x,
-                                0,
-                                //viewerChunk.y + y,
-                                viewerChunk.z + z
-                            );
+                    Vector3Int pos = new Vector3Int(x, 0, z);
 
-                            // Skip if already loaded
-                            if (loadedChunks.ContainsKey(pos))
-                                continue;
+                    // Skip if already loaded
+                    if (loadedChunks.ContainsKey(pos))
+                        continue;
 
-                            chunksToLoad.Add(pos);
-                        }
-                    //}
+                    // CRITICAL: Prioritize chunks close to the player
+                    float distance = Vector3.Distance(
+                        new Vector3(pos.x * ChunkSize, 0, pos.z * ChunkSize),
+                        new Vector3(viewerPosition.x, 0, viewerPosition.z)
+                    );
+
+                    if (distance <= LoadDistance)
+                    {
+                        chunksToLoad.Add(pos);
+                    }
                 }
             }
 
-            // Sort by interest and priority
-            chunksToLoad.Sort((a, b) => {
-                float interestA = CalculateChunkInterest(a);
-                float interestB = CalculateChunkInterest(b);
-
-                // Primary sort by interest (higher first)
-                if (Mathf.Abs(interestA - interestB) > 0.01f)
-                    return interestB.CompareTo(interestA);
-
-                // Secondary sort by distance to predicted position
-                Vector3 posA = GetChunkWorldPosition(a);
-                Vector3 posB = GetChunkWorldPosition(b);
-
-                float distA = Vector3.Distance(posA, predictedViewerPosition);
-                float distB = Vector3.Distance(posB, predictedViewerPosition);
-
-                return distA.CompareTo(distB);
-            });
-
-            // Limit to max concurrent chunks (adaptive)
-            if (chunksToLoad.Count > MaxConcurrentChunks)
+            // CRITICAL: Strict limit on concurrent chunk generation
+            if (chunksToLoad.Count > 8) // Much lower than before
             {
-                chunksToLoad = chunksToLoad.GetRange(0, MaxConcurrentChunks);
+                // Sort by distance and take only closest 8
+                chunksToLoad.Sort((a, b) => {
+                    float distA = Vector3.Distance(new Vector3(a.x * ChunkSize, 0, a.z * ChunkSize), viewerPosition);
+                    float distB = Vector3.Distance(new Vector3(b.x * ChunkSize, 0, b.z * ChunkSize), viewerPosition);
+                    return distA.CompareTo(distB);
+                });
+
+                chunksToLoad = chunksToLoad.GetRange(0, 8);
             }
 
             return chunksToLoad;

@@ -11,7 +11,7 @@ public class WFCConfiguration : ScriptableObject
         public int worldSizeX = 2;
         public int worldSizeY = 2;
         public int worldSizeZ = 1;
-        public int chunkSize = 16;
+        public int chunkSize = 32;
         public int maxStates = 7;
         public int randomSeed = 0;
     }

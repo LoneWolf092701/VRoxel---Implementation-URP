@@ -83,21 +83,13 @@ namespace WFC.Terrain
         private int[,] GenerateTerrainHeightMap(Chunk chunk, System.Random random, float[] scales, float[] weights)
         {
             int[,] heightMap = new int[chunk.Size, chunk.Size];
-
-            // Base height parameters
             int baseGroundLevel = chunk.Size / 3;
             int heightRange = chunk.Size * 2 / 3;
-
-            // Get mountain height factor from definition
             float mountainFactor = terrainDefinition.mountainHeight * 1.5f;
-
-            // Global world position for consistent generation
             float worldOffsetX = chunk.Position.x * chunk.Size;
             float worldOffsetZ = chunk.Position.z * chunk.Size;
-            int worldOffsetY = chunk.Position.y * chunk.Size;
-
-            // Valley shape factor
             float valleyWidth = terrainDefinition.valleyWidth * chunk.Size;
+            float worldSizeEstimate = 32 * 16; // Approximate world size
 
             for (int x = 0; x < chunk.Size; x++)
             {
@@ -106,46 +98,25 @@ namespace WFC.Terrain
                     float worldX = worldOffsetX + x;
                     float worldZ = worldOffsetZ + z;
 
-                    // Mountain height (multi-octave noise)
+                    // Simplified multi-octave noise calculation
                     float combinedNoise = 0f;
                     for (int i = 0; i < scales.Length; i++)
                     {
-                        float noise = Mathf.PerlinNoise(
-                            worldX * scales[i] + (i * 100),
-                            worldZ * scales[i] + (i * 100));
+                        float noise = Mathf.PerlinNoise(worldX * scales[i] + (i * 100), worldZ * scales[i] + (i * 100));
                         combinedNoise += noise * weights[i];
                     }
 
-                    // Apply power curve for more dramatic mountains
+                    // Apply power curve for dramatic mountains
                     combinedNoise = Mathf.Pow(combinedNoise, 1.8f);
 
-                    // Create valley by depressing height in the center of the world
-                    float worldSizeEstimate = 32 * 16; // Rough world size estimate
+                    // Valley calculation
                     float distanceFromCenter = Mathf.Abs(worldX - worldSizeEstimate / 2);
-                    float valleyFactor = 1.0f;
+                    float valleyFactor = distanceFromCenter < valleyWidth ?
+                        Mathf.SmoothStep(0.2f, 1.0f, distanceFromCenter / valleyWidth) : 1.0f;
 
-                    if (distanceFromCenter < valleyWidth)
-                    {
-                        // Valley depth increases toward center
-                        valleyFactor = distanceFromCenter / valleyWidth;
-                        valleyFactor = Mathf.SmoothStep(0.2f, 1.0f, valleyFactor);
-                    }
-
-                    // Apply valley and mountain factors
+                    // Final height calculation
                     float heightFactor = combinedNoise * valleyFactor * mountainFactor;
-                    int absoluteHeight = baseGroundLevel + Mathf.FloorToInt(heightFactor * heightRange);
-
-                    if (valleyFactor > 0.7f)
-                    {
-                        heightFactor = combinedNoise * Mathf.Pow(valleyFactor, 0.7f) * mountainFactor;
-                    }
-                    else
-                    {
-                        heightFactor = combinedNoise * valleyFactor * mountainFactor;
-                    }
-
-                    // Convert to actual height
-                    heightMap[x, z] = absoluteHeight;
+                    heightMap[x, z] = baseGroundLevel + Mathf.FloorToInt(heightFactor * heightRange);
                 }
             }
 

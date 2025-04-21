@@ -3,6 +3,7 @@ using UnityEngine;
 using WFC.Core;
 using System.Linq;
 using WFC.Terrain;
+using System;
 
 namespace WFC.MarchingCubes
 {
@@ -43,7 +44,7 @@ namespace WFC.MarchingCubes
                 stateDensityValues.Add(4, 0.85f);  // Rock
             }
 
-            chunkSize = 16;
+            chunkSize = 32;
         }
 
         public void SetTerrainDefinition(TerrainDefinition newTerrainDef)
@@ -687,61 +688,100 @@ namespace WFC.MarchingCubes
          */
         private void SmoothBoundaries(float[,,] densityField, Chunk chunk, int recursionDepth = 0)
         {
-            // Get chunk size
+            // CRITICAL: Restore recursion depth check to prevent infinite recursion
+            if (recursionDepth > 2)
+            {
+                Debug.LogWarning($"Maximum boundary recursion depth reached for chunk {chunk.Position}");
+                return;
+            }
+
+            // Skip if the chunk is invalid
+            if (chunk == null || densityField == null)
+            {
+                return;
+            }
+
             int size = chunk.Size;
 
-            // If no neighbors, nothing to smooth
-            if (chunk.Neighbors == null) return;
-
-            // Iterate through all six directions
+            // Process each direction only once
             foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
             {
-                // Skip if no neighbor in this direction
+                // Skip if no neighbor exists in this direction
                 if (!chunk.Neighbors.ContainsKey(dir))
                     continue;
 
                 Chunk neighbor = chunk.Neighbors[dir];
 
-                // Skip if already processing this neighbor (prevents infinite recursion)
-                if (processingChunks.Contains(neighbor.Position))
+                // Skip if neighbor is null or already being processed (prevents cascading calculations)
+                if (neighbor == null || processingChunks.Contains(neighbor.Position))
                     continue;
+
+                // First check for cached neighbor density field
+                float[,,] neighborDensity;
+                if (densityFieldCache.TryGetValue(neighbor.Position, out neighborDensity))
+                {
+                    // Using cached density field - no need to regenerate
+                }
+                else if (recursionDepth < 2) // Limit recursive generation depth
+                {
+                    try
+                    {
+                        // Mark as processing to prevent recursive loops
+                        processingChunks.Add(neighbor.Position);
+
+                        // Generate the neighbor's density field
+                        neighborDensity = GenerateDensityField(neighbor, recursionDepth + 1);
+
+                        // Remove from processing list after generation
+                        processingChunks.Remove(neighbor.Position);
+                    }
+                    catch (Exception e)
+                    {
+                        // Handle any errors during generation
+                        Debug.LogError($"Error generating density field for neighbor at {neighbor.Position}: {e.Message}");
+                        processingChunks.Remove(neighbor.Position);
+                        continue;
+                    }
+                }
+                else
+                {
+                    // Create a simple continuation field instead of full generation
+                    neighborDensity = CreateContinuationField(neighbor);
+                }
+
+                // Skip if failed to get neighbor density field
+                if (neighborDensity == null)
+                    continue;
+
+                // Apply appropriate boundary smoothing based on direction
                 try
                 {
-                    // Safely get or generate neighbor's density field
-                    float[,,] neighborDensity = GetNeighborDensityField(neighbor, recursionDepth);
-
-                    // Smoothing logic varies by direction
                     switch (dir)
                     {
-                        case Direction.Left: // Negative X boundary
+                        case Direction.Left:
                             SmoothXBoundary(densityField, neighborDensity, 0, size);
                             break;
-
-                        case Direction.Right: // Positive X boundary
+                        case Direction.Right:
                             SmoothXBoundary(densityField, neighborDensity, size, 0);
                             break;
-
-                        case Direction.Down: // Negative Y boundary
+                        case Direction.Down:
                             SmoothYBoundary(densityField, neighborDensity, 0, size);
                             break;
-
-                        case Direction.Up: // Positive Y boundary
+                        case Direction.Up:
                             SmoothYBoundary(densityField, neighborDensity, size, 0);
                             break;
-
-                        case Direction.Back: // Negative Z boundary
+                        case Direction.Back:
                             SmoothZBoundary(densityField, neighborDensity, 0, size);
                             break;
-
-                        case Direction.Forward: // Positive Z boundary
+                        case Direction.Forward:
                             SmoothZBoundary(densityField, neighborDensity, size, 0);
                             break;
                     }
                 }
-                catch (System.Exception e)
+                catch (Exception e)
                 {
-                    Debug.LogWarning($"Error smoothing boundary with neighbor at {neighbor.Position}: {e.Message}");
-                    // Continue with other neighbors instead of letting the exception propagate
+                    // Handle smoothing errors gracefully
+                    Debug.LogError($"Error smoothing boundary for chunk {chunk.Position} in direction {dir}: {e.Message}");
                 }
             }
         }

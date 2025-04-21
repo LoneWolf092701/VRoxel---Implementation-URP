@@ -144,29 +144,33 @@ namespace WFC.Processing
                 if (processingChunks.Contains(chunk.Position))
                     return false;
 
-                // Check if queue is full
-                if (jobQueue.Count >= maxQueuedTasks)
+                // CRITICAL: Limit concurrent processing to avoid CPU overload
+                if (processingChunks.Count >= Environment.ProcessorCount)
+                {
+                    UnityEngine.Debug.LogWarning("Too many chunks processing concurrently, throttling");
                     return false;
+                }
 
-                // Create job - use DateTime.UtcNow instead of Time.realtimeSinceStartup
+                // CRITICAL: Check if there are too many pending jobs
+                if (jobQueue.Count >= maxQueuedTasks)
+                {
+                    // Don't add more tasks when the queue is full
+                    return false;
+                }
+
+                // Add to queue with appropriate priority
                 WFCJob job = new WFCJob
                 {
                     Chunk = chunk,
                     JobType = jobType,
                     MaxIterations = maxIterations,
                     Priority = priority,
-                    CreationTime = (float)DateTime.UtcNow.TimeOfDay.TotalSeconds // Thread-safe alternative
+                    CreationTime = (float)DateTime.UtcNow.TimeOfDay.TotalSeconds
                 };
 
-                // Add to queue
                 jobQueue.Enqueue(job);
-
-                // Mark as processing to prevent duplicates
                 processingChunks.Add(chunk.Position);
-
-                // Notify waiting threads
                 Monitor.PulseAll(queueLock);
-
                 return true;
             }
         }

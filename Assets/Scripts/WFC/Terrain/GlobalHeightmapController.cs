@@ -43,7 +43,7 @@ namespace WFC.Terrain
                 // Default values if config not available
                 worldSizeX = 32;
                 worldSizeZ = 32;
-                chunkSize = 16;
+                chunkSize = 32;
                 seed = 42;
             }
         }
@@ -69,58 +69,48 @@ namespace WFC.Terrain
 
         private void GenerateHeightmap(int seed)
         {
+            // CRITICAL: Use a more efficient approach
             System.Random random = new System.Random(seed);
             float randOffset = (float)random.NextDouble() * 100f;
 
-            // Precompute octaves for more natural terrain
-            float[,] baseOctave = new float[globalHeightmap.GetLength(0), globalHeightmap.GetLength(1)];
-            float[,] detailOctave = new float[globalHeightmap.GetLength(0), globalHeightmap.GetLength(1)];
-            float[,] mountainOctave = new float[globalHeightmap.GetLength(0), globalHeightmap.GetLength(1)];
+            // Calculate heightmap size
+            int hmSizeX = globalHeightmap.GetLength(0);
+            int hmSizeZ = globalHeightmap.GetLength(1);
 
-            // Generate base noise
-            for (int x = 0; x < globalHeightmap.GetLength(0); x++)
+            // CRITICAL: Use single-pass approach instead of multiple arrays
+            for (int x = 0; x < hmSizeX; x++)
             {
-                for (int z = 0; z < globalHeightmap.GetLength(1); z++)
+                for (int z = 0; z < hmSizeZ; z++)
                 {
-                    float nx = x * baseNoiseScale + randOffset;
-                    float nz = z * baseNoiseScale + randOffset;
-                    baseOctave[x, z] = Mathf.PerlinNoise(nx, nz);
+                    // Calculate normalized coordinates (0-1)
+                    float nx = x / (float)hmSizeX;
+                    float nz = z / (float)hmSizeZ;
 
-                    nx = x * detailNoiseScale + randOffset + 50f;
-                    nz = z * detailNoiseScale + randOffset + 50f;
-                    detailOctave[x, z] = Mathf.PerlinNoise(nx, nz);
-
-                    nx = x * mountainNoiseScale + randOffset + 100f;
-                    nz = z * mountainNoiseScale + randOffset + 100f;
-                    mountainOctave[x, z] = Mathf.PerlinNoise(nx, nz);
-                    mountainOctave[x, z] = Mathf.Pow(mountainOctave[x, z], 2.5f); // Sharper mountains
-                }
-            }
-
-            // Combine octaves into the final heightmap
-            for (int x = 0; x < globalHeightmap.GetLength(0); x++)
-            {
-                for (int z = 0; z < globalHeightmap.GetLength(1); z++)
-                {
-                    // Create valley in the middle
-                    float worldX = x / (float)globalHeightmap.GetLength(0);
-                    float worldZ = z / (float)globalHeightmap.GetLength(1);
-                    float distFromCenter = Vector2.Distance(new Vector2(worldX, worldZ), new Vector2(0.5f, 0.5f));
+                    // Valley factor - affects height distribution
+                    float distFromCenter = Vector2.Distance(new Vector2(nx, nz), new Vector2(0.5f, 0.5f));
                     float valleyFactor = Mathf.Clamp01(distFromCenter * 2.5f);
 
-                    // Add mountain ridges
-                    float mountainValue = mountainOctave[x, z] * Mathf.Lerp(0.1f, 1.0f, valleyFactor);
+                    // Base noise (large features)
+                    float baseNoise = Mathf.PerlinNoise(
+                        x * baseNoiseScale + randOffset,
+                        z * baseNoiseScale + randOffset
+                    );
 
-                    // Base terrain with valleys
-                    float baseValue = baseOctave[x, z] * (0.7f + valleyFactor * 0.3f);
-                    float detailValue = detailOctave[x, z] * 0.2f;
+                    // Mountain noise (apply power curve for sharper peaks)
+                    float mountainNoise = Mathf.PerlinNoise(
+                        x * mountainNoiseScale + randOffset + 100f,
+                        z * mountainNoiseScale + randOffset + 100f
+                    );
+                    mountainNoise = Mathf.Pow(mountainNoise, 2.5f);
 
-                    // Combine all elements
-                    float height = baseValue * baseHeight;
-                    height += detailValue * baseHeight * 0.2f;
-                    height += mountainValue * mountainHeight;
+                    // Combine with valley influence
+                    float baseHeightComponent = baseNoise * this.baseHeight * (0.7f + valleyFactor * 0.3f);
+                    float mountainHeightComponent = mountainNoise * this.mountainHeight * Mathf.Lerp(0.1f, 1.0f, valleyFactor);
 
-                    // Valley depth adjustment
+                    // Calculate final height
+                    float height = baseHeightComponent + mountainHeightComponent;
+
+                    // Apply valley depression
                     if (valleyFactor < 0.4f)
                     {
                         height *= Mathf.Lerp(1.0f - valleyDepth, 1.0f, valleyFactor / 0.4f);
