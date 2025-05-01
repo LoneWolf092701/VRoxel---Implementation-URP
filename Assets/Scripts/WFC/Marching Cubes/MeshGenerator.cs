@@ -6,6 +6,7 @@ using WFC.Generation;
 using WFC.Performance;
 using WFC.Chunking;
 using WFC.Terrain;
+using System.Linq;
 
 namespace WFC.MarchingCubes
 {
@@ -24,7 +25,14 @@ namespace WFC.MarchingCubes
         [Header("Debug Options")]
         [SerializeField] private bool showDebugInfo = true;
         [SerializeField] private bool enableDetailedLogging = false;
-        [SerializeField] private Color gizmoColor = new Color(0, 1, 0, 0.5f);
+
+        [Header("Visualization Options")]
+        [SerializeField] private bool showChunkBoundaries = true;
+        [SerializeField] private bool showCells = false;
+        [SerializeField] private bool showCollapsedCellInfo = false;
+        [SerializeField] private Color chunkBoundaryColor = Color.green;
+        [SerializeField] private Color cellColor = new Color(1, 0, 0, 0.3f);
+        [SerializeField] private float cellVisualizationDistance = 100f;
 
         // LOD settings override (if not using the global configuration)
         [Header("LOD Settings")]
@@ -106,6 +114,9 @@ namespace WFC.MarchingCubes
         // This method generates all meshes for the loaded chunks
         public void GenerateAllMeshes()
         {
+            if (densityGenerator != null)       // Added after submission and a test change
+                densityGenerator.ClearCache();
+
             if (performanceMonitor != null)
                 performanceMonitor.StartComponentTiming("GenerateAllMeshes");
 
@@ -167,9 +178,11 @@ namespace WFC.MarchingCubes
                 // Generate mesh using appropriate LOD level
                 Mesh mesh = marchingCubes.GenerateMesh(densityField, chunk.LODLevel);
 
+                ProcessBoundaryVertices(mesh, chunkPos, chunk.Size);
+
                 // Create or update the GameObject for this chunk
-                string chunkName = $"Terrain_Chunk_{chunkPos.x}_{chunkPos.y}_{chunkPos.z}";
-                GameObject meshObject;
+                string chunkName = $"Terrain_Chunk_{chunkPos.x}_{chunkPos.y}_{chunkPos.z}";          
+                GameObject meshObject;                                                
 
                 // Try to get from dictionary first
                 if (!chunkMeshObjects.TryGetValue(chunkPos, out meshObject) || meshObject == null)
@@ -253,6 +266,55 @@ namespace WFC.MarchingCubes
                 if (performanceMonitor != null)
                     performanceMonitor.EndComponentTiming("MeshGeneration");
             }
+        }
+
+        private void ProcessBoundaryVertices(Mesh mesh, Vector3Int chunkPos, int chunkSize)
+        {
+            Vector3[] vertices = mesh.vertices;
+
+            // Calculate exact chunk boundary positions in local space
+            float minX = 0;
+            float maxX = chunkSize;
+            float minY = 0;
+            float maxY = chunkSize;
+            float minZ = 0;
+            float maxZ = chunkSize;
+
+            // Small threshold for identifying boundary vertices
+            float threshold = 0.001f;
+
+            // Process each vertex
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                Vector3 v = vertices[i];
+                bool isBoundaryVertex = false;
+
+                // Check if this vertex is on a boundary (x, y, or z)
+                if (Mathf.Abs(v.x - minX) < threshold || Mathf.Abs(v.x - maxX) < threshold ||
+                    Mathf.Abs(v.y - minY) < threshold || Mathf.Abs(v.y - maxY) < threshold ||
+                    Mathf.Abs(v.z - minZ) < threshold || Mathf.Abs(v.z - maxZ) < threshold)
+                {
+                    isBoundaryVertex = true;
+                }
+
+                if (isBoundaryVertex)
+                {
+                    // Snap to exact boundary positions to ensure perfect alignment
+                    if (Mathf.Abs(v.x - minX) < threshold) v.x = minX;
+                    if (Mathf.Abs(v.x - maxX) < threshold) v.x = maxX;
+                    if (Mathf.Abs(v.y - minY) < threshold) v.y = minY;
+                    if (Mathf.Abs(v.y - maxY) < threshold) v.y = maxY;
+                    if (Mathf.Abs(v.z - minZ) < threshold) v.z = minZ;
+                    if (Mathf.Abs(v.z - maxZ) < threshold) v.z = maxZ;
+
+                    // Update the vertex
+                    vertices[i] = v;
+                }
+            }
+
+            // Apply the modified vertices
+            mesh.vertices = vertices;
+            mesh.RecalculateBounds();
         }
 
         // This method determines the dominant state of a chunk based on the cells within it
@@ -358,9 +420,6 @@ namespace WFC.MarchingCubes
             if (!showDebugInfo || chunkManager == null)
                 return;
 
-            Gizmos.color = gizmoColor;
-
-            // Draw chunk boundaries
             foreach (var chunkEntry in chunkManager.GetLoadedChunks())
             {
                 Vector3Int chunkPos = chunkEntry.Key;
@@ -378,7 +437,72 @@ namespace WFC.MarchingCubes
                     chunk.Size * cellSize
                 );
 
-                Gizmos.DrawWireCube(worldPos + size * 0.5f, size);
+                // Draw chunk boundaries
+                if (showChunkBoundaries)
+                {
+                    Gizmos.color = chunkBoundaryColor;
+                    Gizmos.DrawWireCube(worldPos + size * 0.5f, size);
+                }
+
+                // Draw cells
+                if (showCells)
+                {
+                    Gizmos.color = cellColor;
+
+                    // Only draw cells for chunks close to the camera
+                    float distanceToCamera = Vector3.Distance(Camera.main.transform.position, worldPos);
+                    if (distanceToCamera < cellVisualizationDistance)
+                    {
+                        for (int x = 0; x < chunk.Size; x++)
+                        {
+                            for (int y = 0; y < chunk.Size; y++)
+                            {
+                                for (int z = 0; z < chunk.Size; z++)
+                                {
+                                    Vector3 cellPos = worldPos + new Vector3(
+                                        x * cellSize,
+                                        y * cellSize,
+                                        z * cellSize
+                                    );
+
+                                    Gizmos.DrawWireCube(cellPos + Vector3.one * cellSize * 0.5f,
+                                                       Vector3.one * cellSize * 0.9f);
+
+                                    // Show collapsed cell info
+                                    if (showCollapsedCellInfo)
+                                    {
+                                        Cell cell = chunk.GetCell(x, y, z);
+                                        if (cell != null && cell.CollapsedState.HasValue)
+                                        {
+                                            // Change color based on state
+                                            switch (cell.CollapsedState.Value)
+                                            {
+                                                case 0: // Air
+                                                    Gizmos.color = Color.cyan;
+                                                    break;
+                                                case 1: // Ground
+                                                    Gizmos.color = Color.green;
+                                                    break;
+                                                default:
+                                                    Gizmos.color = new Color(
+                                                        cell.CollapsedState.Value / (float)chunk.Size,
+                                                        0.5f,
+                                                        1.0f - cell.CollapsedState.Value / (float)chunk.Size
+                                                    );
+                                                    break;
+                                            }
+
+                                            Gizmos.DrawSphere(cellPos + Vector3.one * cellSize * 0.5f,
+                                                             cellSize * 0.2f);
+
+                                            Gizmos.color = cellColor; // Reset color
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

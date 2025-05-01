@@ -14,8 +14,8 @@ namespace WFC.MarchingCubes
         private int chunkSize = 16;
 
         // Default density range for cells without states
-        private float defaultEmptyDensity = 0.1f;  // For empty/air (below surface)
-        private float defaultSolidDensity = 0.9f;  // For solid terrain (above surface)
+        private float defaultEmptyDensity = 0.8f;  // For empty/air (below surface)         // Changed this after submission
+        private float defaultSolidDensity = 0.2f;  // For solid terrain (above surface)     // Changed this after submission
 
         // Cache to prevent infinite recursion and improve performance
         private Dictionary<Vector3Int, float[,,]> densityFieldCache = new Dictionary<Vector3Int, float[,,]>();
@@ -298,7 +298,7 @@ namespace WFC.MarchingCubes
                         densityField[x, y, z] = CalculateDensity(chunk, x, y, z);
 
                         // Keep track of solid/empty cells for debugging
-                        if (densityField[x, y, z] > surfaceLevel)
+                        if (densityField[x, y, z] < surfaceLevel)           // Changed this after submission
                             hasSolidCells = true;
                         else
                             hasEmptyCells = true;
@@ -377,12 +377,31 @@ namespace WFC.MarchingCubes
             {
                 Vector3Int oldestChunk = cacheEvictionQueue.Dequeue();
                 densityFieldCache.Remove(oldestChunk);
-                Debug.Log($"Cache full - Evicting chunk {oldestChunk} from density field cache");
             }
 
             // Add new entry to cache
             densityFieldCache[chunkPos] = densityField;
             cacheEvictionQueue.Enqueue(chunkPos);
+
+            // Instead of using dirtyChunks, directly remove adjacent chunks from cache
+            for (int i = 0; i < 6; i++)
+            {
+                Direction dir = (Direction)i;
+                Vector3Int adjacentPos = chunkPos + dir.ToVector3Int();
+
+                // If adjacent chunk is in cache but not being processed, remove it so it will be regenerated
+                if (densityFieldCache.ContainsKey(adjacentPos) && !processingChunks.Contains(adjacentPos))
+                {
+                    densityFieldCache.Remove(adjacentPos);
+
+                    // Also remove from eviction queue if present
+                    if (cacheEvictionQueue.Contains(adjacentPos))
+                    {
+                        cacheEvictionQueue = new Queue<Vector3Int>(
+                            cacheEvictionQueue.Where(pos => !pos.Equals(adjacentPos)));
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -541,12 +560,12 @@ namespace WFC.MarchingCubes
 
                         float cornerAverage = cornerSum / cornerCount;
 
+                        cornerAverage = Mathf.Round(cornerAverage * 10000000f) / 10000000f; // Chanded after submission
                         // CRITICAL: Use identical values at the corner point
                         densityField[cornerX, cornerY, cornerZ] = cornerAverage;
                         cornerNeighborField[neighborX, neighborY, neighborZ] = cornerAverage;
 
-                        // CRITICAL FIX: Apply with a wider influence radius for smoother transition
-                        int blendRadius = 4; // Increased from 3
+                        int blendRadius = 16; // Increased from 3
 
                         // Apply smoothing with stronger non-linear falloff
                         for (int x = 0; x <= blendRadius; x++)
@@ -625,7 +644,7 @@ namespace WFC.MarchingCubes
                     for (int dz = -1; dz <= 0; dz++)
                     {
                         int sampleX = x + dx;
-                        int sampleY = y + dy;
+                        int sampleY = chunk.Size - 1 - (y + dy);        // Changed this after submission
                         int sampleZ = z + dz;
 
                         // Skip if outside chunk
@@ -658,7 +677,20 @@ namespace WFC.MarchingCubes
                 }
             }
 
-            return sampleCount > 0 ? density / sampleCount : defaultValue;
+            if (x == 0 || x == chunk.Size || y == 0 || y == chunk.Size || z == 0 || z == chunk.Size)
+            {
+                if (sampleCount > 0)
+                {
+                    // Round to 7 decimal places for numerical stability across chunks
+                    float result = 1.0f - (density / sampleCount);
+                    return Mathf.Round(result * 10000000f) / 10000000f;
+                }
+            }
+
+            // Regular computation for interior points
+            return sampleCount > 0 ? 1.0f - (density / sampleCount) : 1.0f - defaultValue;
+            //return sampleCount > 0 ? 1.0f - (density / sampleCount) : 1.0f - defaultValue;
+
         }
 
 
@@ -812,7 +844,7 @@ namespace WFC.MarchingCubes
                 return;
             }
 
-            int gradientWidth = 3;
+            int gradientWidth = 8;      // Changed this after submission 3 -> 8
 
             // Perform smoothing only on the common area
             for (int x = 0; x < commonWidth; x++)
@@ -878,8 +910,7 @@ namespace WFC.MarchingCubes
                 return;
             }
 
-            // CRITICAL FIX: Define a wider gradient zone
-            int gradientWidth = 3; // Increased from implicit 1
+            int gradientWidth = 8; // Increased from implicit 3 -> 8
 
             // Perform smoothing only on the common area
             for (int y = 0; y < commonHeight; y++)
@@ -900,7 +931,9 @@ namespace WFC.MarchingCubes
                         if (index1 - i >= 0 && index1 - i < densityField1.GetLength(0))
                         {
                             // Use non-linear falloff (smoother transition)
-                            float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            float t = (float)i / gradientWidth;
+                            float blendFactor = 1.0f - (t * t * (3.0f - 2.0f * t));
+                            //float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
                             densityField1[index1 - i, y, z] = Mathf.Lerp(
                                 densityField1[index1 - i, y, z],
                                 averageDensity,
@@ -910,7 +943,9 @@ namespace WFC.MarchingCubes
                         // Apply smoothing inward for field 2
                         if (index2 - i >= 0 && index2 - i < densityField2.GetLength(0))
                         {
-                            float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            float t = (float)i / gradientWidth;
+                            float blendFactor = 1.0f - (t * t * (3.0f - 2.0f * t));
+                            //float blendFactor = 1.0f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
                             densityField2[index2 - i, y, z] = Mathf.Lerp(
                                 densityField2[index2 - i, y, z],
                                 averageDensity,
@@ -947,7 +982,7 @@ namespace WFC.MarchingCubes
                 return;
             }
 
-            int gradientWidth = 3;
+            int gradientWidth = 8;      // Changed this after submission 3 -> 8
 
             // Perform smoothing only on the common area
             for (int x = 0; x < commonWidth; x++)
@@ -964,9 +999,11 @@ namespace WFC.MarchingCubes
                     for (int i = 1; i <= gradientWidth; i++)
                     {
                         // Apply to field 1
-                        if (index1 - i >= 0 && index1 - i < densityField1.GetLength(1))
+                        if (index1 - i >= 0 && index1 - i < densityField1.GetLength(2))
                         {
-                            float blendFactor = 0.9f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            float t = (float)i / gradientWidth;
+                            float blendFactor = 1.0f - (t * t * (3.0f - 2.0f * t));
+                            //float blendFactor = 0.9f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
                             //int inwardIndex = (index1 == 0) ? 1 : index1 - 1;
                             densityField1[x, y, index1 - i] = Mathf.Lerp(
                                 densityField1[x, y, index1 - i],
@@ -974,10 +1011,12 @@ namespace WFC.MarchingCubes
                                 blendFactor);
                         }
 
-                        if (index2 > 0 && index2 < densityField2.GetLength(2) - 1)
+                        if (index2-i >= 0 && index2-i < densityField2.GetLength(2))
                         {
-                            float blendFactor = 0.70f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
-                            //int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
+                            float t = (float)i / gradientWidth;
+                            float blendFactor = 1.0f - (t * t * (3.0f - 2.0f * t));
+                            //float blendFactor = 0.70f - Mathf.Pow(i / (float)(gradientWidth + 1), 2);
+                            ////int inwardIndex = (index2 == 0) ? 1 : index2 - 1;
                             densityField2[x, y, index2 - i] = Mathf.Lerp(
                                 densityField2[x, y, index2 - i],
                                 averageDensity,
@@ -987,32 +1026,6 @@ namespace WFC.MarchingCubes
                 }
             }
         }
-
-        /// <summary>
-        /// Get or create a field for a neighbor with continuation from existing chunks
-        /// </summary>
-        private float[,,] GetNeighborDensityField(Chunk neighbor, int recursionDepth=0)
-        {
-            if (recursionDepth > 3)
-            {
-                Debug.LogWarning($"Recursion depth exceeded for chunk {neighbor.Position}");
-                return CreateContinuationField(neighbor);
-            }
-
-            // Get or generate neighbor density field safely
-            if (densityFieldCache.TryGetValue(neighbor.Position, out float[,,] cachedField))
-                return cachedField;
-
-            if (processingChunks.Contains(neighbor.Position))
-            {
-                // Create a temporary field that continues the gradient from this chunk
-                // rather than using a default value
-                return CreateContinuationField(neighbor);
-            }
-
-            return GenerateDensityField(neighbor, recursionDepth + 1);
-        }
-
 
         /// <summary>
         /// Create a temporary continuation field for a neighbor that's being processed
@@ -1071,5 +1084,6 @@ namespace WFC.MarchingCubes
                 densityFieldCache.Remove(oldestChunk);
             }
         }
+
     }
 }

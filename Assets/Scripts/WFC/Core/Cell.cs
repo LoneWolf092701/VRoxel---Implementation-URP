@@ -168,17 +168,30 @@ namespace WFC.Core
             if (states.Count == 0)
                 return false;
 
-            var oldCount = PossibleStates.Count;
-            PossibleStates = new HashSet<int>(states);
+            // Performance optimization: Compare count first, then contents only if needed
+            int oldCount = PossibleStates.Count;
+            bool countChanged = oldCount != states.Count;
 
-            if (PossibleStates.Count == 1)
+            // Only do expensive set comparison if counts match
+            bool contentsChanged = !countChanged && !PossibleStates.SetEquals(states);
+
+            // Replace states if anything changed
+            if (countChanged || contentsChanged)
             {
-                var enumerator = PossibleStates.GetEnumerator();
-                enumerator.MoveNext();
-                CollapsedState = enumerator.Current;
+                PossibleStates = new HashSet<int>(states);
+
+                // Auto-collapse if only one state remains
+                if (PossibleStates.Count == 1)
+                {
+                    var enumerator = PossibleStates.GetEnumerator();
+                    enumerator.MoveNext();
+                    CollapsedState = enumerator.Current;
+                }
+
+                return true;
             }
 
-            return oldCount != PossibleStates.Count;
+            return false;
         }
     }
 }

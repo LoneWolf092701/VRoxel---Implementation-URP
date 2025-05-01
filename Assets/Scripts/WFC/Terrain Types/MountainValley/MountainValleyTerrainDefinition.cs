@@ -131,20 +131,20 @@ namespace WFC.Terrain
             Dictionary<int, float> densities = new Dictionary<int, float>();
 
             // For marching cubes algorithm:
-            // - Values BELOW the surface level (0.5) = inside terrain (solid)
-            // - Values ABOVE the surface level (0.5) = outside terrain (air)
+            // - Values ABOVE the surface level (0.5) = inside terrain (solid)  // Changed this after submission
+            // - Values BELOW the surface level (0.5) = outside terrain (air)   // Changed this after submission
 
             // Air should be high density (outside terrain)
-            densities[(int)TerrainStateId.Air] = 0.9f;
+            densities[(int)TerrainStateId.Air] = 0.1f;      // Changed this after submission
 
             // Ground states should be low density (inside terrain)
-            densities[(int)TerrainStateId.Ground] = 0.2f;
-            densities[(int)TerrainStateId.Grass] = 0.25f;
-            densities[(int)TerrainStateId.Rock] = 0.15f; // More solid
-            densities[(int)TerrainStateId.Cliff] = 0.1f; // Very solid
-            densities[(int)TerrainStateId.SnowCap] = 0.2f;
-            densities[(int)TerrainStateId.Sand] = 0.3f;
-            densities[(int)TerrainStateId.Forest] = 0.2f;
+            densities[(int)TerrainStateId.Ground] = 0.8f;       // Changed these following after submission
+            densities[(int)TerrainStateId.Grass] = 0.75f;
+            densities[(int)TerrainStateId.Rock] = 0.85f; // More solid
+            densities[(int)TerrainStateId.Cliff] = 0.9f; // Very solid
+            densities[(int)TerrainStateId.SnowCap] = 0.8f;
+            densities[(int)TerrainStateId.Sand] = 0.7f;
+            densities[(int)TerrainStateId.Forest] = 0.8f;
 
             // Water slightly below surface level
             //densities[(int)TerrainStateId.Water] = 0.45f;

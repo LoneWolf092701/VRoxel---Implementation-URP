@@ -23,6 +23,7 @@
  *   construction algorithm." ACM SIGGRAPH Computer Graphics, 21(4), 163–169.
  */
 using System.Collections.Generic;
+using System.Drawing;
 using System.Linq;
 using UnityEngine;
 
@@ -51,9 +52,6 @@ namespace WFC.MarchingCubes
 
         // Edge table (lookup table for marching cubes)
         private int[] edgeTable; // Initialize from standard MC tables
-
-        // Object pooling for mesh data collections to reduce garbage collection
-        private MeshDataPool meshDataPool = new MeshDataPool();
 
         /// <summary>
         /// Pool for reusing collection objects to reduce memory allocations
@@ -154,6 +152,7 @@ namespace WFC.MarchingCubes
          */
         public Mesh GenerateMesh(float[,,] densityField, int lodLevel = 0)
         {
+
             // Get dimensions from density field
             int sizeX = densityField.GetLength(0);
             int sizeY = densityField.GetLength(1);
@@ -177,14 +176,14 @@ namespace WFC.MarchingCubes
                         Vector3[] cornerPositions = new Vector3[8];
 
                         // Define corner positions
-                        cornerPositions[0] = new Vector3(x, y, z);
+                        cornerPositions[0] = new Vector3(x, y, z);          // Added sizeY to every value after submission
                         cornerPositions[1] = new Vector3(x + 1, y, z);
                         cornerPositions[2] = new Vector3(x + 1, y, z + 1);
                         cornerPositions[3] = new Vector3(x, y, z + 1);
-                        cornerPositions[4] = new Vector3(x, y + 1, z);
-                        cornerPositions[5] = new Vector3(x + 1, y + 1, z);
-                        cornerPositions[6] = new Vector3(x + 1, y + 1, z + 1);
-                        cornerPositions[7] = new Vector3(x, y + 1, z + 1);
+                        cornerPositions[4] = new Vector3(x, (y + 1), z);
+                        cornerPositions[5] = new Vector3(x + 1, (y + 1), z);
+                        cornerPositions[6] = new Vector3(x + 1, (y + 1), z + 1);
+                        cornerPositions[7] = new Vector3(x, (y + 1), z + 1);
 
                         // Get densities with bounds checking
                         for (int i = 0; i < 8; i++)
@@ -245,6 +244,7 @@ namespace WFC.MarchingCubes
                             t = float.IsNaN(t) ? 0.5f : Mathf.Clamp01(t);
 
                             edgeVertices[i] = Vector3.Lerp(cornerPositions[v1], cornerPositions[v2], t);
+
                         }
 
                         // Create triangles from triangle table
@@ -322,179 +322,6 @@ namespace WFC.MarchingCubes
 
             return mesh;
         }
-
-        public void SetLODLevel(int lodLevel, float[] vertexReductionFactors)
-        {
-            if (lodLevel <= 0 || vertexReductionFactors == null || vertexReductionFactors.Length == 0)
-            {
-                // LOD 0 = highest detail, no simplification
-                simplifyMesh = false;
-                return;
-            }
-
-            // Get reduction factor for this LOD level
-            float reductionFactor = lodLevel < vertexReductionFactors.Length
-                ? vertexReductionFactors[lodLevel]
-                : vertexReductionFactors.Last();
-
-            if (reductionFactor <= 0.01f)
-            {
-                simplifyMesh = false;
-                return;
-            }
-
-            // Enable mesh simplification with the appropriate factor
-            simplifyMesh = true;
-            simplificationFactor = reductionFactor;
-        }
-
-        private Mesh SimplifyMesh(Mesh originalMesh, float reductionFactor)
-        {
-
-            // a simple vertex clustering
-            Vector3[] vertices = originalMesh.vertices;
-            int[] triangles = originalMesh.triangles;
-
-            // Target vertex count
-            int targetVertexCount = Mathf.Max(10, Mathf.FloorToInt(vertices.Length * (1 - reductionFactor)));
-
-            // Use Unity's MeshUtility if it's there
-            #if UNITY_EDITOR
-            UnityEditor.MeshUtility.Optimize(originalMesh);
-            #endif
-
-            return originalMesh;
-        }
-
-        /*
-         * ProcessCube
-         * -----------------------------
-         * Core function of the Marching Cubes algorithm that processes a single cube.
-         * 
-         * Algorithm Steps:
-         * 1. Sample density values at the 8 corners of the cube
-         * 2. Compute a cube index (8-bit integer) where each bit represents
-         *    whether a corner is inside the surface (density > threshold)
-         * 3. Use the cube index to look up which edges have the isosurface crossing them
-         * 4. For each crossing edge, calculate the exact intersection point using linear interpolation:
-         *    p = v1 + t * (v2 - v1) where t = (threshold - d1) / (d2 - d1)
-         * 5. Generate triangles based on the triangle table lookup for this cube configuration
-         * 
-         * The edgeTable and triangleTable contain precalculated data for all 256 possible
-         * Bourke, P. (1994) 'Polygonising a scalar field', [online] 
-         * Available at: https://paulbourke.net/geometry/polygonise/
-         * cube configurations, determined by which of the 8 corners are inside/outside the surface.
-         */
-        private void ProcessCube(float[,,] densityField, int x, int y, int z,
-                         List<Vector3> vertices, List<int> triangles, List<Vector3> normals)
-        {
-            // Get corner densities
-            float[] cornerDensities = new float[8];
-            Vector3[] cornerPositions = new Vector3[8];
-
-            // Define corners (0-7) - coordinates optimized for clarity
-            cornerPositions[0] = new Vector3(x, y, z);
-            cornerPositions[1] = new Vector3(x + 1, y, z);
-            cornerPositions[2] = new Vector3(x + 1, y, z + 1);
-            cornerPositions[3] = new Vector3(x, y, z + 1);
-            cornerPositions[4] = new Vector3(x, y + 1, z);
-            cornerPositions[5] = new Vector3(x + 1, y + 1, z);
-            cornerPositions[6] = new Vector3(x + 1, y + 1, z + 1);
-            cornerPositions[7] = new Vector3(x, y + 1, z + 1);
-
-            // Get densities with bounds checking
-            for (int i = 0; i < 8; i++)
-            {
-                int cx = (int)cornerPositions[i].x;
-                int cy = (int)cornerPositions[i].y;
-                int cz = (int)cornerPositions[i].z;
-
-                if (cx < 0 || cy < 0 || cz < 0 ||
-                    cx >= densityField.GetLength(0) ||
-                    cy >= densityField.GetLength(1) ||
-                    cz >= densityField.GetLength(2))
-                {
-                    cornerDensities[i] = 0f;
-                    continue;
-                }
-
-                cornerDensities[i] = densityField[cx, cy, cz];
-            }
-
-            // Calculate cube index
-            int cubeIndex = 0;
-            for (int i = 0; i < 8; i++)
-                if (cornerDensities[i] > surfaceLevel)
-                    cubeIndex |= (1 << i);
-
-            // Exit early if cube is entirely inside or outside
-            if (edgeTable[cubeIndex] == 0)
-                return;
-
-            // Calculate intersection vertices
-            Vector3[] edgeVertices = new Vector3[12];
-            for (int i = 0; i < 12; i++)
-            {
-                if ((edgeTable[cubeIndex] & (1 << i)) == 0)
-                    continue;
-
-                // Get endpoints
-                int v1 = GetEdgeVertexIndex(i, 0);
-                int v2 = GetEdgeVertexIndex(i, 1);
-
-                // Interpolate position
-                float t = (surfaceLevel - cornerDensities[v1]) /
-                          (cornerDensities[v2] - cornerDensities[v1]);
-                t = float.IsNaN(t) ? 0.5f : Mathf.Clamp01(t);
-
-                edgeVertices[i] = Vector3.Lerp(cornerPositions[v1], cornerPositions[v2], t);
-            }
-
-            // Create triangles from triangle table
-            for (int i = 0; triangleTable[cubeIndex * 16 + i] != -1; i += 3)
-            {
-                int vertexIndex = vertices.Count;
-                int e1 = triangleTable[cubeIndex * 16 + i];
-                int e2 = triangleTable[cubeIndex * 16 + i + 1];
-                int e3 = triangleTable[cubeIndex * 16 + i + 2];
-
-                // Skip invalid edges
-                if (e1 < 0 || e1 >= 12 || e2 < 0 || e2 >= 12 || e3 < 0 || e3 >= 12)
-                    continue;
-
-                // Add vertices and triangle indices
-                vertices.Add(edgeVertices[e1]);
-                vertices.Add(edgeVertices[e2]);
-                vertices.Add(edgeVertices[e3]);
-
-                triangles.Add(vertexIndex);
-                triangles.Add(vertexIndex + 1);
-                triangles.Add(vertexIndex + 2);
-
-                // Calculate normal
-                Vector3 normal = Vector3.Cross(
-                    edgeVertices[e2] - edgeVertices[e1],
-                    edgeVertices[e3] - edgeVertices[e1]
-                ).normalized;
-
-                normals.Add(normal);
-                normals.Add(normal);
-                normals.Add(normal);
-            }
-        }
-
-        private int GetEdgeVertexIndex(int edge, int endpoint)
-        {
-            // Define which vertices are connected by each edge
-            int[,] edgeConnections = new int[12, 2] {
-                {0, 1}, {1, 2}, {2, 3}, {3, 0}, // Bottom face
-                {4, 5}, {5, 6}, {6, 7}, {7, 4}, // Top face
-                {0, 4}, {1, 5}, {2, 6}, {3, 7}  // Connecting edges
-            };
-
-            return edgeConnections[edge, endpoint];
-        }
-
         private void InitializeTables()
         {
             // Initialize edge table (standard marching cubes lookup table)

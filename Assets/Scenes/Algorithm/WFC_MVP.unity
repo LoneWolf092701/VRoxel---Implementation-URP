@@ -994,7 +994,12 @@ MonoBehaviour:
   surfaceLevel: 0.5
   showDebugInfo: 1
   enableDetailedLogging: 0
-  gizmoColor: {r: 0, g: 1, b: 0, a: 0.5}
+  showChunkBoundaries: 1
+  showCells: 0
+  showCollapsedCellInfo: 0
+  chunkBoundaryColor: {r: 0.08627092, g: 0.98490566, b: 0, a: 0.5}
+  cellColor: {r: 1, g: 0, b: 0, a: 1}
+  cellVisualizationDistance: 100
   useUnityLODSystem: 0
   lodDistanceThresholds:
   - 50
@@ -1471,7 +1476,7 @@ MonoBehaviour:
   detailNoiseScale: 0.08
   mountainNoiseScale: 0.015
   valleyDepth: 0.3
-  visualizeHeightmap: 0
+  visualizeHeightmap: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

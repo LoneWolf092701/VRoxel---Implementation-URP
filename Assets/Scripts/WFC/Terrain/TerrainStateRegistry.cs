@@ -24,6 +24,8 @@ namespace WFC.Terrain
         // Tracks which terrain definition each state belongs to
         private Dictionary<int, string> stateToTerrainType = new Dictionary<int, string>();
 
+        private Dictionary<int, float> stateDensityCache = new Dictionary<int, float>();
+
         // Materials for each state
         private Material[] stateMaterials;
         public Material[] StateMaterials => stateMaterials;
@@ -143,7 +145,17 @@ namespace WFC.Terrain
         /// </summary>
         public float GetStateDensity(int stateId)
         {
-            return stateConfigs.TryGetValue(stateId, out var config) ? config.Density : 0.5f;
+            // Check cache first
+            if (stateDensityCache.TryGetValue(stateId, out float density))
+                return density;
+
+            // Cache miss - look up from configuration
+            density = stateConfigs.TryGetValue(stateId, out var config) ? config.Density : 0.5f;
+
+            // Update cache
+            stateDensityCache[stateId] = density;
+
+            return density;
         }
 
         /// <summary>
@@ -181,6 +193,8 @@ namespace WFC.Terrain
                 Density = 0.8f,
                 //DefaultMaterial = "Materials/Ground"
             }, "Core");
+
+            stateDensityCache.Clear();
         }
     }
 }

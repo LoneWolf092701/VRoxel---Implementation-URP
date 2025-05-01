@@ -702,8 +702,7 @@ namespace WFC.Generation
                                 continue;
 
                             // Skip cells with only one state (will be collapsed in propagation)
-                            if (cell.PossibleStates.Count <= 1)
-                                continue;
+                            if (cell.Entropy <= 1) continue;
 
                             // Calculate effective entropy based on constraints
                             int effectiveEntropy = CalculateEffectiveEntropy(cell, chunk);

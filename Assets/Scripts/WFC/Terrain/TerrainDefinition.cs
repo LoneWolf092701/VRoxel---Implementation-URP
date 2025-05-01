@@ -84,6 +84,8 @@ namespace WFC.Terrain
 
                 system.AddGlobalConstraint(groundConstraint);
             }
+
+
         }
     }
 }
