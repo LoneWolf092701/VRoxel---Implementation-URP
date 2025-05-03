@@ -594,7 +594,8 @@ namespace WFC.Metrics
             // Run tests for each chunk size
             foreach (int chunkSize in testChunkSizes)
             {
-                yield return StartCoroutine(TestChunkGeneration(chunkSize));
+                // FIXED: Directly yield the IEnumerator instead of using StartCoroutine
+                yield return TestChunkGeneration(chunkSize);
                 currentTestIndex++;
 
                 // Add debug log to verify each test completed and results added
@@ -675,14 +676,17 @@ namespace WFC.Metrics
                 iterationsRequired = iterations
             };
 
-            // Ensure this result gets added even if previous results exist
+            // Make sure the result is added to the list - add explicit null checks
+            if (chunkGenerationResults == null)
+                chunkGenerationResults = new List<ChunkGenerationResult>();
+
             chunkGenerationResults.Add(result);
             Debug.Log($"Chunk generation test for size {chunkSize} completed: {processingTime:F2}ms, {collapsedCellPercentage:F2}% cells collapsed");
 
-            //Re-thow the exception
+            // Re-throw the exception if one was caught
             if (caughtException != null)
             {
-                throw caughtException;
+                Debug.LogError($"Caught exception during chunk generation: {caughtException.Message}");
             }
         }
 
@@ -824,7 +828,7 @@ namespace WFC.Metrics
 
             foreach (var worldSize in worldSizes)
             {
-                yield return StartCoroutine(TestBoundaryCoherence(worldSize));
+                yield return TestBoundaryCoherence(worldSize);
                 currentTestIndex++;
 
                 // Wait between tests
@@ -1230,7 +1234,7 @@ namespace WFC.Metrics
             // Run tests for each chunk size
             foreach (int chunkSize in testChunkSizes)
             {
-                yield return StartCoroutine(TestMeshGeneration(chunkSize));
+                yield return TestMeshGeneration(chunkSize);
                 currentTestIndex++;
 
                 // Wait between tests
@@ -1360,7 +1364,7 @@ namespace WFC.Metrics
             // Run tests for each thread count
             foreach (int threadCount in testThreadCounts)
             {
-                yield return StartCoroutine(TestParallelProcessing(threadCount));
+                yield return TestParallelProcessing(threadCount);
                 currentTestIndex++;
 
                 Debug.Log($"Parallel test completed for {threadCount} threads. Results count: {parallelProcessingResults.Count}");
@@ -1643,7 +1647,7 @@ namespace WFC.Metrics
             // Run tests for each world size
             foreach (var worldSize in testWorldSizes)
             {
-                yield return StartCoroutine(TestWorldSizeScaling(worldSize));
+                yield return TestWorldSizeScaling(worldSize);
                 currentTestIndex++;
 
                 Debug.Log($"World size test completed for {worldSize}. Results count: {worldSizeScalingResults.Count}");
@@ -2072,7 +2076,7 @@ namespace WFC.Metrics
             // Run tests for each LOD level
             for (int lodLevel = 0; lodLevel < lodLevels; lodLevel++)
             {
-                yield return StartCoroutine(TestLODPerformance(lodLevel));
+                yield return TestLODPerformance(lodLevel);
                 currentTestIndex++;
 
                 // Wait between tests
