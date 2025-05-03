@@ -14,6 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   terrainName: Default Terrain
   maxStateCount: 12
+  grassMaterial: {fileID: 2100000, guid: ae29ac02d08992344b9095971167e1c6, type: 2}
+  sandMaterial: {fileID: 2100000, guid: 88d4b65b6d484a1459f780db4b3edd0d, type: 2}
+  groundMaterial: {fileID: 2100000, guid: f9086f3ea36bc714383439f31aee5bbf, type: 2}
   mountainHeight: 10
   valleyWidth: 0.3
   forestDensity: 0.6
@@ -21,59 +24,3 @@ MonoBehaviour:
   grassDensity: 1
   rockSharpness: 1
   snowCoverage: 0.3
-  groundMaterialSettings:
-    material: {fileID: 0}
-    smoothness: 0.5
-    metallic: 0
-    mainTexture: {fileID: 0}
-    normalMap: {fileID: 0}
-    tintColor: {r: 1, g: 1, b: 1, a: 1}
-    tiling: 1
-  grassMaterialSettings:
-    material: {fileID: 0}
-    smoothness: 0.5
-    metallic: 0
-    mainTexture: {fileID: 0}
-    normalMap: {fileID: 0}
-    tintColor: {r: 1, g: 1, b: 1, a: 1}
-    tiling: 1
-  rockMaterialSettings:
-    material: {fileID: 0}
-    smoothness: 0.5
-    metallic: 0
-    mainTexture: {fileID: 0}
-    normalMap: {fileID: 0}
-    tintColor: {r: 1, g: 1, b: 1, a: 1}
-    tiling: 1
-  sandMaterialSettings:
-    material: {fileID: 0}
-    smoothness: 0.5
-    metallic: 0
-    mainTexture: {fileID: 0}
-    normalMap: {fileID: 0}
-    tintColor: {r: 1, g: 1, b: 1, a: 1}
-    tiling: 1
-  forestMaterialSettings:
-    material: {fileID: 0}
-    smoothness: 0.5
-    metallic: 0
-    mainTexture: {fileID: 0}
-    normalMap: {fileID: 0}
-    tintColor: {r: 1, g: 1, b: 1, a: 1}
-    tiling: 1
-  snowMaterialSettings:
-    material: {fileID: 0}
-    smoothness: 0.5
-    metallic: 0
-    mainTexture: {fileID: 0}
-    normalMap: {fileID: 0}
-    tintColor: {r: 1, g: 1, b: 1, a: 1}
-    tiling: 1
-  cliffMaterialSettings:
-    material: {fileID: 0}
-    smoothness: 0.5
-    metallic: 0
-    mainTexture: {fileID: 0}
-    normalMap: {fileID: 0}
-    tintColor: {r: 1, g: 1, b: 1, a: 1}
-    tiling: 1

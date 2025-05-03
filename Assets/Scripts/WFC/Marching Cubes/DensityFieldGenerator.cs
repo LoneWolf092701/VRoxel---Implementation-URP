@@ -560,8 +560,8 @@ namespace WFC.MarchingCubes
 
                         float cornerAverage = cornerSum / cornerCount;
 
-                        cornerAverage = Mathf.Round(cornerAverage * 10000000f) / 10000000f; // Chanded after submission
-                        // CRITICAL: Use identical values at the corner point
+                        cornerAverage = Mathf.Round(cornerAverage * 10000000f) / 10000000f; // Changed after submission
+ 
                         densityField[cornerX, cornerY, cornerZ] = cornerAverage;
                         cornerNeighborField[neighborX, neighborY, neighborZ] = cornerAverage;
 
@@ -689,8 +689,6 @@ namespace WFC.MarchingCubes
 
             // Regular computation for interior points
             return sampleCount > 0 ? 1.0f - (density / sampleCount) : 1.0f - defaultValue;
-            //return sampleCount > 0 ? 1.0f - (density / sampleCount) : 1.0f - defaultValue;
-
         }
 
 

@@ -85,6 +85,7 @@ public class WFCMetricsMonitorEditor : Editor
         Repaint();
     }
 
+    // Runs test through Editor Coroutine utility which allows for asynchronous testing
     private EditorCoroutine StartTrackedCoroutine(IEnumerator routine)
     {
         EditorCoroutine coroutine = EditorCoroutineUtility.StartCoroutine(routine, this);
@@ -283,7 +284,7 @@ public class WFCMetricsMonitorEditor : Editor
             GameObject testGeneratorObj = Instantiate(existingGenerator.gameObject);
             testGeneratorObj.name = "Test_WFCGenerator";
             testGeneratorObj.transform.parent = testContainer.transform;
-            testGeneratorObj.tag = "EditorOnly";
+            testGeneratorObj.tag = "EditorOnly";            // Won't appear in builds
             generator = testGeneratorObj.GetComponent<WFCGenerator>();
             Debug.Log("Cloned existing WFCGenerator");
         }

@@ -305,11 +305,9 @@ namespace WFC.MarchingCubes
                 // Apply LOD-based simplification for distant chunks
                 if (lodLevel > 0)
                 {
-                    // For higher LOD levels, ensure we have proper normals
+                    // For higher LOD levels, ensurehave proper normals
                     mesh.RecalculateNormals();
 
-                    // We're not adding a separate simplification function,
-                    // but in a real implementation this would reduce vertices based on lodLevel
                 }
 
                 mesh.RecalculateBounds();

@@ -10,6 +10,11 @@ namespace WFC.Terrain
         public string terrainName = "Default Terrain";
         public int maxStateCount = 12;
 
+        [Header("Basic Materials")]
+        public Material grassMaterial;
+        public Material sandMaterial;
+        public Material groundMaterial; // Also serves as fallback
+
         // Adjacency rules - can be null for default
         public bool[,,] AdjacencyRules { get; protected set; }
 
@@ -84,8 +89,6 @@ namespace WFC.Terrain
 
                 system.AddGlobalConstraint(groundConstraint);
             }
-
-
         }
     }
 }

@@ -181,8 +181,8 @@ namespace WFC.MarchingCubes
                 ProcessBoundaryVertices(mesh, chunkPos, chunk.Size);
 
                 // Create or update the GameObject for this chunk
-                string chunkName = $"Terrain_Chunk_{chunkPos.x}_{chunkPos.y}_{chunkPos.z}";          
-                GameObject meshObject;                                                
+                string chunkName = $"Terrain_Chunk_{chunkPos.x}_{chunkPos.y}_{chunkPos.z}";
+                GameObject meshObject;
 
                 // Try to get from dictionary first
                 if (!chunkMeshObjects.TryGetValue(chunkPos, out meshObject) || meshObject == null)
@@ -215,26 +215,41 @@ namespace WFC.MarchingCubes
                 // Reference to the renderer
                 MeshRenderer meshRenderer = meshObject.GetComponent<MeshRenderer>();
 
+                // Get reference to terrain definition
+                TerrainDefinition terrainDef = TerrainManager.Current?.CurrentTerrain;
+
                 // Apply the appropriate material based on dominant state
                 int dominantState = GetDominantState(chunk);
                 if (wfcGenerator != null && dominantState >= 0)
                 {
                     Material[] stateMaterials = TerrainStateRegistry.Instance.StateMaterials;
-
                     if (stateMaterials != null && stateMaterials.Length > dominantState && stateMaterials[dominantState] != null)
                     {
                         meshRenderer.material = stateMaterials[dominantState];
                         if (enableDetailedLogging) Debug.Log($"Applied material for state {dominantState} to chunk {chunkPos}");
                     }
+                    else if (terrainDef != null && terrainDef.groundMaterial != null)
+                    {
+                        // Use ground material from terrain definition as fallback
+                        meshRenderer.material = terrainDef.groundMaterial;
+                        if (enableDetailedLogging) Debug.Log($"Using fallback ground material for chunk {chunkPos} - state {dominantState}");
+                    }
                     else
                     {
+                        // Use default material as ultimate fallback
                         meshRenderer.material = terrainMaterial;
-                        Debug.LogError($"Material for state {dominantState} not found. Using default material.");
-                        if (enableDetailedLogging) Debug.Log($"Using fallback material for chunk {chunkPos} - state {dominantState}");
+                        if (enableDetailedLogging) Debug.Log($"Using default material for chunk {chunkPos} - no ground material available");
                     }
+                }
+                else if (terrainDef != null && terrainDef.groundMaterial != null)
+                {
+                    // Use ground material from terrain definition
+                    meshRenderer.material = terrainDef.groundMaterial;
+                    if (enableDetailedLogging) Debug.Log($"Using ground material for chunk {chunkPos}");
                 }
                 else
                 {
+                    // Use default material
                     meshRenderer.material = terrainMaterial;
                     if (enableDetailedLogging) Debug.Log($"Using default material for chunk {chunkPos}");
                 }
@@ -244,6 +259,7 @@ namespace WFC.MarchingCubes
                 {
                     wfcGenerator.GenerateTreeModels(chunk);
                 }
+
                 // Set up LOD if enabled
                 if (useUnityLODSystem)
                 {

@@ -13,32 +13,12 @@ namespace WFC.Terrain
         public float valleyWidth = 0.3f;
         public float forestDensity = 0.6f;
 
-        [Serializable]
-        public class TerrainMaterialSettings
-        {
-            public Material material;
-            public float smoothness = 0.5f;
-            public float metallic = 0.0f;
-            public Texture2D mainTexture;
-            public Texture2D normalMap;
-            public Color tintColor = Color.white;
-            public float tiling = 1.0f;
-        }
-
         [Header("Visual Settings")]
         [Range(0.1f, 5.0f)] public float terrainRoughness = 1.0f;
         [Range(0.1f, 2.0f)] public float grassDensity = 1.0f;
         [Range(0.1f, 3.0f)] public float rockSharpness = 1.0f;
         [Range(0.1f, 1.0f)] public float snowCoverage = 0.3f;
 
-        [Header("Material Settings")]
-        public TerrainMaterialSettings groundMaterialSettings;
-        public TerrainMaterialSettings grassMaterialSettings;
-        public TerrainMaterialSettings rockMaterialSettings;
-        public TerrainMaterialSettings sandMaterialSettings;
-        public TerrainMaterialSettings forestMaterialSettings;
-        public TerrainMaterialSettings snowMaterialSettings;
-        public TerrainMaterialSettings cliffMaterialSettings;
         public enum TerrainStateId
         {
             Air = 0,
@@ -69,11 +49,11 @@ namespace WFC.Terrain
 
             // Group solid terrain states
             int[] solidStates = {
-        (int)TerrainStateId.Ground, (int)TerrainStateId.Grass,
-        (int)TerrainStateId.Rock, (int)TerrainStateId.Sand,
-        (int)TerrainStateId.Cliff, (int)TerrainStateId.SnowCap,
-        (int)TerrainStateId.Forest
-    };
+                (int)TerrainStateId.Ground, (int)TerrainStateId.Grass,
+                (int)TerrainStateId.Rock, (int)TerrainStateId.Sand,
+                (int)TerrainStateId.Cliff, (int)TerrainStateId.SnowCap,
+                (int)TerrainStateId.Forest
+            };
 
             // Allow solid states to connect to each other
             foreach (int stateA in solidStates)
@@ -95,7 +75,7 @@ namespace WFC.Terrain
             }
 
             // Create special adjacency rules for valley floor transitions
-            // Ensure sand can connect to grass and ground properly for natural transitions
+            // Ensuringgggggggggggg sand can connect to grass and ground properly for natural transitions
             rules[(int)TerrainStateId.Sand, (int)TerrainStateId.Grass, (int)Direction.Left] = true;
             rules[(int)TerrainStateId.Sand, (int)TerrainStateId.Grass, (int)Direction.Right] = true;
             rules[(int)TerrainStateId.Sand, (int)TerrainStateId.Grass, (int)Direction.Forward] = true;
@@ -131,24 +111,20 @@ namespace WFC.Terrain
             Dictionary<int, float> densities = new Dictionary<int, float>();
 
             // For marching cubes algorithm:
-            // - Values ABOVE the surface level (0.5) = inside terrain (solid)  // Changed this after submission
-            // - Values BELOW the surface level (0.5) = outside terrain (air)   // Changed this after submission
+            // - Values ABOVE the surface level (0.5) = inside terrain (solid)
+            // - Values BELOW the surface level (0.5) = outside terrain (air)
 
             // Air should be high density (outside terrain)
-            densities[(int)TerrainStateId.Air] = 0.1f;      // Changed this after submission
+            densities[(int)TerrainStateId.Air] = 0.1f;
 
             // Ground states should be low density (inside terrain)
-            densities[(int)TerrainStateId.Ground] = 0.8f;       // Changed these following after submission
+            densities[(int)TerrainStateId.Ground] = 0.8f;
             densities[(int)TerrainStateId.Grass] = 0.75f;
             densities[(int)TerrainStateId.Rock] = 0.85f; // More solid
             densities[(int)TerrainStateId.Cliff] = 0.9f; // Very solid
             densities[(int)TerrainStateId.SnowCap] = 0.8f;
             densities[(int)TerrainStateId.Sand] = 0.7f;
             densities[(int)TerrainStateId.Forest] = 0.8f;
-
-            // Water slightly below surface level
-            //densities[(int)TerrainStateId.Water] = 0.45f;
-            //densities[(int)TerrainStateId.DeepWater] = 0.35f;
 
             return densities;
         }
@@ -166,14 +142,13 @@ namespace WFC.Terrain
 
             // Register all terrain states for the mountain valley terrain
             RegisterTerrainState(registry, TerrainStateId.Air, "Air", Color.clear, 0.1f);
-            RegisterTerrainState(registry, TerrainStateId.Ground, "Ground", new Color(0.5f, 0.4f, 0.3f), 0.8f, groundMaterialSettings?.material);
-            RegisterTerrainState(registry, TerrainStateId.Grass, "Grass", new Color(0.2f, 0.8f, 0.2f), 0.85f, grassMaterialSettings?.material);
-            //RegisterTerrainState(registry, TerrainStateId.Water, "Water", new Color(0.0f, 0.4f, 0.8f), 0.7f, waterMaterialSettings?.material);
-            RegisterTerrainState(registry, TerrainStateId.Rock, "Rock", new Color(0.6f, 0.6f, 0.6f), 0.9f, rockMaterialSettings?.material);
-            RegisterTerrainState(registry, TerrainStateId.Sand, "Sand", new Color(0.9f, 0.8f, 0.5f), 0.82f, sandMaterialSettings?.material);
-            RegisterTerrainState(registry, TerrainStateId.Forest, "Forest", new Color(0.1f, 0.6f, 0.1f), 0.85f, forestMaterialSettings?.material);
-            RegisterTerrainState(registry, TerrainStateId.SnowCap, "Snow", new Color(0.9f, 0.9f, 0.95f), 0.85f, snowMaterialSettings?.material);
-            RegisterTerrainState(registry, TerrainStateId.Cliff, "Cliff", new Color(0.4f, 0.4f, 0.4f), 0.95f, cliffMaterialSettings?.material);
+            RegisterTerrainState(registry, TerrainStateId.Ground, "Ground", new Color(0.5f, 0.4f, 0.3f), 0.8f, groundMaterial);
+            RegisterTerrainState(registry, TerrainStateId.Grass, "Grass", new Color(0.2f, 0.8f, 0.2f), 0.85f, grassMaterial);
+            RegisterTerrainState(registry, TerrainStateId.Rock, "Rock", new Color(0.6f, 0.6f, 0.6f), 0.9f, groundMaterial);
+            RegisterTerrainState(registry, TerrainStateId.Sand, "Sand", new Color(0.9f, 0.8f, 0.5f), 0.82f, sandMaterial);
+            RegisterTerrainState(registry, TerrainStateId.Forest, "Forest", new Color(0.1f, 0.6f, 0.1f), 0.85f, grassMaterial);
+            RegisterTerrainState(registry, TerrainStateId.SnowCap, "Snow", new Color(0.9f, 0.9f, 0.95f), 0.85f, groundMaterial);
+            RegisterTerrainState(registry, TerrainStateId.Cliff, "Cliff", new Color(0.4f, 0.4f, 0.4f), 0.95f, groundMaterial);
         }
 
         private void RegisterTerrainState(TerrainStateRegistry registry, TerrainStateId stateId, string name,
@@ -192,50 +167,6 @@ namespace WFC.Terrain
                 Color = color,
                 IsTraversable = stateId != TerrainStateId.Water && stateId != TerrainStateId.Cliff,
             }, "MountainValley");
-        }
-
-        public void ApplyMaterialSettings()
-        {
-            for (int i = 0; i < (int)TerrainStateId.DeepWater + 1; i++)
-            {
-                Material material = TerrainStateRegistry.Instance.StateMaterials[i];
-                if (material != null)
-                {
-                    // Get corresponding material settings
-                    TerrainMaterialSettings settings = GetMaterialSettingsForState((TerrainStateId)i);
-                    if (settings != null && settings.material != null)
-                    {
-                        // Apply material settings
-                        material.SetFloat("_Smoothness", settings.smoothness);
-                        material.SetFloat("_Metallic", settings.metallic);
-
-                        if (settings.mainTexture != null)
-                            material.SetTexture("_MainTex", settings.mainTexture);
-
-                        if (settings.normalMap != null)
-                            material.SetTexture("_BumpMap", settings.normalMap);
-
-                        material.SetColor("_Color", settings.tintColor);
-                        material.SetFloat("_Tiling", settings.tiling);
-                    }
-                }
-            }
-        }
-
-        private TerrainMaterialSettings GetMaterialSettingsForState(TerrainStateId state)
-        {
-            switch (state)
-            {
-                case TerrainStateId.Ground: return groundMaterialSettings;
-                case TerrainStateId.Grass: return grassMaterialSettings;
-                //case TerrainStateId.Water: return waterMaterialSettings;
-                case TerrainStateId.Rock: return rockMaterialSettings;
-                case TerrainStateId.Sand: return sandMaterialSettings;
-                case TerrainStateId.Forest: return forestMaterialSettings;
-                case TerrainStateId.SnowCap: return snowMaterialSettings;
-                case TerrainStateId.Cliff: return cliffMaterialSettings;
-                default: return null;
-            }
         }
     }
 }

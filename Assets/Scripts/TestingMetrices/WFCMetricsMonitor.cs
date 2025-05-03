@@ -1515,7 +1515,7 @@ namespace WFC.Metrics
                     int processingCount = parallelProcessor.ProcessingChunksCount;
                     int completedJobs = parallelProcessor.TotalProcessedJobs;
 
-                    // If no more processing chunks and we've queued some, we're done
+                    // If no more processing chunks 
                     if (processingCount == 0 && chunksQueued > 0)
                     {
                         Debug.Log("No more processing chunks - test complete");
@@ -1773,7 +1773,7 @@ namespace WFC.Metrics
                         lastActiveCount = activeChunks;
                     }
 
-                    // If we reach 90% of created chunks active, we're done
+                    // If reach 90% of created chunks active
                     if (activeChunks >= chunksCreated * 0.9f)
                     {
                         Debug.Log($"World size test: {activeChunks}/{chunksCreated} chunks active - proceeding");
@@ -1928,7 +1928,7 @@ namespace WFC.Metrics
                 Debug.LogError($"Error finding reset method: {e.Message}");
             }
 
-            // If we found a reset method, use it
+            // If found a reset method, use it
             if (resetMethod != null)
             {
                 bool resetSuccess = false;
@@ -1951,7 +1951,7 @@ namespace WFC.Metrics
                 }
             }
 
-            // If we get here, we need to manually remove chunks
+            // If need to manually remove chunks
             List<Vector3Int> chunkPositions = new List<Vector3Int>();
             try
             {
@@ -1964,7 +1964,7 @@ namespace WFC.Metrics
                 Debug.LogError($"Error getting chunk positions: {e.Message}");
             }
 
-            // Now we can safely use yield with the positions we collected
+            // Now can safely use yield with the positions collected
             foreach (var chunkPos in chunkPositions)
             {
                 UnloadSingleChunk(chunkPos);
@@ -2017,36 +2017,6 @@ namespace WFC.Metrics
             if (field != null)
                 field.SetValue(chunkManager, distance);
         }
-
-        //private IEnumerator CleanupTestChunks()
-        //{
-        //    if (chunkManager == null)
-        //        yield break;
-
-        //    // Try to call reset method on chunk manager
-        //    var resetMethod = chunkManager.GetType().GetMethod("ResetChunkSystem", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-        //    if (resetMethod != null)
-        //    {
-        //        resetMethod.Invoke(chunkManager, null);
-        //        yield return new WaitForSeconds(0.5f);
-        //    }
-        //    else
-        //    {
-        //        // Manually remove chunks
-        //        var chunks = chunkManager.GetLoadedChunks();
-        //        foreach (var chunkPos in chunks.Keys.ToList())
-        //        {
-        //            // Try to call unload method
-        //            var unloadMethod = chunkManager.GetType().GetMethod("UnloadChunk", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-        //            if (unloadMethod != null)
-        //                unloadMethod.Invoke(chunkManager, new object[] { chunkPos });
-
-        //            yield return null;
-        //        }
-        //    }
-        //}
 
         #endregion
 
@@ -2265,7 +2235,7 @@ namespace WFC.Metrics
         private void UpdateTestProgress()
         {
             // This method is called by Update when tests are running
-            // Currently it's empty but could be used to update real-time progress
+            // Needs to be implementeddd :)
         }
 
         private void LogMetricsToConsole()

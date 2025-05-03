@@ -180,7 +180,7 @@ namespace WFC.Generation
             if (parallelProcessor != null)
                 parallelProcessor.ProcessMainThreadEvents();
 
-            // Check if we need to collapse more cells
+            // Check if need to collapse more cells
             if (propagationQueue.Count == 0)
                 CollapseNextCell();
         }
@@ -525,7 +525,7 @@ namespace WFC.Generation
             float maxBias = biases.Values.Max(Mathf.Abs);
             float collapseThreshold = Mathf.Lerp(0.9f, 0.5f, maxBias * chunk.ConstraintInfluence);
 
-            // Find if we have a highly dominant state
+            // Find if have a highly dominant state
             foreach (var state in stateWeights.Keys.ToList())
             {
                 float normalizedWeight = stateWeights[state] / totalWeight;
