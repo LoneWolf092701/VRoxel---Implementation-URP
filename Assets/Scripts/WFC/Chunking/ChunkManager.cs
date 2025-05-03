@@ -1,34 +1,12 @@
-/*
- * ChunkManager
- * -----------------------------
- * Manages the dynamic loading, unloading, and processing of terrain chunks.
- * 
- * This system enables an "infinite" procedural world by:
- * 1. Tracking the viewer's position and movement
- * 2. Predictively loading chunks in the viewer's path
- * 3. Unloading distant chunks to conserve memory
- * 4. Prioritizing chunks based on distance, view alignment, and other factors
- * 5. Managing the full lifecycle of chunks from creation through collapse to mesh generation
- * 
- * The chunk management approach is adaptive, adjusting its behavior based on:
- * - System performance (FPS)
- * - Viewer movement patterns
- * - Distance from viewer
- * - Level of detail requirements
- * 
- * This allows the system to scale across different hardware capabilities
- * while maintaining a smooth experience.
- */
 using System.Collections.Generic;
 using UnityEngine;
 using WFC.Core;
 using System.Linq;
-using Utils; // For PriorityQueue
-using WFC.Processing; // For WFCGenerator
+using Utils;
+using WFC.Processing;
 using WFC.Generation;
-using WFC.Configuration; // For configuration
+using WFC.Configuration;
 using System.Collections;
-using System.Diagnostics;
 using Debug = UnityEngine.Debug;
 using WFC.Performance;
 using WFC.MarchingCubes;
@@ -39,15 +17,14 @@ using WFC.Terrain;
 namespace WFC.Chunking
 {
     /// <summary>
-    /// Updated ChunkManager that uses the central configuration system,
-    /// implements advanced predictive generation, and properly manages chunk lifecycle
+    /// Manages the dynamic loading, unloading, and processing of terrain chunks
+    /// for an infinite procedural world using Wave Function Collapse algorithm.
     /// </summary>
     public class ChunkManager : MonoBehaviour
     {
         #region Configuration and References
 
         [Header("Configuration")]
-        [Tooltip("Override the global configuration with a specific asset")]
         [SerializeField] private WFCConfiguration configOverride;
 
         [Header("References")]
@@ -55,18 +32,17 @@ namespace WFC.Chunking
         [SerializeField] private WFCGenerator wfcGenerator;
         [SerializeField] private PerformanceMonitor performanceMonitor;
         [SerializeField] private MeshGenerator meshGenerator;
+        [SerializeField] private GlobalHeightmapController heightmapController;
         private BoundaryBufferManager boundaryManager;
 
-
         [Header("Prediction Settings")]
-        [SerializeField] private int movementHistorySize = 60; // Store 60 frames of movement history
-        [SerializeField] private float basePredictionTime = 2.0f; // Default look ahead time
+        [SerializeField] private int movementHistorySize = 60;
+        [SerializeField] private float basePredictionTime = 2.0f;
 
         [Header("Debug Settings")]
         [SerializeField] private bool enableDebugLogging = false;
-        [SerializeField] private string currentTerrainType = "MountainValley"; // Default terrain
+        [SerializeField] private string currentTerrainType = "MountainValley";
         private ITerrainGenerator terrainGenerator;
-        private TerrainDefinition terrainDefinition;
 
         #endregion
 
@@ -74,11 +50,7 @@ namespace WFC.Chunking
 
         // State management
         private Dictionary<Vector3Int, ChunkState> chunkStates = new Dictionary<Vector3Int, ChunkState>();
-
-        // Loaded chunks
         private Dictionary<Vector3Int, Chunk> loadedChunks = new Dictionary<Vector3Int, Chunk>();
-
-        // Tasks queue
         private PriorityQueue<ChunkTask, float> chunkTasks = new PriorityQueue<ChunkTask, float>();
 
         // Parallel processing
@@ -89,25 +61,20 @@ namespace WFC.Chunking
         private Vector3 viewerPosition;
         private Vector3 viewerVelocity;
         private Vector3 lastViewerPosition;
-
         private Vector3 predictedViewerPosition;
         private Vector3 viewerAcceleration;
         private Vector3 lastViewerVelocity;
-        private float predictionTime = 2.0f; // Look ahead time (adaptive)
-
-        // Movement history for advanced prediction
+        private float predictionTime = 2.0f;
         private Queue<MovementSample> movementHistory = new Queue<MovementSample>();
 
         // Adaptive loading parameters
         private float currentLoadDistance;
         private int maxConcurrentChunks;
         private HierarchicalConstraintSystem hierarchicalConstraints;
-
-        // Cache for configuration access
         private WFCConfiguration activeConfig;
-
-        // Events and timing
         private float lastChunkStateCleanupTime = 0f;
+        private Vector3 lastChunkGenerationPosition;
+        private float chunkGenerationDistance = 10f;
 
         // Chunk state change event
         public delegate void ChunkStateChangeHandler(Vector3Int chunkPos, ChunkLifecycleState oldState, ChunkLifecycleState newState);
@@ -117,24 +84,16 @@ namespace WFC.Chunking
 
         #region Properties
 
-        // Properties use configuration
         private int ChunkSize => activeConfig.World.chunkSize;
-        private float LoadDistance => currentLoadDistance; // Using adaptive distance
+        private float LoadDistance => currentLoadDistance;
         private float UnloadDistance => activeConfig.Performance.unloadDistance;
-        private int MaxConcurrentChunks => maxConcurrentChunks; // Adaptive
+        private int MaxConcurrentChunks => maxConcurrentChunks;
 
-        private Vector3 lastChunkGenerationPosition;
-        private float chunkGenerationDistance = 10f; // Distance player must move before generating new chunks
-
-        [SerializeField] private GlobalHeightmapController heightmapController;
-
-        // World properties
         public Vector3Int WorldSize => new Vector3Int(
             activeConfig.World.worldSizeX,
             activeConfig.World.worldSizeY,
             activeConfig.World.worldSizeZ
         );
-
 
         #endregion
 
@@ -142,8 +101,7 @@ namespace WFC.Chunking
 
         private void Start()
         {
-
-            // Get the configuration - use override if specified, otherwise use global config
+            // Get configuration
             activeConfig = configOverride != null ? configOverride : WFCConfigManager.Config;
 
             if (activeConfig == null)
@@ -153,68 +111,46 @@ namespace WFC.Chunking
                 return;
             }
 
-            // Validate configuration
             if (!activeConfig.Validate())
-            {
                 Debug.LogWarning("ChunkManager: Using configuration with validation issues.");
-            }
 
-            // Initialize references
             InitializeReferences();
 
             // Initialize adaptive parameters
             currentLoadDistance = activeConfig.Performance.loadDistance;
             maxConcurrentChunks = activeConfig.Performance.maxConcurrentChunks;
 
-            // Start adaptive strategy coroutine
+            // Start coroutines
             StartCoroutine(AdaptiveStrategyUpdateCoroutine());
-
-            // Use a more robust delayed initialization approach
             StartCoroutine(RobustDelayedChunkGeneration());
 
+            // Create initial chunk at viewer position
             Vector3Int viewerChunk = new Vector3Int(
                 Mathf.FloorToInt(viewerPosition.x / ChunkSize),
                 Mathf.FloorToInt(viewerPosition.y / ChunkSize),
                 Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
-            lastChunkGenerationPosition = Vector3.zero; // Initialize this to ensure generation happens
-            Debug.Log($"Initial viewer chunk: {viewerChunk}");
-            CreateChunkAt(viewerChunk); // Force creation of the initial chunk
+            lastChunkGenerationPosition = Vector3.zero;
+            CreateChunkAt(viewerChunk);
 
-            lastChunkGenerationPosition = Vector3.zero; // Initialize this to ensure the generation happens
-
-            // Initialization
+            // Initialize boundary manager
             boundaryManager = new BoundaryBufferManager((IWFCAlgorithm)wfcGenerator);
-
-            Debug.Log($"ChunkManager Start completed. Initial viewer position: {(viewer != null ? viewer.position.ToString() : "No viewer")}");
-            
         }
 
-        /// <summary>
-        /// A more robust coroutine that waits multiple frames and verifies the viewer position
-        /// before generating any chunks
-        /// </summary>
         private IEnumerator RobustDelayedChunkGeneration()
         {
-            // Wait for 3 frames to ensure more complete initialization
+            // Wait for frames to ensure complete initialization
             for (int i = 0; i < 3; i++)
-            {
                 yield return null;
-            }
 
-            // Force update the viewer position
+            // Force update viewer position
             if (viewer != null)
             {
-                // Update both position trackers
                 viewerPosition = viewer.position;
                 lastViewerPosition = viewer.position;
 
-                Debug.Log($"Delayed chunk generation - Viewer position: {viewerPosition}");
-
-                // Verify have a non-zero position
                 if (viewerPosition.magnitude < 0.001f)
                 {
-                    Debug.LogWarning("Player position is still at or near origin. Waiting longer...");
                     yield return new WaitForSeconds(0.5f);
                     viewerPosition = viewer.position;
                     lastViewerPosition = viewer.position;
@@ -226,28 +162,21 @@ namespace WFC.Chunking
                 yield break;
             }
 
-            // Clear any existing chunks (especially at origin)
+            // Clear existing chunks except those near player
             foreach (var chunkPos in loadedChunks.Keys.ToList())
             {
-                // Skip if it's a chunk around the player
                 if (Vector3.Distance(
                     new Vector3(chunkPos.x * ChunkSize, chunkPos.y * ChunkSize, chunkPos.z * ChunkSize),
                     viewerPosition) < ChunkSize * 5)
-                {
                     continue;
-                }
 
-                // Otherwise, unload it
-                Debug.Log($"Removing unwanted chunk at {chunkPos}");
                 UnloadChunk(chunkPos);
             }
 
-            // Generate chunks around the player
-            Debug.Log($"Generating chunks around player at position: {viewerPosition}");
+            // Generate chunks around player
             CreateChunksAroundPlayer();
         }
 
-        // Reference initialization
         private void InitializeReferences()
         {
             if (viewer == null)
@@ -273,11 +202,9 @@ namespace WFC.Chunking
             if (performanceMonitor == null)
                 performanceMonitor = FindAnyObjectByType<PerformanceMonitor>();
 
-            // Get hierarchical constraint system reference
+            // Get hierarchical constraint system
             if (wfcGenerator != null)
-            {
                 hierarchicalConstraints = wfcGenerator.GetHierarchicalConstraintSystem();
-            }
         }
 
         #endregion
@@ -288,11 +215,12 @@ namespace WFC.Chunking
         {
             UpdateViewerData();
 
-            ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
-            if (parallelManager != null && parallelProcessor == null)
+            // Connect to parallel manager if available
+            if (parallelProcessor == null)
             {
-                parallelProcessor = parallelManager.GetParallelProcessor();
-                Debug.Log("Connected to ParallelWFCManager for parallel processing");
+                ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
+                if (parallelManager != null)
+                    parallelProcessor = parallelManager.GetParallelProcessor();
             }
 
             // Check if player has moved far enough to generate new chunks
@@ -300,45 +228,27 @@ namespace WFC.Chunking
             {
                 CreateChunksAroundPlayer();
                 lastChunkGenerationPosition = viewerPosition;
-                Debug.Log($"Player moved to {viewerPosition}, generating new chunks");
             }
 
             // Calculate predicted position using advanced prediction
             predictedViewerPosition = PredictFuturePosition(predictionTime);
 
-            // Update chunk priorities
+            // Update chunk management
             UpdateChunkPriorities();
-
-            // Assign LOD levels based on distance
             AssignLODLevels();
-
-            // Manage chunks (load/unload)
             ManageChunks();
-
-            // Process chunk tasks
             ProcessChunkTasks();
-
-            // Process dirty chunks that need mesh generation
             ProcessDirtyChunks();
-
-            // Optimize memory for inactive chunks
             OptimizeInactiveChunks();
-
-            // Periodically clean up chunk states
             CleanupStaleChunkStates();
 
-            // Debug output
-            Debug.Log($"Viewer position: {viewerPosition}, Predicted: {predictedViewerPosition}, Chunk: {new Vector3Int(Mathf.FloorToInt(viewerPosition.x / ChunkSize), Mathf.FloorToInt(viewerPosition.y / ChunkSize), Mathf.FloorToInt(viewerPosition.z / ChunkSize))}");
+            // Player input for manual chunk generation
             if (Input.GetKeyDown(KeyCode.P))
-            {
                 CreateChunksAroundPlayer();
-            }
         }
 
-        // Chunk management
         private void ProcessDirtyChunks()
         {
-            // Find chunks that need mesh generation
             foreach (var chunkEntry in loadedChunks)
             {
                 Vector3Int chunkPos = chunkEntry.Key;
@@ -359,14 +269,7 @@ namespace WFC.Chunking
                     };
 
                     chunkTasks.Enqueue(meshTask, meshTask.Priority);
-
-                    // Mark as not dirty to prevent duplicate tasks
                     chunk.IsDirty = false;
-
-                    if (enableDebugLogging)
-                    {
-                        Debug.Log($"Queued mesh generation for dirty chunk at {chunkPos}");
-                    }
                 }
             }
         }
@@ -464,12 +367,6 @@ namespace WFC.Chunking
             // Update the state
             state.TransitionTo(newState);
 
-            // Debug.Log state change if debug logging is enabled
-            if (enableDebugLogging && (newState == ChunkLifecycleState.Error || oldState == ChunkLifecycleState.Error))
-            {
-                Debug.Log($"Chunk {chunkPos} state changed: {oldState} -> {newState}");
-            }
-
             // Trigger events
             OnChunkStateChanged?.Invoke(chunkPos, oldState, newState);
         }
@@ -480,9 +377,7 @@ namespace WFC.Chunking
         public ChunkLifecycleState GetChunkState(Vector3Int chunkPos)
         {
             if (chunkStates.TryGetValue(chunkPos, out ChunkState state))
-            {
                 return state.State;
-            }
 
             return ChunkLifecycleState.None;
         }
@@ -497,7 +392,6 @@ namespace WFC.Chunking
                 return;
 
             lastChunkStateCleanupTime = Time.time;
-
             List<Vector3Int> stateKeysToRemove = new List<Vector3Int>();
 
             foreach (var entry in chunkStates)
@@ -511,9 +405,8 @@ namespace WFC.Chunking
                 {
                     stateKeysToRemove.Add(chunkPos);
                 }
-
                 // Reset chunks that have been stuck in Pending or Loading state for too long
-                if ((state.State == ChunkLifecycleState.Pending ||
+                else if ((state.State == ChunkLifecycleState.Pending ||
                      state.State == ChunkLifecycleState.Loading) &&
                      state.GetTimeInCurrentState() > 30f)
                 {
@@ -522,20 +415,16 @@ namespace WFC.Chunking
                         // Retry up to 3 times
                         state.ProcessingAttempts++;
                         state.TransitionTo(ChunkLifecycleState.None);
-
-                        Debug.Log($"Resetting stuck chunk {chunkPos} (Attempt {state.ProcessingAttempts})");
                     }
                     else
                     {
                         // After 3 attempts, mark as error
                         state.TransitionTo(ChunkLifecycleState.Error);
                         state.LastError = "Exceeded maximum processing attempts";
-                        Debug.LogWarning($"Chunk {chunkPos} failed to load after {state.ProcessingAttempts} attempts");
                     }
                 }
-
                 // Clean up error states after a while
-                if (state.State == ChunkLifecycleState.Error &&
+                else if (state.State == ChunkLifecycleState.Error &&
                     state.GetTimeInCurrentState() > 120f)
                 {
                     stateKeysToRemove.Add(chunkPos);
@@ -544,45 +433,16 @@ namespace WFC.Chunking
 
             // Remove the states
             foreach (var key in stateKeysToRemove)
-            {
                 chunkStates.Remove(key);
-            }
-
-            if (stateKeysToRemove.Count > 0)
-            {
-                Debug.Log($"Cleaned up {stateKeysToRemove.Count} stale chunk states");
-            }
         }
 
         #endregion
 
-        #region Advanced Movement Prediction
+        #region Movement Prediction
 
-        /*
-         * PredictFuturePosition
-         * -----------------------------
-         * Advanced movement prediction system to anticipate where the viewer will be.
-         * 
-         * This predictive loading approach uses motion analysis to:
-         * 1. Analyze recent movement history for patterns
-         * 2. Calculate instantaneous velocity and acceleration
-         * 3. Evaluate longer-term direction consistency
-         * 4. Apply a physics-based prediction model including jerk (rate of change of acceleration)
-         * 
-         * The prediction formula is an extended version of the standard kinematic equation:
-         * P = P0 + V*t + 1/2A*t2 + 1/6J*t3
-         * 
-         * Where:
-         * - P = predicted position
-         * - P0 = current position
-         * - V = velocity
-         * - A = acceleration
-         * - J = jerk
-         * - t = time (adjusted based on movement consistency)
-         * 
-         * This predictive approach significantly improves terrain loading responsiveness
-         * by anticipating viewer movement and preparing terrain before it's needed.
-         */
+        /// <summary>
+        /// Predicts future viewer position based on movement history
+        /// </summary>
         private Vector3 PredictFuturePosition(float predictionTimeSeconds)
         {
             // If not enough history, use simple prediction
@@ -593,13 +453,11 @@ namespace WFC.Chunking
                        0.5f * viewerAcceleration * predictionTimeSeconds * predictionTimeSeconds;
             }
 
-            // Calculate acceleration trends (not just instantaneous)
+            // Calculate acceleration trends
             Vector3 avgAcceleration = CalculateAverageAcceleration(movementHistory);
 
-            // Detect if player is following a path vs random movement
+            // Detect movement consistency and adjust prediction time
             float directionConsistency = CalculateDirectionConsistency(movementHistory);
-
-            // Adjust prediction time based on movement consistency
             float adjustedPredictionTime = predictionTimeSeconds * Mathf.Lerp(0.5f, 1.5f, directionConsistency);
 
             // Enhanced prediction with jerk (rate of change of acceleration)
@@ -615,9 +473,7 @@ namespace WFC.Chunking
         // Calculate direction consistency based on movement history
         private float CalculateDirectionConsistency(Queue<MovementSample> history)
         {
-            // Higher values (closer to 1.0) indicate more consistent direction
-            // Lower values indicate erratic movement
-            if (history.Count < 3) return 0.8f; // Default value
+            if (history.Count < 3) return 0.8f;
 
             Vector3 avgDirection = Vector3.zero;
             float totalSamples = 0;
@@ -634,7 +490,7 @@ namespace WFC.Chunking
             if (totalSamples < 1) return 0.8f;
 
             avgDirection /= totalSamples;
-            return Mathf.Clamp01(avgDirection.magnitude); // 1.0 = perfectly consistent
+            return Mathf.Clamp01(avgDirection.magnitude);
         }
 
         // Calculate average acceleration from movement history
@@ -644,15 +500,12 @@ namespace WFC.Chunking
 
             Vector3 avgAcceleration = Vector3.zero;
             int count = 0;
-
-            // Get array representation for easier index access
             MovementSample[] samples = history.ToArray();
 
-            // Calculate acceleration between consecutive samples
             for (int i = 2; i < samples.Length; i++)
             {
                 float timeDelta = samples[i].timestamp - samples[i - 1].timestamp;
-                if (timeDelta > 0.001f) // Avoid division by very small numbers
+                if (timeDelta > 0.001f)
                 {
                     Vector3 accel = (samples[i].velocity - samples[i - 1].velocity) / timeDelta;
                     avgAcceleration += accel;
@@ -660,10 +513,7 @@ namespace WFC.Chunking
                 }
             }
 
-            if (count > 0)
-                return avgAcceleration / count;
-
-            return viewerAcceleration; // Fallback
+            return count > 0 ? avgAcceleration / count : viewerAcceleration;
         }
 
         // Calculate jerk (rate of change of acceleration) from movement history
@@ -673,11 +523,8 @@ namespace WFC.Chunking
 
             Vector3 avgJerk = Vector3.zero;
             int count = 0;
-
-            // Get array representation for easier index access
             MovementSample[] samples = history.ToArray();
 
-            // Calculate jerk (derivative of acceleration) between samples
             for (int i = 3; i < samples.Length; i++)
             {
                 float timeDelta1 = samples[i - 1].timestamp - samples[i - 2].timestamp;
@@ -698,10 +545,7 @@ namespace WFC.Chunking
                 }
             }
 
-            if (count > 0)
-                return avgJerk / count;
-
-            return Vector3.zero; // Fallback
+            return count > 0 ? avgJerk / count : Vector3.zero;
         }
 
         // Class to store movement samples for prediction
@@ -721,41 +565,13 @@ namespace WFC.Chunking
 
         #endregion
 
-        #region Interest-Based Prioritization
+        #region Chunk Interest and Prioritization
 
-        /*
-        * CalculateChunkInterest
-        * ----------------------------------------------------------------------------
-        * Calculates how interesting a chunk is for prioritized loading.
-        * 
-        * Multi-factorial interest calculation:
-        * 1. Distance-based interest: closer chunks are more interesting
-        *    interestDistance = 1 / (1 + distance * 0.01)
-        * 
-        * 2. View-based interest: chunks in field of view are prioritized
-        *    viewAlignment = dot(dirToChunk, viewDirection)
-        *    interestView = (viewAlignment + 1) * 0.5  // normalized to 0-1
-        * 
-        * 3. Content-based interest: partially collapsed chunks get priority
-        *    - Calculates percentage of collapsed cells
-        *    - Maximum interest for chunks 30-70% complete (reduces thrashing)
-        * 
-        * 4. Feature-based interest: chunks with special terrain features
-        *    - Checks global constraints affecting the chunk
-        *    - Higher priority for chunks with mountains, rivers, etc.
-        * 
-        * The combined weighted score determines chunk processing order,
-        * creating a more natural and visually focused loading pattern.
-        * 
-        * Parameters:
-        * - chunkPos: Position of the chunk to evaluate
-        * 
-        * Returns: Interest score between 0-1
-        */
+        /// <summary>
+        /// Calculates how interesting a chunk is for prioritized loading
+        /// </summary>
         private float CalculateChunkInterest(Vector3Int chunkPos)
         {
-            float interestScore = 0f;
-
             // Convert to world position
             Vector3 chunkWorldPos = GetChunkWorldPosition(chunkPos);
 
@@ -769,21 +585,14 @@ namespace WFC.Chunking
 
             // 3. Content-based interest (partially generated chunks = more interesting)
             float contentInterest = 0f;
-            if (loadedChunks.TryGetValue(chunkPos, out Chunk chunk))
+            if (loadedChunks.TryGetValue(chunkPos, out Chunk chunk) && !chunk.IsFullyCollapsed)
             {
-                // Partially collapsed chunks are more interesting to finish
-                if (!chunk.IsFullyCollapsed)
-                {
-                    // Calculate percentage of collapsed cells
-                    float collapsedPercentage = CalculateCollapsedPercentage(chunk);
-                    // Chunks that are 30-70% complete get priority
-                    contentInterest = 1f - Mathf.Abs(collapsedPercentage - 0.5f) * 2f;
-                }
+                float collapsedPercentage = CalculateCollapsedPercentage(chunk);
+                contentInterest = 1f - Mathf.Abs(collapsedPercentage - 0.5f) * 2f;
             }
 
             // 4. Feature-based interest (chunks with special features = more interesting)
             float featureInterest = 0f;
-            // Check if this chunk is part of a global constraint region
             if (hierarchicalConstraints != null)
             {
                 foreach (var constraint in hierarchicalConstraints.GetGlobalConstraints())
@@ -794,17 +603,14 @@ namespace WFC.Chunking
             }
 
             // Combine interest factors with weights
-            interestScore = distanceInterest * 0.4f +
-                            viewInterest * 0.3f +
-                            contentInterest * 0.2f +
-                            featureInterest * 0.1f;
-
-            return interestScore;
+            return distanceInterest * 0.4f +
+                   viewInterest * 0.3f +
+                   contentInterest * 0.2f +
+                   featureInterest * 0.1f;
         }
 
         private float GetViewAlignment(Vector3Int chunkPos)
         {
-            // Calculate how aligned the chunk is with the viewer's look direction
             Vector3 chunkCenter = GetChunkWorldPosition(chunkPos) +
                                   new Vector3(ChunkSize / 2, ChunkSize / 2, ChunkSize / 2);
 
@@ -814,18 +620,14 @@ namespace WFC.Chunking
             return Vector3.Dot(dirToChunk, viewDirection);
         }
 
-        // Calculate the world position of a chunk based on its grid position
         private float CalculateCollapsedPercentage(Chunk chunk)
         {
             if (chunk == null) return 0f;
 
-            int totalCells = chunk.Size * chunk.Size * chunk.Size;
-            int collapsedCells = 0;
-
-            // Sample cells to estimate collapse percentage (checking every cell could be expensive)
             int sampleSize = Mathf.Min(27, chunk.Size * chunk.Size * chunk.Size);
             int samplesPerDimension = Mathf.CeilToInt(Mathf.Pow(sampleSize, 1f / 3f));
             float step = chunk.Size / (float)samplesPerDimension;
+            int collapsedCells = 0;
 
             for (int x = 0; x < samplesPerDimension; x++)
             {
@@ -839,9 +641,7 @@ namespace WFC.Chunking
 
                         Cell cell = chunk.GetCell(sampleX, sampleY, sampleZ);
                         if (cell != null && cell.CollapsedState.HasValue)
-                        {
                             collapsedCells++;
-                        }
                     }
                 }
             }
@@ -856,34 +656,31 @@ namespace WFC.Chunking
         // Adaptive strategy update coroutine
         private IEnumerator AdaptiveStrategyUpdateCoroutine()
         {
-            // Update strategy less frequently than every frame
             while (true)
             {
                 AdaptChunkGenerationStrategy();
-                yield return new WaitForSeconds(0.5f); // Update every half second
+                yield return new WaitForSeconds(0.5f);
             }
         }
 
         // Adaptive chunk generation strategy
         private void AdaptChunkGenerationStrategy()
         {
-            // Update strategy based on performance metrics and viewer behavior
-
             // 1. Adjust prediction time based on viewer speed
             float viewerSpeed = viewerVelocity.magnitude;
             predictionTime = Mathf.Lerp(basePredictionTime, basePredictionTime * 2.5f, Mathf.Clamp01(viewerSpeed / 20f));
 
             // 2. Adjust generation radius based on performance
             float fps = 1f / Time.smoothDeltaTime;
-            float targetFps = 100f;   // Target FPS
+            float targetFps = 100f;
 
-            if (fps > targetFps * 1.2f) // Performance is good, can increase load distance
+            if (fps > targetFps * 1.2f)
             {
                 currentLoadDistance = Mathf.Min(
                     currentLoadDistance + 10f * Time.deltaTime,
                     activeConfig.Performance.loadDistance * 1.5f);
             }
-            else if (fps < targetFps * 0.8f) // Performance is struggling, reduce load distance
+            else if (fps < targetFps * 0.8f)
             {
                 currentLoadDistance = Mathf.Max(
                     currentLoadDistance - 20f * Time.deltaTime,
@@ -905,45 +702,26 @@ namespace WFC.Chunking
                 Chunk chunk = chunkEntry.Value;
 
                 // Calculate distance from viewer
-                float distance = Vector3.Distance(
-                    GetChunkWorldPosition(chunkPos),
-                    viewerPosition);
+                float distance = Vector3.Distance(GetChunkWorldPosition(chunkPos), viewerPosition);
 
                 // Far chunks (beyond unload distance but still kept)
                 if (distance > UnloadDistance * 0.8f)
                 {
-                    // Check if chunk is being processed
-                    bool isProcessing = false;
-                    if (parallelProcessor != null)
-                    {
-                        isProcessing = parallelProcessor.IsChunkBeingProcessed(chunkPos);
-                    }
+                    bool isProcessing = parallelProcessor != null && parallelProcessor.IsChunkBeingProcessed(chunkPos);
 
                     if (!isProcessing && !chunk.IsMemoryOptimized)
                     {
-                        OptimizeChunkMemory(chunk);
+                        chunk.OptimizeMemory();
                         chunk.IsMemoryOptimized = true;
                     }
                 }
                 else if (chunk.IsMemoryOptimized && distance < UnloadDistance * 0.7f)
                 {
                     // Restore full chunk data when coming back into range
-                    RestoreChunkFromOptimized(chunk);
+                    chunk.RestoreFromOptimized();
                     chunk.IsMemoryOptimized = false;
                 }
             }
-        }
-
-        private void OptimizeChunkMemory(Chunk chunk)
-        {
-            // This is implemented in the Chunk class
-            chunk.OptimizeMemory();
-        }
-
-        private void RestoreChunkFromOptimized(Chunk chunk)
-        {
-            // This is implemented in the Chunk class
-            chunk.RestoreFromOptimized();
         }
 
         #endregion
@@ -968,13 +746,9 @@ namespace WFC.Chunking
                 for (int i = 0; i < activeConfig.Performance.lodSettings.lodDistanceThresholds.Length; i++)
                 {
                     if (distance > activeConfig.Performance.lodSettings.lodDistanceThresholds[i])
-                    {
                         lodLevel = i + 1;
-                    }
                     else
-                    {
                         break;
-                    }
                 }
 
                 // Only update if LOD level changed
@@ -999,37 +773,21 @@ namespace WFC.Chunking
 
             // Get max iterations for this LOD level
             if (lodLevel < activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length)
-            {
                 maxIterations = activeConfig.Performance.lodSettings.maxIterationsPerLOD[lodLevel];
-            }
             else if (activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length > 0)
-            {
-                // Use the last defined value
                 maxIterations = activeConfig.Performance.lodSettings.maxIterationsPerLOD[
                     activeConfig.Performance.lodSettings.maxIterationsPerLOD.Length - 1];
-            }
             else
-            {
-                // Fallback to default
                 maxIterations = activeConfig.Algorithm.maxIterationsPerChunk;
-            }
 
             // Get constraint influence for this LOD level
             if (lodLevel < activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length)
-            {
                 constraintInfluence = activeConfig.Performance.lodSettings.constraintInfluencePerLOD[lodLevel];
-            }
             else if (activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length > 0)
-            {
-                // Use the last defined value
                 constraintInfluence = activeConfig.Performance.lodSettings.constraintInfluencePerLOD[
                     activeConfig.Performance.lodSettings.constraintInfluencePerLOD.Length - 1];
-            }
             else
-            {
-                // Fallback to full influence
                 constraintInfluence = 1.0f;
-            }
 
             // Apply the settings to the chunk
             chunk.MaxIterations = maxIterations;
@@ -1037,9 +795,7 @@ namespace WFC.Chunking
 
             // Mark for mesh update if needed
             if (chunk.IsFullyCollapsed && chunk.IsDirty == false)
-            {
                 chunk.IsDirty = true;
-            }
         }
 
         #endregion
@@ -1052,9 +808,7 @@ namespace WFC.Chunking
                 performanceMonitor.StartComponentTiming("ChunkPriorities");
 
             foreach (var chunk in loadedChunks.Values)
-            {
                 chunk.Priority = CalculateChunkPriority(chunk);
-            }
 
             if (performanceMonitor != null)
                 performanceMonitor.EndComponentTiming("ChunkPriorities");
@@ -1068,7 +822,7 @@ namespace WFC.Chunking
             // Distance from viewer
             float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
 
-            // View alignment (dot product of direction to chunk and predicted movement)
+            // View alignment with predicted movement
             Vector3 dirToChunk = (chunkWorldPos - viewerPosition).normalized;
             Vector3 predictedDirection = (predictedViewerPosition - viewerPosition).normalized;
             float viewAlignment = Vector3.Dot(dirToChunk, predictedDirection);
@@ -1076,7 +830,7 @@ namespace WFC.Chunking
             // Interest-based factor
             float interestFactor = CalculateChunkInterest(chunk.Position);
 
-            // Calculate priority (higher is more important)
+            // Calculate priority factors
             float distanceFactor = 1.0f / (distance + 1.0f);
             float alignmentFactor = viewAlignment > 0 ? (1.0f + viewAlignment) : 0.5f;
 
@@ -1087,9 +841,7 @@ namespace WFC.Chunking
 
             // Bonus for chunks that are partially collapsed
             if (!chunk.IsFullyCollapsed)
-            {
                 priority *= 1.2f;
-            }
 
             return priority;
         }
@@ -1098,43 +850,17 @@ namespace WFC.Chunking
 
         #region Chunk Management
 
-        /*
-         * ManageChunks
-         * ----------------------------------------------------------------------------
-         * Core function that handles loading and unloading chunks dynamically.
-         * 
-         * The active chunk management process:
-         * 1. Identifies chunks to load based on distance from viewer
-         *    and predicted movement direction
-         * 2. Prioritizes chunks based on interest value and distance
-         * 3. Limits the number of concurrent chunks based on performance
-         * 4. Creates chunk loading tasks with appropriate priorities
-         * 5. Identifies distant chunks for unloading
-         * 6. Creates unload tasks for chunks that are too far away
-         * 
-         * This dynamic loading system is what enables an infinite world
-         * experience while keeping memory and processing requirements manageable.
-         * 
-         * The function manages the chunk lifecycle through state transitions
-         * and queued tasks to ensure orderly creation and removal.
-         */
         private void ManageChunks()
         {
             // Get chunks to load
             List<Vector3Int> chunksToLoad = GetChunksToLoad();
-
-            if (enableDebugLogging)
-            {
-                Debug.Log($"Found {chunksToLoad.Count} chunks to load");
-            }
 
             foreach (var chunkPos in chunksToLoad)
             {
                 ChunkLifecycleState currentState = GetChunkState(chunkPos);
 
                 // Only create chunks that are not already being processed
-                if (currentState == ChunkLifecycleState.None ||
-                    currentState == ChunkLifecycleState.Error)
+                if (currentState == ChunkLifecycleState.None || currentState == ChunkLifecycleState.Error)
                 {
                     // Create chunk load task
                     ChunkTask task = new ChunkTask
@@ -1146,14 +872,7 @@ namespace WFC.Chunking
 
                     // Enqueue the task
                     chunkTasks.Enqueue(task, task.Priority);
-
-                    // Update chunk state
                     UpdateChunkState(chunkPos, ChunkLifecycleState.Pending);
-
-                    if (enableDebugLogging)
-                    {
-                        Debug.Log($"Queued chunk creation at {chunkPos}");
-                    }
                 }
             }
 
@@ -1179,14 +898,7 @@ namespace WFC.Chunking
                         };
 
                         chunkTasks.Enqueue(task, task.Priority);
-
-                        // Update chunk state
                         UpdateChunkState(chunkPos, ChunkLifecycleState.Unloading);
-
-                        if (enableDebugLogging)
-                        {
-                            Debug.Log($"Queued chunk unload at {chunkPos}");
-                        }
                     }
                 }
             }
@@ -1198,15 +910,12 @@ namespace WFC.Chunking
             // Calculate chunk coordinates of viewer
             Vector3Int viewerChunk = new Vector3Int(
                 Mathf.FloorToInt(viewerPosition.x / ChunkSize),
-                //0, // Force y=0 to only create ground-level chunks initially
                 Mathf.FloorToInt(viewerPosition.y / ChunkSize),
                 Mathf.FloorToInt(viewerPosition.z / ChunkSize)
             );
 
             List<Vector3Int> chunksToLoad = new List<Vector3Int>();
-
-            // CRITICAL: Start with a smaller radius and gradually expand
-            int initialRadius = 2; // Start with just a 5x5 grid around player
+            int initialRadius = 2; // Start with a 5x5 grid around player
 
             for (int x = viewerChunk.x - initialRadius; x <= viewerChunk.x + initialRadius; x++)
             {
@@ -1218,21 +927,19 @@ namespace WFC.Chunking
                     if (loadedChunks.ContainsKey(pos))
                         continue;
 
-                    // CRITICAL: Prioritize chunks close to the player
+                    // Prioritize chunks close to the player
                     float distance = Vector3.Distance(
                         new Vector3(pos.x * ChunkSize, 0, pos.z * ChunkSize),
                         new Vector3(viewerPosition.x, 0, viewerPosition.z)
                     );
 
                     if (distance <= LoadDistance)
-                    {
                         chunksToLoad.Add(pos);
-                    }
                 }
             }
 
-            // CRITICAL: Strict limit on concurrent chunk generation
-            if (chunksToLoad.Count > 8) // Much lower than before
+            // Limit concurrent chunk generation
+            if (chunksToLoad.Count > 8)
             {
                 // Sort by distance and take only closest 8
                 chunksToLoad.Sort((a, b) => {
@@ -1249,24 +956,18 @@ namespace WFC.Chunking
 
         private List<Vector3Int> GetChunksToUnload()
         {
-            // Get current viewer position
-            Vector3 viewerPos = viewer.position;
-
-            // Find chunks that are too far from current position only
+            // Find chunks that are too far from current position
             return loadedChunks.Keys.Where(chunkPos => {
                 Vector3 chunkWorldPos = GetChunkWorldPosition(chunkPos);
-                float distance = Vector3.Distance(chunkWorldPos, viewerPos);
+                float distance = Vector3.Distance(chunkWorldPos, viewerPosition);
 
                 // Check if chunk Y position is non-zero (above ground)
                 bool isAboveGround = chunkPos.y > 0;
 
-                // Always unload chunks above ground level (y > 0)
-                // For ground level chunks, only unload if beyond distance threshold
+                // Always unload chunks above ground or beyond distance threshold
                 return isAboveGround || distance > UnloadDistance;
             }).ToList();
         }
-
-        
 
         // Calculate load priority for a chunk based on multiple factors
         private float CalculateLoadPriority(Vector3Int chunkPos)
@@ -1277,52 +978,40 @@ namespace WFC.Chunking
             // Calculate interest factor
             float interestFactor = CalculateChunkInterest(chunkPos);
 
-            // Calculate distances to both current and predicted positions
+            // Calculate distances and alignment
             float currentDistance = Vector3.Distance(chunkWorldPos, viewerPosition);
             float predictedDistance = Vector3.Distance(chunkWorldPos, predictedViewerPosition);
 
-            // Calculate view alignment with acceleration-aware prediction
             Vector3 dirToChunk = (chunkWorldPos - viewerPosition).normalized;
             Vector3 predictedDirection = (predictedViewerPosition - viewerPosition).normalized;
             float viewAlignment = Vector3.Dot(dirToChunk, predictedDirection);
 
-            // Higher priority for chunks:
-            // 1. With higher interest
-            // 2. Closer to current position
-            // 3. Closer to predicted position
-            // 4. More aligned with predicted movement direction
+            // Calculate combined factors
             float distanceFactor = 1.0f / (currentDistance + 1.0f);
             float predictedFactor = 1.0f / (predictedDistance + 1.0f);
             float alignmentFactor = viewAlignment > 0 ? (1.0f + viewAlignment) : 0.5f;
 
             // Combine factors (weighted)
-            float priority = interestFactor * 0.4f +
-                            (distanceFactor * 0.2f + predictedFactor * 0.3f) * alignmentFactor;
-
-            return priority;
+            return interestFactor * 0.4f + (distanceFactor * 0.2f + predictedFactor * 0.3f) * alignmentFactor;
         }
 
         #endregion
 
         #region Task Processing
 
-        // Queue to hold chunk tasks
         private void ProcessChunkTasks()
         {
+            // Find or connect to parallel processor if available
             if (useParallelProcessing && parallelProcessor == null)
             {
-                Debug.LogWarning("useParallelProcessing is true but parallelProcessor is null - trying to find ParallelWFCManager");
                 ParallelWFCManager parallelManager = FindObjectOfType<ParallelWFCManager>();
                 if (parallelManager != null)
-                {
                     parallelProcessor = parallelManager.GetParallelProcessor();
-                    Debug.Log($"Connected to ParallelWFCManager for parallel processing - active threads: {parallelProcessor?.ActiveThreads ?? 0}");
-                }
             }
 
             // Process a limited number of tasks per frame
             int tasksProcessed = 0;
-            int maxTasksPerFrame = 2; // Could also come from config
+            int maxTasksPerFrame = 2;
 
             while (chunkTasks.Count > 0 && tasksProcessed < maxTasksPerFrame)
             {
@@ -1330,7 +1019,7 @@ namespace WFC.Chunking
 
                 try
                 {
-                    // Only use parallel processing for collapse tasks, not mesh generation
+                    // Try parallel processing for collapse tasks
                     if (useParallelProcessing && parallelProcessor != null && task.Type == ChunkTaskType.Collapse)
                     {
                         bool queued = parallelProcessor.QueueChunkForProcessing(
@@ -1384,9 +1073,8 @@ namespace WFC.Chunking
                     if (task.Type == ChunkTaskType.Create)
                     {
                         if (chunkStates.TryGetValue(task.Position, out ChunkState state))
-                        {
                             state.LastError = e.Message;
-                        }
+
                         UpdateChunkState(task.Position, ChunkLifecycleState.Error);
                     }
                     tasksProcessed++;
@@ -1396,7 +1084,7 @@ namespace WFC.Chunking
 
         #endregion
 
-        #region Chunk Operations
+        #region Chunk Creation and Operations
 
         // Method to create a chunk
         public void CreateChunk(Vector3Int position)
@@ -1404,17 +1092,9 @@ namespace WFC.Chunking
             // Update chunk state to loading
             UpdateChunkState(position, ChunkLifecycleState.Loading);
 
-            if (enableDebugLogging)
-            {
-                Debug.Log($"Creating chunk at {position}");
-            }
-
             // Check if chunk already exists
             if (loadedChunks.ContainsKey(position))
             {
-                Debug.LogWarning($"Chunk at {position} already exists! Skipping creation.");
-
-                // Update chunk state to active
                 UpdateChunkState(position, ChunkLifecycleState.Active);
                 return;
             }
@@ -1432,14 +1112,11 @@ namespace WFC.Chunking
 
                 // Initialize boundary buffers
                 InitializeBoundaryBuffers(chunk);
-
                 boundaryManager.SynchronizeAllBuffers();
 
-                // Get WFC generator reference if not already set
+                // Get WFC generator if needed
                 if (wfcGenerator == null)
-                {
                     wfcGenerator = FindObjectOfType<WFCGenerator>();
-                }
 
                 // Initialize cells with possible states
                 if (wfcGenerator != null)
@@ -1476,8 +1153,6 @@ namespace WFC.Chunking
 
                 // Update chunk state
                 UpdateChunkState(position, ChunkLifecycleState.Active);
-
-                Debug.Log($"Chunk creation completed for {position}");
             }
             catch (Exception e)
             {
@@ -1485,12 +1160,10 @@ namespace WFC.Chunking
 
                 // Update chunk state to error
                 if (chunkStates.TryGetValue(position, out ChunkState state))
-                {
                     state.LastError = e.Message;
-                }
 
                 UpdateChunkState(position, ChunkLifecycleState.Error);
-                throw; // Re-throw to allow the task processing system to handle it
+                throw;
             }
         }
 
@@ -1499,11 +1172,6 @@ namespace WFC.Chunking
         {
             // Update chunk state
             UpdateChunkState(position, ChunkLifecycleState.Unloading);
-
-            if (enableDebugLogging)
-            {
-                Debug.Log($"Unloading chunk at {position}");
-            }
 
             try
             {
@@ -1518,9 +1186,7 @@ namespace WFC.Chunking
                         // Find and remove reverse connections
                         Direction oppositeDir = direction.GetOpposite();
                         if (neighbor != null && neighbor.Neighbors.ContainsKey(oppositeDir))
-                        {
                             neighbor.Neighbors.Remove(oppositeDir);
-                        }
                     }
 
                     // Clear neighbors and boundary buffers
@@ -1532,18 +1198,12 @@ namespace WFC.Chunking
 
                     // Remove from loaded chunks dictionary
                     loadedChunks.Remove(position);
-
-                    Debug.Log($"Chunk at {position} unloaded successfully");
-                }
-                else
-                {
-                    Debug.LogWarning($"Tried to unload non-existent chunk at {position}");
                 }
             }
             catch (Exception e)
             {
                 Debug.LogError($"Error unloading chunk at {position}: {e.Message}");
-                throw; // Re-throw to allow the task processing system to handle it
+                throw;
             }
         }
 
@@ -1560,8 +1220,6 @@ namespace WFC.Chunking
                     Destroy(meshObject);
                 else
                     DestroyImmediate(meshObject);
-
-                Debug.Log($"Removed mesh object for chunk at {position}");
             }
         }
 
@@ -1576,7 +1234,7 @@ namespace WFC.Chunking
 
             try
             {
-                // If using parallel processing, try to queue for parallel execution
+                // Try parallel processing first
                 if (parallelProcessor != null)
                 {
                     bool queued = parallelProcessor.QueueChunkForProcessing(
@@ -1593,7 +1251,7 @@ namespace WFC.Chunking
                     }
                 }
 
-                // Fallback to direct processing if parallel processing is unavailable or queue is full
+                // Fallback to direct processing
                 bool madeProgress = true;
                 int iterations = 0;
 
@@ -1604,18 +1262,16 @@ namespace WFC.Chunking
                     iterations++;
                 }
 
-                // Mark as fully collapsed if no more progress can be made
+                // Mark as fully collapsed if no more progress
                 if (!madeProgress || iterations >= maxIterations)
-                {
                     chunk.IsFullyCollapsed = true;
-                }
 
                 // Queue mesh generation task after collapse
                 ChunkTask meshTask = new ChunkTask
                 {
                     Type = ChunkTaskType.GenerateMesh,
                     Chunk = chunk,
-                    Priority = chunk.Priority * 0.9f // Slightly lower priority than collapse
+                    Priority = chunk.Priority * 0.9f
                 };
 
                 chunkTasks.Enqueue(meshTask, meshTask.Priority);
@@ -1629,12 +1285,10 @@ namespace WFC.Chunking
 
                 // Update chunk state to error
                 if (chunkStates.TryGetValue(chunk.Position, out ChunkState state))
-                {
                     state.LastError = e.Message;
-                }
 
                 UpdateChunkState(chunk.Position, ChunkLifecycleState.Error);
-                throw; // Re-throw to allow the task processing system to handle it
+                throw;
             }
             finally
             {
@@ -1653,10 +1307,20 @@ namespace WFC.Chunking
 
             // Apply hierarchical constraints if available
             if (hierarchicalConstraints != null)
-            {
                 hierarchicalConstraints.PrecomputeChunkConstraints(chunk, WFCConfigManager.Config.World.maxStates);
-            }
 
+            // Find cell with lowest effective entropy
+            FindCellWithLowestEntropy(chunk, ref cellToCollapse, ref lowestEntropy, ref closestDistance);
+
+            // If found a cell, collapse it
+            if (cellToCollapse != null)
+                return CollapseCell(cellToCollapse, chunk);
+
+            return false;
+        }
+
+        private void FindCellWithLowestEntropy(Chunk chunk, ref Cell cellToCollapse, ref int lowestEntropy, ref float closestDistance)
+        {
             for (int x = 0; x < chunk.Size; x++)
             {
                 for (int y = 0; y < chunk.Size; y++)
@@ -1665,36 +1329,12 @@ namespace WFC.Chunking
                     {
                         Cell cell = chunk.GetCell(x, y, z);
 
-                        // Skip already collapsed cells
-                        if (cell.CollapsedState.HasValue)
-                            continue;
-
-                        // Skip cells with only one state (will be collapsed in propagation)
-                        if (cell.PossibleStates.Count <= 1)
+                        // Skip already collapsed cells or cells with only one state
+                        if (cell.CollapsedState.HasValue || cell.PossibleStates.Count <= 1)
                             continue;
 
                         // Apply constraints to calculate effective entropy
-                        int effectiveEntropy = cell.Entropy;
-
-                        // Apply constraints if available
-                        if (hierarchicalConstraints != null)
-                        {
-                            Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
-                                cell, chunk, WFCConfigManager.Config.World.maxStates);
-
-                            if (biases.Count > 0)
-                            {
-                                float maxBias = biases.Values.Max(Mathf.Abs);
-
-                                // Strong bias reduces effective entropy
-                                if (maxBias > 0.7f)
-                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.4f);
-                                else if (maxBias > 0.4f)
-                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.6f);
-                                else if (maxBias > 0.2f)
-                                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.8f);
-                            }
-                        }
+                        int effectiveEntropy = CalculateEffectiveEntropy(cell, chunk);
 
                         // First priority: Lowest entropy
                         if (effectiveEntropy < lowestEntropy)
@@ -1703,21 +1343,13 @@ namespace WFC.Chunking
                             cellToCollapse = cell;
 
                             // Recalculate distance for the new candidate
-                            Vector3 cellWorldPos = new Vector3(
-                                chunk.Position.x * chunk.Size + cell.Position.x,
-                                chunk.Position.y * chunk.Size + cell.Position.y,
-                                chunk.Position.z * chunk.Size + cell.Position.z
-                            );
+                            Vector3 cellWorldPos = CalculateCellWorldPosition(cell, chunk);
                             closestDistance = Vector3.Distance(cellWorldPos, viewerPosition);
                         }
                         // Tie-breaking: Same entropy but closer to viewer
                         else if (effectiveEntropy == lowestEntropy)
                         {
-                            Vector3 cellWorldPos = new Vector3(
-                                chunk.Position.x * chunk.Size + cell.Position.x,
-                                chunk.Position.y * chunk.Size + cell.Position.y,
-                                chunk.Position.z * chunk.Size + cell.Position.z
-                            );
+                            Vector3 cellWorldPos = CalculateCellWorldPosition(cell, chunk);
                             float distanceToViewer = Vector3.Distance(cellWorldPos, viewerPosition);
 
                             if (distanceToViewer < closestDistance)
@@ -1729,90 +1361,113 @@ namespace WFC.Chunking
                     }
                 }
             }
+        }
 
-            // If found a cell, collapse it
-            if (cellToCollapse != null)
+        private Vector3 CalculateCellWorldPosition(Cell cell, Chunk chunk)
+        {
+            return new Vector3(
+                chunk.Position.x * chunk.Size + cell.Position.x,
+                chunk.Position.y * chunk.Size + cell.Position.y,
+                chunk.Position.z * chunk.Size + cell.Position.z
+            );
+        }
+
+        private int CalculateEffectiveEntropy(Cell cell, Chunk chunk)
+        {
+            int effectiveEntropy = cell.Entropy;
+
+            if (hierarchicalConstraints != null)
             {
-                // Choose a state based on constraints if available
-                int[] possibleStates = cellToCollapse.PossibleStates.ToArray();
-                int chosenState;
+                Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
+                    cell, chunk, WFCConfigManager.Config.World.maxStates);
 
-                if (hierarchicalConstraints != null && possibleStates.Length > 1)
+                if (biases.Count > 0)
                 {
-                    Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
-                        cellToCollapse, chunk, WFCConfigManager.Config.World.maxStates);
+                    float maxBias = biases.Values.Max(Mathf.Abs);
 
-                    // Create weighted selection based on biases
-                    float[] weights = new float[possibleStates.Length];
-                    float totalWeight = 0;
-
-                    for (int i = 0; i < possibleStates.Length; i++)
-                    {
-                        int state = possibleStates[i];
-                        weights[i] = 1.0f; // Base weight
-
-                        // Apply bias if available
-                        if (biases.TryGetValue(state, out float bias))
-                        {
-                            // Convert bias (-1 to 1) to weight multiplier (0.25 to 4)
-                            float multiplier = Mathf.Pow(2, bias * 2);
-                            weights[i] *= multiplier;
-                        }
-
-                        // Ensure weight is positive
-                        weights[i] = Mathf.Max(0.1f, weights[i]);
-                        totalWeight += weights[i];
-                    }
-
-                    // Random selection based on weights
-                    float randomValue = UnityEngine.Random.Range(0, totalWeight);
-                    float cumulativeWeight = 0;
-
-                    chosenState = possibleStates[0]; // Default to first state
-
-                    for (int i = 0; i < possibleStates.Length; i++)
-                    {
-                        cumulativeWeight += weights[i];
-                        if (randomValue <= cumulativeWeight)
-                        {
-                            chosenState = possibleStates[i];
-                            break;
-                        }
-                    }
+                    // Strong bias reduces effective entropy
+                    if (maxBias > 0.7f)
+                        effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.4f);
+                    else if (maxBias > 0.4f)
+                        effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.6f);
+                    else if (maxBias > 0.2f)
+                        effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.8f);
                 }
-                else
-                {
-                    // No significant biases, use standard random selection
-                    chosenState = possibleStates[UnityEngine.Random.Range(0, possibleStates.Length)];
-                }
-
-                // Collapse to chosen state
-                cellToCollapse.Collapse(chosenState);
-
-                // Create propagation event
-                PropagationEvent evt = new PropagationEvent(
-                    cellToCollapse,
-                    chunk,
-                    new HashSet<int>(cellToCollapse.PossibleStates),
-                    new HashSet<int> { chosenState },
-                    cellToCollapse.IsBoundary
-                );
-
-                // Propagate to neighbors - this requires a proper propagation handler
-                if (wfcGenerator != null)
-                {
-                    wfcGenerator.AddPropagationEvent(evt);
-                }
-                else
-                {
-                    // Local propagation for standalone usage
-                    PropagateCollapse(cellToCollapse, chunk);
-                }
-
-                return true;
             }
 
-            return false;
+            return effectiveEntropy;
+        }
+
+        private bool CollapseCell(Cell cell, Chunk chunk)
+        {
+            int[] possibleStates = cell.PossibleStates.ToArray();
+            int chosenState;
+
+            if (hierarchicalConstraints != null && possibleStates.Length > 1)
+            {
+                // Get biases from constraints
+                Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
+                    cell, chunk, WFCConfigManager.Config.World.maxStates);
+
+                // Create weighted selection
+                float[] weights = new float[possibleStates.Length];
+                float totalWeight = 0;
+
+                for (int i = 0; i < possibleStates.Length; i++)
+                {
+                    int state = possibleStates[i];
+                    weights[i] = 1.0f; // Base weight
+
+                    if (biases.TryGetValue(state, out float bias))
+                    {
+                        float multiplier = Mathf.Pow(2, bias * 2);
+                        weights[i] *= multiplier;
+                    }
+
+                    weights[i] = Mathf.Max(0.1f, weights[i]);
+                    totalWeight += weights[i];
+                }
+
+                // Random selection based on weights
+                float randomValue = UnityEngine.Random.Range(0, totalWeight);
+                float cumulativeWeight = 0;
+                chosenState = possibleStates[0];
+
+                for (int i = 0; i < possibleStates.Length; i++)
+                {
+                    cumulativeWeight += weights[i];
+                    if (randomValue <= cumulativeWeight)
+                    {
+                        chosenState = possibleStates[i];
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                // No significant biases, use standard random selection
+                chosenState = possibleStates[UnityEngine.Random.Range(0, possibleStates.Length)];
+            }
+
+            // Collapse to chosen state
+            cell.Collapse(chosenState);
+
+            // Create propagation event
+            PropagationEvent evt = new PropagationEvent(
+                cell,
+                chunk,
+                new HashSet<int>(cell.PossibleStates),
+                new HashSet<int> { chosenState },
+                cell.IsBoundary
+            );
+
+            // Propagate to neighbors
+            if (wfcGenerator != null)
+                wfcGenerator.AddPropagationEvent(evt);
+            else
+                PropagateCollapse(cell, chunk);
+
+            return true;
         }
 
         // Method to propagate collapse to neighboring cells
@@ -1848,9 +1503,7 @@ namespace WFC.Chunking
 
                     Cell neighbor = adjacentChunk.GetCell(adjacentChunkPos.x, adjacentChunkPos.y, adjacentChunkPos.z);
                     if (neighbor != null)
-                    {
                         ApplyConstraintToNeighbor(cell, neighbor, dir, adjacentChunk);
-                    }
                 }
             }
         }
@@ -1858,36 +1511,25 @@ namespace WFC.Chunking
         // Method to apply constraints to a neighboring cell
         private void ApplyConstraintToNeighbor(Cell source, Cell target, Direction direction, Chunk targetChunk)
         {
-            // Skip if target already collapsed
+            // Skip if target already collapsed or source not collapsed
             if (target.CollapsedState.HasValue || source.CollapsedState == null)
                 return;
 
             // Store old states for propagation
             HashSet<int> oldStates = new HashSet<int>(target.PossibleStates);
-
-            // Find compatible states based on adjacency rules
             HashSet<int> compatibleStates = new HashSet<int>();
 
             foreach (int targetState in target.PossibleStates)
             {
-                // Check if this state can be adjacent to the source state
-                // requires access to adjacency rules which would be in WFCGenerator
                 bool isCompatible = true;
 
                 if (wfcGenerator != null)
-                {
                     isCompatible = wfcGenerator.AreStatesCompatible(targetState, source.CollapsedState.Value, direction);
-                }
                 else
-                {
-                    // Simple compatibility rule: states can be adjacent to themselves and neighbors
                     isCompatible = Mathf.Abs(targetState - source.CollapsedState.Value) <= 1;
-                }
 
                 if (isCompatible)
-                {
                     compatibleStates.Add(targetState);
-                }
             }
 
             // Update target's possible states if needed
@@ -1897,9 +1539,7 @@ namespace WFC.Chunking
 
                 // If changed, propagate further
                 if (changed)
-                {
                     PropagateCollapse(target, targetChunk);
-                }
             }
         }
 
@@ -1916,20 +1556,12 @@ namespace WFC.Chunking
             {
                 // Find mesh generator in the scene
                 if (meshGenerator == null)
-                {
                     meshGenerator = FindObjectOfType<MeshGenerator>();
-                }
 
                 if (meshGenerator != null)
-                {
-                    // Call the mesh generator to create or update the chunk mesh
                     meshGenerator.GenerateChunkMesh(chunk.Position, chunk);
-                }
                 else
-                {
-                    // Create the mesh directly as a fallback
                     Debug.LogError("Generate Chunk Mesh not found!!!");
-                }
 
                 // Mark chunk as processed
                 chunk.IsDirty = false;
@@ -1943,12 +1575,10 @@ namespace WFC.Chunking
 
                 // Update chunk state to error
                 if (chunkStates.TryGetValue(chunk.Position, out ChunkState state))
-                {
                     state.LastError = e.Message;
-                }
 
                 UpdateChunkState(chunk.Position, ChunkLifecycleState.Error);
-                throw; // Re-throw to allow the task processing system to handle it
+                throw;
             }
             finally
             {
@@ -1960,39 +1590,11 @@ namespace WFC.Chunking
 
         #region Helper Methods
 
-        /*
-         * ApplyInitialConstraints
-         * ----------------------------------------------------------------------------
-         * Applies initial terrain constraints to a newly created chunk.
-         * 
-         * This comprehensive terrain initialization:
-         * 1. Generates noise-based heightmap using multiple octaves:
-         *    - Base noise for overall elevation
-         *    - Detail noise for small variations
-         *    - Feature noise for medium-scale terrain features
-         * 2. Determines water level from separate noise function
-         * 3. Creates terrain height and material variations:
-         *    - Deep underground: solid ground
-         *    - Near surface: mix of ground and occasional rock
-         *    - Surface layer: varied terrain types (grass, sand, rock) based on moisture
-         *    - Above surface: occasional trees in suitable areas
-         * 4. Smooths chunk boundaries for seamless transitions
-         * 
-         * This initial terrain provides a foundational structure that the WFC algorithm
-         * then refines through constraint propagation, creating more detailed and
-         * coherent terrain features.
-         * 
-         * Parameters:
-         * - chunk: The newly created chunk to initialize
-         * - random: Seeded random generator for deterministic generation
-         */
         private void ApplyInitialConstraints(Chunk chunk, System.Random random)
         {
             if (terrainGenerator == null)
             {
-                Debug.LogError("No terrain generator available!");
-
-                // Fallback to very basic terrain (flat ground with air above)
+                // Fallback to very basic terrain
                 for (int x = 0; x < chunk.Size; x++)
                 {
                     for (int y = 0; y < chunk.Size; y++)
@@ -2011,18 +1613,16 @@ namespace WFC.Chunking
                         }
                     }
                 }
-
                 return;
             }
 
-            // Use the current terrain generator to apply constraints
+            // Use the terrain generator to apply constraints
             terrainGenerator.GenerateTerrain(chunk, random);
         }
 
         // Method to connect chunk neighbors
         private void ConnectChunkNeighbors(Chunk chunk)
         {
-            // Check each direction for neighbors
             foreach (Direction dir in System.Enum.GetValues(typeof(Direction)))
             {
                 Vector3Int offset = dir.ToVector3Int();
@@ -2066,7 +1666,6 @@ namespace WFC.Chunking
                 List<Cell> bufferCells = new List<Cell>();
                 for (int i = 0; i < boundaryCells.Count; i++)
                 {
-                    // CRITICAL FIX: Initialize buffer cells with the same possible states as boundary cells
                     Cell bufferCell = new Cell(new Vector3Int(-1, -1, -1), boundaryCells[i].PossibleStates);
                     bufferCells.Add(bufferCell);
                 }
@@ -2076,11 +1675,9 @@ namespace WFC.Chunking
                 chunk.BoundaryBuffers[dir] = buffer;
             }
 
-            // CRITICAL FIX: Immediately synchronize buffers after initialization
+            // Immediately synchronize buffers after initialization
             foreach (var buffer in chunk.BoundaryBuffers.Values)
-            {
                 SynchronizeBuffer(buffer);
-            }
         }
 
         private void SynchronizeBuffer(BoundaryBuffer buffer)
@@ -2102,13 +1699,9 @@ namespace WFC.Chunking
 
                 // If either cell is already collapsed, propagate that state
                 if (cell1.CollapsedState.HasValue && !cell2.CollapsedState.HasValue)
-                {
                     cell2.Collapse(cell1.CollapsedState.Value);
-                }
                 else if (cell2.CollapsedState.HasValue && !cell1.CollapsedState.HasValue)
-                {
                     cell1.Collapse(cell2.CollapsedState.Value);
-                }
                 // Otherwise ensure they have compatible states
                 else if (!cell1.CollapsedState.HasValue && !cell2.CollapsedState.HasValue)
                 {
@@ -2128,9 +1721,7 @@ namespace WFC.Chunking
 
                     // If found compatible states, update cell1
                     if (compatibleStates.Count > 0)
-                    {
                         cell1.SetPossibleStates(compatibleStates);
-                    }
                 }
             }
         }
@@ -2232,16 +1823,12 @@ namespace WFC.Chunking
             currentLoadDistance = activeConfig.Performance.loadDistance;
             maxConcurrentChunks = activeConfig.Performance.maxConcurrentChunks;
 
-            // Handle changes that require updates
+            // Log changes requiring updates
             if (oldLoadDistance != LoadDistance || oldUnloadDistance != UnloadDistance)
-            {
                 Debug.Log("ChunkManager: Load/unload distances updated. Refreshing chunk management.");
-            }
 
             if (oldChunkSize != ChunkSize)
-            {
                 Debug.LogWarning("ChunkManager: Chunk size changed. This will require world regeneration.");
-            }
         }
 
         /// <summary>
@@ -2258,15 +1845,11 @@ namespace WFC.Chunking
 
             // Remove all mesh objects
             foreach (var chunkPos in loadedChunks.Keys.ToList())
-            {
                 RemoveChunkMeshObject(chunkPos);
-            }
 
             // Clear chunk collections
             loadedChunks.Clear();
             chunkStates.Clear();
-
-            Debug.Log("Chunk system reset complete");
 
             // Restart
             StartCoroutine(AdaptiveStrategyUpdateCoroutine());
@@ -2279,34 +1862,26 @@ namespace WFC.Chunking
         {
             if (position.y > 0 && heightmapController != null &&
             !heightmapController.ShouldGenerateMeshAt(position, ChunkSize))
-            {
                 return;
-            }
 
-            // Force position to be at ground level
+            // Only create at ground level
             position.y = 0;
 
             // Skip if already loaded or in the process of loading
             ChunkLifecycleState currentState = GetChunkState(position);
-            if (currentState != ChunkLifecycleState.None &&
-                currentState != ChunkLifecycleState.Error)
-            {
-                //Debug.Log($"Chunk at {position} is already being handled (state: {currentState})");
+            if (currentState != ChunkLifecycleState.None && currentState != ChunkLifecycleState.Error)
                 return;
-            }
 
-            // Create the chunk with high priority
+            // Create high priority task
             ChunkTask task = new ChunkTask
             {
                 Type = ChunkTaskType.Create,
                 Position = position,
-                Priority = 100f // High priority
+                Priority = 100f
             };
 
             chunkTasks.Enqueue(task, task.Priority);
             UpdateChunkState(position, ChunkLifecycleState.Pending);
-
-            //Debug.Log($"Forced creation of chunk at {position}");
         }
 
         /// <summary>
@@ -2323,21 +1898,17 @@ namespace WFC.Chunking
             // Skip if already generating
             ChunkLifecycleState currentState = GetChunkState(position);
             if (currentState == ChunkLifecycleState.GeneratingMesh)
-            {
-                Debug.Log($"Already generating mesh for chunk at {position}");
                 return;
-            }
 
-            // Queue the task
+            // Queue high-priority mesh generation task
             ChunkTask task = new ChunkTask
             {
                 Type = ChunkTaskType.GenerateMesh,
                 Chunk = chunk,
-                Priority = 100f // High priority
+                Priority = 100f
             };
 
             chunkTasks.Enqueue(task, task.Priority);
-            Debug.Log($"Queued mesh generation for chunk at {position}");
         }
 
         #endregion
@@ -2351,6 +1922,7 @@ namespace WFC.Chunking
             public int MaxIterations { get; set; }
             public float Priority { get; set; }
         }
+
         // Helper enum for task types
         private enum ChunkTaskType
         {
@@ -2360,32 +1932,14 @@ namespace WFC.Chunking
             GenerateMesh
         }
 
-        /*
-        * CreateChunksAroundPlayer
-        * ----------------------------------------------------------------------------
-        * Initiates chunk generation in the vicinity of the player/viewer.
-        * 
-        * Process:
-        * 1. Determines the chunk coordinate at the viewer's current position
-        * 2. Directly creates the chunk the player is standing in with high priority
-        * 3. Starts a coroutine for gradual creation of surrounding chunks to avoid
-        *    frame rate drops from creating too many chunks at once
-        * 4. Updates the last chunk generation position for incremental checks
-        * 
-        * This function is called both during initialization and whenever the player
-        * moves significantly from the last chunk generation position, ensuring
-        * terrain is always available ahead of the player's movement.
-        * 
-        * The gradual creation through coroutines helps maintain performance
-        * even when many chunks need to be created at once.
-        */
+        /// <summary>
+        /// Initiates chunk generation around the player
+        /// </summary>
         public void CreateChunksAroundPlayer()
         {
             // Initialize heightmap controller if needed
             if (heightmapController != null && !heightmapController.IsInitialized)
-            {
                 heightmapController.Initialize();
-            }
 
             Vector3Int viewerChunk = new Vector3Int(
                 Mathf.FloorToInt(viewer.position.x / ChunkSize),
@@ -2393,12 +1947,10 @@ namespace WFC.Chunking
                 Mathf.FloorToInt(viewer.position.z / ChunkSize)
             );
 
-            Debug.Log($"Creating chunks around player at chunk {viewerChunk}");
-
-            // Start with just creating the immediate chunk first
+            // Start with creating the immediate chunk first
             CreateChunkAt(viewerChunk);
 
-            // Then queue others to be created over time
+            // Queue others to be created over time
             StartCoroutine(GradualChunkCreation(viewerChunk));
         }
 
@@ -2419,10 +1971,9 @@ namespace WFC.Chunking
                 }
             }
 
-            // Now selectively create vertical chunks based on the heightmap
-            int maxVerticalChunks = 8; // Increased from 4
+            // Create vertical chunks based on the heightmap
+            int maxVerticalChunks = 8;
 
-            // CHANGE: Increase these ranges to capture more terrain
             for (int x = -3; x <= 3; x++)
             {
                 for (int z = -3; z <= 3; z++)

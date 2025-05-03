@@ -15,11 +15,9 @@
  * The hierarchical approach enables both top-down design control and emergent details,
  * with constraints having varying influence based on strength, distance, and priority.
  * 
- */
-using System.Collections.Generic;
+ */using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
-using NUnit.Framework;
 
 namespace WFC.Core
 {
@@ -36,13 +34,13 @@ namespace WFC.Core
         // Medium-scale region constraints
         private List<RegionConstraint> regionConstraints = new List<RegionConstraint>();
 
-        // Local cell constraints - NEW: explicit local constraint support 
+        // Local cell constraints
         private Dictionary<Vector3Int, Dictionary<Vector3Int, Dictionary<int, float>>> localConstraints =
             new Dictionary<Vector3Int, Dictionary<Vector3Int, Dictionary<int, float>>>();
 
         // Configuration
-        private int chunkSize;
-        private float globalWeight = 0.7f;  //1.0f old
+        private readonly int chunkSize;
+        private float globalWeight = 0.7f;
         private float regionWeight = 1.0f;
         private float localWeight = 1.0f;
 
@@ -51,7 +49,6 @@ namespace WFC.Core
             new Dictionary<Vector3Int, Dictionary<int, float>>();
 
         // Constraint change tracking for efficient updates
-        private bool constraintsChanged = false;
         private HashSet<Vector3Int> dirtyChunks = new HashSet<Vector3Int>();
 
         // Constraint application statistics
@@ -77,6 +74,7 @@ namespace WFC.Core
 
         private ConstraintStats _statistics = new ConstraintStats();
         public ConstraintStats Statistics => _statistics;
+
         public HierarchicalConstraintSystem(int chunkSize)
         {
             this.chunkSize = chunkSize;
@@ -145,7 +143,6 @@ namespace WFC.Core
 
             // Mark chunk as dirty
             dirtyChunks.Add(chunkPos);
-            constraintsChanged = true;
         }
 
         /// <summary>
@@ -180,32 +177,6 @@ namespace WFC.Core
         }
 
         /// <summary>
-        /// Remove a local constraint
-        /// </summary>
-        public void RemoveLocalConstraint(Vector3Int chunkPos, Vector3Int cellPos, int state)
-        {
-            if (localConstraints.TryGetValue(chunkPos, out var cellConstraints) &&
-                cellConstraints.TryGetValue(cellPos, out var stateBiases))
-            {
-                stateBiases.Remove(state);
-
-                // Clean up empty dictionaries
-                if (stateBiases.Count == 0)
-                {
-                    cellConstraints.Remove(cellPos);
-
-                    if (cellConstraints.Count == 0)
-                    {
-                        localConstraints.Remove(chunkPos);
-                    }
-                }
-
-                dirtyChunks.Add(chunkPos);
-                constraintsChanged = true;
-            }
-        }
-
-        /// <summary>
         /// Clear all constraints
         /// </summary>
         public void ClearConstraints()
@@ -221,7 +192,7 @@ namespace WFC.Core
         /// </summary>
         public IReadOnlyList<GlobalConstraint> GetGlobalConstraints()
         {
-            return globalConstraints.AsReadOnly();
+            return globalConstraints;
         }
 
         /// <summary>
@@ -229,90 +200,31 @@ namespace WFC.Core
         /// </summary>
         public IReadOnlyList<RegionConstraint> GetRegionConstraints()
         {
-            return regionConstraints.AsReadOnly();
+            return regionConstraints;
         }
 
         /// <summary>
-        /// Get all constraints affecting a chunk
+        /// Calculate the combined influence of all constraints on a specific cell
         /// </summary>
-        public List<object> GetConstraintsForChunk(Vector3Int chunkPos)
-        {
-            List<object> result = new List<object>();
-
-            // Add global constraints that affect this chunk
-            foreach (var constraint in globalConstraints)
-            {
-                // Calculate chunk bounds in world space
-                Vector3 chunkMin = new Vector3(
-                    chunkPos.x * chunkSize,
-                    chunkPos.y * chunkSize,
-                    chunkPos.z * chunkSize
-                );
-
-                Vector3 chunkMax = new Vector3(
-                    (chunkPos.x + 1) * chunkSize,
-                    (chunkPos.y + 1) * chunkSize,
-                    (chunkPos.z + 1) * chunkSize
-                );
-
-                // Check if chunk overlaps with constraint influence area
-                Vector3 constraintMin = constraint.WorldCenter - constraint.WorldSize * 0.5f - Vector3.one * constraint.BlendRadius;
-                Vector3 constraintMax = constraint.WorldCenter + constraint.WorldSize * 0.5f + Vector3.one * constraint.BlendRadius;
-
-                // Test for overlap
-                if (chunkMax.x >= constraintMin.x && chunkMin.x <= constraintMax.x &&
-                    chunkMax.y >= constraintMin.y && chunkMin.y <= constraintMax.y &&
-                    chunkMax.z >= constraintMin.z && chunkMin.z <= constraintMax.z)
-                {
-                    result.Add(constraint);
-                }
-            }
-
-            // Add region constraints that affect this chunk
-            foreach (var constraint in regionConstraints)
-            {
-                // Check if region constraint includes this chunk
-                Vector3Int regionEnd = constraint.ChunkPosition + constraint.ChunkSize;
-
-                if (chunkPos.x >= constraint.ChunkPosition.x && chunkPos.x < regionEnd.x &&
-                    chunkPos.y >= constraint.ChunkPosition.y && chunkPos.y < regionEnd.y &&
-                    chunkPos.z >= constraint.ChunkPosition.z && chunkPos.z < regionEnd.z)
-                {
-                    result.Add(constraint);
-                }
-            }
-
-            // Add local constraints if any
-            if (localConstraints.TryGetValue(chunkPos, out var cellConstraints))
-            {
-                foreach (var entry in cellConstraints)
-                {
-                    result.Add(new { CellPosition = entry.Key, Biases = entry.Value });
-                }
-            }
-
-            return result;
-        }
-
         /*
-         * CalculateConstraintInfluence
-         * -----------------------------
-         * Computes the combined influence of all constraints on a specific cell.
-         * 
-         * This is a key function in the constraint-based guidance system that:
-         * 1. Gets the world position for the cell
-         * 2. Queries all relevant constraints that might affect this position
-         * 3. Combines their influences into a set of biases for each possible state
-         * 
-         * The biases are numeric values typically in the range [-1,1] that modify
-         * the probability of selecting each state during the collapse operation:
-         * - Positive bias: increases likelihood of selecting the state
-         * - Negative bias: decreases likelihood of selecting the state
-         * - Zero bias: no influence on the state selection
-         * 
-         * The method handles resolving conflicts between competing constraints
-         * through various weighting and prioritization strategies.
-         */
+        * CalculateConstraintInfluence
+        * -----------------------------
+        * Computes the combined influence of all constraints on a specific cell.
+        * 
+        * This is a key function in the constraint-based guidance system that:
+        * 1. Gets the world position for the cell
+        * 2. Queries all relevant constraints that might affect this position
+        * 3. Combines their influences into a set of biases for each possible state
+        * 
+        * The biases are numeric values typically in the range [-1,1] that modify
+        * the probability of selecting each state during the collapse operation:
+        * - Positive bias: increases likelihood of selecting the state
+        * - Negative bias: decreases likelihood of selecting the state
+        * - Zero bias: no influence on the state selection
+        * 
+        * The method handles resolving conflicts between competing constraints
+        * through various weighting and prioritization strategies.
+        */
         public Dictionary<int, float> CalculateConstraintInfluence(Cell cell, Chunk chunk, int maxStates)
         {
             // Get world position for this cell
@@ -345,7 +257,17 @@ namespace WFC.Core
             float totalInfluence = 0;
 
             // If no significant biases, return without modifying cell
-            if (!biases.Values.Any(v => Mathf.Abs(v) > 0.01f))
+            bool hasBiases = false;
+            foreach (var bias in biases.Values)
+            {
+                if (Mathf.Abs(bias) > 0.01f)
+                {
+                    hasBiases = true;
+                    break;
+                }
+            }
+
+            if (!hasBiases)
                 return;
 
             // Get current possible states
@@ -353,6 +275,7 @@ namespace WFC.Core
 
             // Calculate adjustment probability for each state based on biases
             Dictionary<int, float> stateWeights = new Dictionary<int, float>();
+            float totalWeight = 0;
 
             foreach (int state in currentStates)
             {
@@ -371,6 +294,7 @@ namespace WFC.Core
                 // Ensure weight is positive
                 weight = Mathf.Max(0.01f, weight);
                 stateWeights[state] = weight;
+                totalWeight += weight;
             }
 
             // Update statistics
@@ -384,22 +308,25 @@ namespace WFC.Core
             // If cell has more than one possible state, consider constraint-based collapse
             if (currentStates.Count > 1)
             {
-                // Get total weight
-                float totalWeight = stateWeights.Values.Sum();
-
                 // Calculate collapse threshold based on strongest bias
-                float maxBias = biases.Values.Max(Mathf.Abs);
+                float maxBias = 0f;
+                foreach (var bias in biases.Values)
+                {
+                    if (Mathf.Abs(bias) > maxBias)
+                        maxBias = Mathf.Abs(bias);
+                }
+
                 float collapseThreshold = Mathf.Lerp(0.9f, 0.5f, maxBias);
 
                 // Find if have a highly dominant state
-                foreach (var state in stateWeights.Keys.ToList())
+                foreach (var pair in stateWeights)
                 {
-                    float normalizedWeight = stateWeights[state] / totalWeight;
+                    float normalizedWeight = pair.Value / totalWeight;
 
                     // If one state is strongly preferred, collapse to it
                     if (normalizedWeight > collapseThreshold)
                     {
-                        cell.Collapse(state);
+                        cell.Collapse(pair.Key);
                         _statistics.CellsCollapsed++;
                         return; // Cell is now collapsed
                     }
@@ -498,7 +425,7 @@ namespace WFC.Core
                 BlendRadius = chunkSize,
                 Strength = 0.8f,
                 MinHeight = 0,
-                MaxHeight = worldSize.y * chunkSize,    // chunkSize,
+                MaxHeight = worldSize.y * chunkSize,
                 NoiseScale = 0.05f
             };
 
@@ -517,8 +444,8 @@ namespace WFC.Core
                 WorldSize = new Vector3(worldSize.x * chunkSize * 0.3f, worldSize.y * chunkSize * 0.7f, worldSize.z * chunkSize * 0.3f),
                 BlendRadius = chunkSize * 2,
                 Strength = 0.7f,
-                MinHeight = 0,              // worldSize.y * chunkSize * 0.3f,
-                MaxHeight = chunkSize,      //worldSize.y * chunkSize
+                MinHeight = 0,
+                MaxHeight = chunkSize,
             };
 
             // Add biases for mountain constraint
@@ -544,7 +471,6 @@ namespace WFC.Core
             forestConstraint.StateBiases[6] = 0.7f;  // Tree (strong positive bias)
 
             AddGlobalConstraint(forestConstraint);
-
         }
 
         /// <summary>
@@ -585,32 +511,6 @@ namespace WFC.Core
             AddRegionConstraint(transition);
         }
 
-        /// <summary>
-        /// Create a feature at a specific location
-        /// </summary>
-        public void CreateFeature(Vector3Int chunkPos, Vector3 internalOrigin, Vector3 internalSize,
-                                 Dictionary<int, float> stateBiases, string name = "Feature", float strength = 0.8f)
-        {
-            RegionConstraint feature = new RegionConstraint()
-            {
-                Name = name,
-                Type = RegionType.Feature,
-                ChunkPosition = chunkPos,
-                ChunkSize = Vector3Int.one, // Single chunk
-                InternalOrigin = internalOrigin,
-                InternalSize = internalSize,
-                Strength = strength
-            };
-
-            // Add biases
-            foreach (var pair in stateBiases)
-            {
-                feature.StateBiases[pair.Key] = pair.Value;
-            }
-
-            AddRegionConstraint(feature);
-        }
-
         /*
          * GetStateBiases
          * ----------------------------------------------------------------------------
@@ -647,18 +547,12 @@ namespace WFC.Core
         {
             Dictionary<int, float> normalizedBiases = new Dictionary<int, float>();
 
-            // Group constraints by type for weighted normalization
-            Dictionary<string, List<KeyValuePair<int, float>>> constraintTypeGroups =
-                new Dictionary<string, List<KeyValuePair<int, float>>>();
+            // Group biases by state for each constraint type
+            Dictionary<int, float> globalStateBiases = new Dictionary<int, float>();
+            Dictionary<int, float> regionStateBiases = new Dictionary<int, float>();
+            Dictionary<int, float> localStateBiases = new Dictionary<int, float>();
 
-            // Track constraint weights by type
-            Dictionary<string, float> typeWeights = new Dictionary<string, float>();
-            typeWeights["global"] = globalWeight;
-            typeWeights["region"] = regionWeight;
-            typeWeights["local"] = localWeight;
-
-            // Get global constraint influences
-            constraintTypeGroups["global"] = new List<KeyValuePair<int, float>>();
+            // Apply global constraints
             foreach (var constraint in globalConstraints)
             {
                 for (int state = 0; state < maxStates; state++)
@@ -666,125 +560,129 @@ namespace WFC.Core
                     float bias = constraint.GetStateBias(state, worldPosition);
                     if (Mathf.Abs(bias) > 0.01f)
                     {
-                        constraintTypeGroups["global"].Add(
-                            new KeyValuePair<int, float>(state, bias));
+                        if (!globalStateBiases.ContainsKey(state))
+                            globalStateBiases[state] = 0;
+
+                        globalStateBiases[state] += bias;
                     }
                 }
             }
 
-            // Get region constraint influences
-            constraintTypeGroups["region"] = new List<KeyValuePair<int, float>>();
+            // Apply region constraints
             foreach (var constraint in regionConstraints)
             {
                 for (int state = 0; state < maxStates; state++)
                 {
-                    float bias = constraint.GetStateBias(state, chunkPosition,
-                                 localPosition, chunkSize);
+                    float bias = constraint.GetStateBias(state, chunkPosition, localPosition, chunkSize);
                     if (Mathf.Abs(bias) > 0.01f)
                     {
-                        constraintTypeGroups["region"].Add(
-                            new KeyValuePair<int, float>(state, bias));
+                        if (!regionStateBiases.ContainsKey(state))
+                            regionStateBiases[state] = 0;
+
+                        regionStateBiases[state] += bias;
                     }
                 }
             }
 
-            // Get local constraint influences
-            constraintTypeGroups["local"] = new List<KeyValuePair<int, float>>();
+            // Apply local constraints
             if (localConstraints.TryGetValue(chunkPosition, out var cellConstraints) &&
                 cellConstraints.TryGetValue(localPosition, out var stateBiases))
             {
                 foreach (var pair in stateBiases)
                 {
-                    constraintTypeGroups["local"].Add(
-                        new KeyValuePair<int, float>(pair.Key, pair.Value));
+                    if (Mathf.Abs(pair.Value) > 0.01f)
+                        localStateBiases[pair.Key] = pair.Value;
                 }
             }
 
-            // Normalize and combine biases with conflict resolution
-            // Normalize within each constraint type
-            Dictionary<string, Dictionary<int, float>> normalizedTypeGroups =
-                new Dictionary<string, Dictionary<int, float>>();
-
-            foreach (var groupEntry in constraintTypeGroups)
+            // Average biases within each type to avoid over-influence from multiple constraints
+            foreach (var pair in globalStateBiases)
             {
-                string type = groupEntry.Key;
-                var biases = groupEntry.Value;
-
-                if (biases.Count == 0) continue;
-
-                // Group by state
-                Dictionary<int, List<float>> stateGroups = new Dictionary<int, List<float>>();
-                foreach (var bias in biases)
-                {
-                    if (!stateGroups.ContainsKey(bias.Key))
-                        stateGroups[bias.Key] = new List<float>();
-
-                    stateGroups[bias.Key].Add(bias.Value);
-                }
-
-                // Combine biases for each state (using sign-preserving average)
-                normalizedTypeGroups[type] = new Dictionary<int, float>();
-                foreach (var stateGroup in stateGroups)
-                {
-                    int state = stateGroup.Key;
-                    List<float> values = stateGroup.Value;
-
-                    // Sign-preserving average (preserves bias direction)
-                    float sum = 0;
-                    foreach (float val in values)
-                        sum += val;
-
-                    float avg = sum / values.Count;
-                    normalizedTypeGroups[type][state] = avg;
-                }
+                globalStateBiases[pair.Key] = pair.Value * globalWeight;
             }
 
-            // Combine across constraint types, with conflict detection
-            foreach (var typeGroup in normalizedTypeGroups)
+            foreach (var pair in regionStateBiases)
             {
-                string type = typeGroup.Key;
-                float typeWeight = typeWeights[type];
+                regionStateBiases[pair.Key] = pair.Value * regionWeight;
+            }
 
-                foreach (var stateBias in typeGroup.Value)
+            foreach (var pair in localStateBiases)
+            {
+                localStateBiases[pair.Key] = pair.Value * localWeight;
+            }
+
+            // Combine all bias types with conflict resolution
+            HashSet<int> allStates = new HashSet<int>();
+            foreach (var state in globalStateBiases.Keys) allStates.Add(state);
+            foreach (var state in regionStateBiases.Keys) allStates.Add(state);
+            foreach (var state in localStateBiases.Keys) allStates.Add(state);
+
+            foreach (int state in allStates)
+            {
+                float bias = 0f;
+                bool hasGlobal = globalStateBiases.TryGetValue(state, out float globalBias);
+                bool hasRegion = regionStateBiases.TryGetValue(state, out float regionBias);
+                bool hasLocal = localStateBiases.TryGetValue(state, out float localBias);
+
+                // Simple case: only one source
+                if (hasGlobal && !hasRegion && !hasLocal)
+                    bias = globalBias;
+                else if (!hasGlobal && hasRegion && !hasLocal)
+                    bias = regionBias;
+                else if (!hasGlobal && !hasRegion && hasLocal)
+                    bias = localBias;
+                else
                 {
-                    int state = stateBias.Key;
-                    float bias = stateBias.Value * typeWeight;
+                    // Complex case: multiple sources
+                    // Start with global bias if available
+                    if (hasGlobal)
+                        bias = globalBias;
 
-                    if (!normalizedBiases.ContainsKey(state))
-                        normalizedBiases[state] = 0;
-
-                    // Check for potential conflict (opposing signs)
-                    if (normalizedBiases[state] * bias < 0)
+                    // Add region bias with sign checking
+                    if (hasRegion)
                     {
-                        // Conflict detected - take the stronger bias
-                        if (Mathf.Abs(bias) > Mathf.Abs(normalizedBiases[state]))
-                            normalizedBiases[state] = bias;
-                        // Otherwise keep existing bias
-                    }
-                    else
-                    {
-                        // No conflict - weighted blend (not simple addition)
-                        float existingWeight = Mathf.Abs(normalizedBiases[state]);
-                        float newWeight = Mathf.Abs(bias);
-                        float totalWeight = existingWeight + newWeight;
-
-                        if (totalWeight > 0)
+                        if (bias * regionBias < 0) // Opposing signs
                         {
-                            normalizedBiases[state] =
-                                (normalizedBiases[state] * existingWeight + bias * newWeight) / totalWeight;
+                            // Keep the stronger bias
+                            if (Mathf.Abs(regionBias) > Mathf.Abs(bias))
+                                bias = regionBias;
                         }
                         else
                         {
-                            normalizedBiases[state] += bias;
+                            // Same sign or one is zero, use weighted blend
+                            float weight1 = Mathf.Abs(bias);
+                            float weight2 = Mathf.Abs(regionBias);
+                            float total = weight1 + weight2;
+
+                            if (total > 0)
+                                bias = (bias * weight1 + regionBias * weight2) / total;
+                        }
+                    }
+
+                    // Add local bias with sign checking (local has highest priority)
+                    if (hasLocal)
+                    {
+                        if (bias * localBias < 0) // Opposing signs
+                        {
+                            // Local bias always wins conflicts
+                            bias = localBias;
+                        }
+                        else
+                        {
+                            // Same sign or one is zero, use weighted blend with local priority
+                            float weight1 = Mathf.Abs(bias);
+                            float weight2 = Mathf.Abs(localBias) * 1.5f; // Local priority multiplier
+                            float total = weight1 + weight2;
+
+                            if (total > 0)
+                                bias = (bias * weight1 + localBias * weight2) / total;
                         }
                     }
                 }
-            }
 
-            // Clamp final values to reasonable range
-            foreach (int state in normalizedBiases.Keys.ToList())
-            {
-                normalizedBiases[state] = Mathf.Clamp(normalizedBiases[state], -1f, 1f);
+                // Only add significant biases
+                if (Mathf.Abs(bias) > 0.01f)
+                    normalizedBiases[state] = Mathf.Clamp(bias, -1f, 1f);
             }
 
             return normalizedBiases;
@@ -808,438 +706,10 @@ namespace WFC.Core
         private void InvalidateCache()
         {
             chunkStateBiasCache.Clear();
-            constraintsChanged = true;
 
-            // Mark all chunks as dirty
-            foreach (var chunk in chunkStateBiasCache.Keys)
-            {
-                dirtyChunks.Add(chunk);
-            }
-        }
+            // Reset dirty chunks
+            dirtyChunks.Clear();
 
-        /// <summary>
-        /// Visualize constraints at a given world position
-        /// </summary>
-        public Dictionary<string, object> VisualizeAtPosition(Vector3 worldPos, int maxStates)
-        {
-            Dictionary<string, object> result = new Dictionary<string, object>();
-
-            // Calculate chunk position
-            Vector3Int chunkPos = new Vector3Int(
-                Mathf.FloorToInt(worldPos.x / chunkSize),
-                Mathf.FloorToInt(worldPos.y / chunkSize),
-                Mathf.FloorToInt(worldPos.z / chunkSize)
-            );
-
-            // Calculate local position
-            Vector3Int localPos = new Vector3Int(
-                Mathf.FloorToInt(worldPos.x) % chunkSize,
-                Mathf.FloorToInt(worldPos.y) % chunkSize,
-                Mathf.FloorToInt(worldPos.z) % chunkSize
-            );
-
-            // Get state biases
-            Dictionary<int, float> biases = GetStateBiases(worldPos, chunkPos, localPos, maxStates);
-
-            // Add position info
-            result["worldPosition"] = worldPos;
-            result["chunkPosition"] = chunkPos;
-            result["localPosition"] = localPos;
-
-            // Add biases
-            Dictionary<int, float> stateBiases = new Dictionary<int, float>();
-            foreach (var pair in biases)
-            {
-                stateBiases[pair.Key] = pair.Value;
-            }
-            result["stateBiases"] = stateBiases;
-
-            // Add active constraints
-            List<Dictionary<string, object>> activeConstraints = new List<Dictionary<string, object>>();
-            
-            // Check global constraints
-            foreach (var constraint in globalConstraints)
-            {
-                float influence = constraint.GetInfluenceAt(worldPos);
-                if (influence > 0.01f)
-                {
-                    Dictionary<string, object> constraintInfo = new Dictionary<string, object>();
-                    constraintInfo["name"] = constraint.Name;
-                    constraintInfo["type"] = constraint.Type.ToString();
-                    constraintInfo["strength"] = constraint.Strength;
-                    constraintInfo["influence"] = influence;
-                    
-                    Dictionary<int, float> constraintBiases = new Dictionary<int, float>();
-                    for (int state = 0; state < maxStates; state++)
-                    {
-                        float bias = constraint.GetStateBias(state, worldPos);
-                        if (Mathf.Abs(bias) > 0.01f)
-                        {
-                            constraintBiases[state] = bias;
-                        }
-                    }
-                    
-                    constraintInfo["biases"] = constraintBiases;
-                    activeConstraints.Add(constraintInfo);
-                }
-            }
-            
-            // Check region constraints
-            foreach (var constraint in regionConstraints)
-            {
-                float influence = constraint.GetInfluenceAt(chunkPos, (Vector3)localPos, chunkSize);
-                if (influence > 0.01f)
-                {
-                    Dictionary<string, object> constraintInfo = new Dictionary<string, object>();
-                    constraintInfo["name"] = constraint.Name;
-                    constraintInfo["type"] = constraint.Type.ToString();
-                    constraintInfo["strength"] = constraint.Strength;
-                    constraintInfo["influence"] = influence;
-                    
-                    Dictionary<int, float> constraintBiases = new Dictionary<int, float>();
-                    for (int state = 0; state < maxStates; state++)
-                    {
-                        float bias = constraint.GetStateBias(state, chunkPos, (Vector3)localPos, chunkSize);
-                        if (Mathf.Abs(bias) > 0.01f)
-                        {
-                            constraintBiases[state] = bias;
-                        }
-                    }
-                    
-                    constraintInfo["biases"] = constraintBiases;
-                    activeConstraints.Add(constraintInfo);
-                }
-            }
-            
-            // Check local constraints
-            if (localConstraints.TryGetValue(chunkPos, out var cellConstraints) &&
-                cellConstraints.TryGetValue(localPos, out var stateConstraints))
-            {
-                Dictionary<string, object> constraintInfo = new Dictionary<string, object>();
-                constraintInfo["name"] = "Local Cell Constraint";
-                constraintInfo["type"] = "LocalCell";
-                constraintInfo["strength"] = 1.0f;
-                constraintInfo["influence"] = 1.0f;
-                
-                Dictionary<int, float> constraintBiases = new Dictionary<int, float>();
-                foreach (var pair in stateConstraints)
-                {
-                    constraintBiases[pair.Key] = pair.Value;
-                }
-                
-                constraintInfo["biases"] = constraintBiases;
-                activeConstraints.Add(constraintInfo);
-            }
-            
-            result["activeConstraints"] = activeConstraints;
-            
-            return result;
-        }
-        
-        /// <summary>
-        /// Export constraints to a serializable format
-        /// </summary>
-        public string ExportConstraints()
-        {
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            
-            // Export global constraints
-            sb.AppendLine("# Global Constraints");
-            foreach (var constraint in globalConstraints)
-            {
-                sb.AppendLine($"G:{constraint.Name}:{constraint.Type}");
-                sb.AppendLine($"  Center:{constraint.WorldCenter.x},{constraint.WorldCenter.y},{constraint.WorldCenter.z}");
-                sb.AppendLine($"  Size:{constraint.WorldSize.x},{constraint.WorldSize.y},{constraint.WorldSize.z}");
-                sb.AppendLine($"  Blend:{constraint.BlendRadius}");
-                sb.AppendLine($"  Strength:{constraint.Strength}");
-                
-                // Export biases
-                sb.Append("  Biases:");
-                foreach (var bias in constraint.StateBiases)
-                {
-                    sb.Append($"{bias.Key}:{bias.Value},");
-                }
-                sb.AppendLine();
-                sb.AppendLine();
-            }
-            
-            // Export region constraints
-            sb.AppendLine("# Region Constraints");
-            foreach (var constraint in regionConstraints)
-            {
-                sb.AppendLine($"R:{constraint.Name}:{constraint.Type}");
-                sb.AppendLine($"  Position:{constraint.ChunkPosition.x},{constraint.ChunkPosition.y},{constraint.ChunkPosition.z}");
-                sb.AppendLine($"  Size:{constraint.ChunkSize.x},{constraint.ChunkSize.y},{constraint.ChunkSize.z}");
-                sb.AppendLine($"  Internal:{constraint.InternalOrigin.x},{constraint.InternalOrigin.y},{constraint.InternalOrigin.z}:{constraint.InternalSize.x},{constraint.InternalSize.y},{constraint.InternalSize.z}");
-                sb.AppendLine($"  Gradient:{constraint.Gradient}");
-                sb.AppendLine($"  Strength:{constraint.Strength}");
-                sb.AppendLine($"  States:{constraint.SourceState}:{constraint.TargetState}");
-                
-                // Export biases
-                sb.Append("  Biases:");
-                foreach (var bias in constraint.StateBiases)
-                {
-                    sb.Append($"{bias.Key}:{bias.Value},");
-                }
-                sb.AppendLine();
-                sb.AppendLine();
-            }
-            
-            // Export local constraints
-            sb.AppendLine("# Local Constraints");
-            foreach (var chunkEntry in localConstraints)
-            {
-                Vector3Int chunkPos = chunkEntry.Key;
-                
-                foreach (var cellEntry in chunkEntry.Value)
-                {
-                    Vector3Int cellPos = cellEntry.Key;
-                    
-                    sb.AppendLine($"L:{chunkPos.x},{chunkPos.y},{chunkPos.z}:{cellPos.x},{cellPos.y},{cellPos.z}");
-                    
-                    // Export biases
-                    sb.Append("  Biases:");
-                    foreach (var bias in cellEntry.Value)
-                    {
-                        sb.Append($"{bias.Key}:{bias.Value},");
-                    }
-                    sb.AppendLine();
-                }
-            }
-            
-            return sb.ToString();
-        }
-        
-        /// <summary>
-        /// Import constraints from serialized format
-        /// </summary>
-        public bool ImportConstraints(string data)
-        {
-            try
-            {
-                // Clear existing constraints
-                ClearConstraints();
-                
-                // Split into lines
-                string[] lines = data.Split(new[] { '\r', '\n' }, System.StringSplitOptions.RemoveEmptyEntries);
-                
-                // Parse each line
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    string line = lines[i].Trim();
-                    
-                    // Skip comments and empty lines
-                    if (string.IsNullOrEmpty(line) || line.StartsWith("#"))
-                        continue;
-                        
-                    // Parse global constraint
-                    if (line.StartsWith("G:"))
-                    {
-                        // Parse constraint header
-                        string[] parts = line.Substring(2).Split(':');
-                        string name = parts[0];
-                        ConstraintType type = (ConstraintType)System.Enum.Parse(typeof(ConstraintType), parts[1]);
-                        
-                        GlobalConstraint constraint = new GlobalConstraint
-                        {
-                            Name = name,
-                            Type = type
-                        };
-                        
-                        // Parse parameters from next lines
-                        while (++i < lines.Length && lines[i].StartsWith("  "))
-                        {
-                            string paramLine = lines[i].Trim();
-                            
-                            if (paramLine.StartsWith("Center:"))
-                            {
-                                string[] coords = paramLine.Substring(7).Split(',');
-                                constraint.WorldCenter = new Vector3(
-                                    float.Parse(coords[0]),
-                                    float.Parse(coords[1]),
-                                    float.Parse(coords[2])
-                                );
-                            }
-                            else if (paramLine.StartsWith("Size:"))
-                            {
-                                string[] dims = paramLine.Substring(5).Split(',');
-                                constraint.WorldSize = new Vector3(
-                                    float.Parse(dims[0]),
-                                    float.Parse(dims[1]),
-                                    float.Parse(dims[2])
-                                );
-                            }
-                            else if (paramLine.StartsWith("Blend:"))
-                            {
-                                constraint.BlendRadius = float.Parse(paramLine.Substring(6));
-                            }
-                            else if (paramLine.StartsWith("Strength:"))
-                            {
-                                constraint.Strength = float.Parse(paramLine.Substring(9));
-                            }
-                            else if (paramLine.StartsWith("Biases:"))
-                            {
-                                string[] biases = paramLine.Substring(7).Split(',');
-                                foreach (string bias in biases)
-                                {
-                                    if (string.IsNullOrEmpty(bias))
-                                        continue;
-                                        
-                                    string[] biasParts = bias.Split(':');
-                                    int state = int.Parse(biasParts[0]);
-                                    float value = float.Parse(biasParts[1]);
-                                    
-                                    constraint.StateBiases[state] = value;
-                                }
-                            }
-                        }
-                        
-                        // Adjust index since increment at the end of the loop
-                        i--;
-                        
-                        // Add constraint
-                        AddGlobalConstraint(constraint);
-                    }
-                    // Parse region constraint
-                    else if (line.StartsWith("R:"))
-                    {
-                        // Parse constraint header
-                        string[] parts = line.Substring(2).Split(':');
-                        string name = parts[0];
-                        RegionType type = (RegionType)System.Enum.Parse(typeof(RegionType), parts[1]);
-                        
-                        RegionConstraint constraint = new RegionConstraint
-                        {
-                            Name = name,
-                            Type = type
-                        };
-                        
-                        // Parse parameters from next lines
-                        while (++i < lines.Length && lines[i].StartsWith("  "))
-                        {
-                            string paramLine = lines[i].Trim();
-                            
-                            if (paramLine.StartsWith("Position:"))
-                            {
-                                string[] coords = paramLine.Substring(9).Split(',');
-                                constraint.ChunkPosition = new Vector3Int(
-                                    int.Parse(coords[0]),
-                                    int.Parse(coords[1]),
-                                    int.Parse(coords[2])
-                                );
-                            }
-                            else if (paramLine.StartsWith("Size:"))
-                            {
-                                string[] dims = paramLine.Substring(5).Split(',');
-                                constraint.ChunkSize = new Vector3Int(
-                                    int.Parse(dims[0]),
-                                    int.Parse(dims[1]),
-                                    int.Parse(dims[2])
-                                );
-                            }
-                            else if (paramLine.StartsWith("Internal:"))
-                            {
-                                string[] parts2 = paramLine.Substring(9).Split(':');
-                                
-                                string[] origin = parts2[0].Split(',');
-                                constraint.InternalOrigin = new Vector3(
-                                    float.Parse(origin[0]),
-                                    float.Parse(origin[1]),
-                                    float.Parse(origin[2])
-                                );
-                                
-                                string[] size = parts2[1].Split(',');
-                                constraint.InternalSize = new Vector3(
-                                    float.Parse(size[0]),
-                                    float.Parse(size[1]),
-                                    float.Parse(size[2])
-                                );
-                            }
-                            else if (paramLine.StartsWith("Gradient:"))
-                            {
-                                constraint.Gradient = float.Parse(paramLine.Substring(9));
-                            }
-                            else if (paramLine.StartsWith("Strength:"))
-                            {
-                                constraint.Strength = float.Parse(paramLine.Substring(9));
-                            }
-                            else if (paramLine.StartsWith("States:"))
-                            {
-                                string[] states = paramLine.Substring(7).Split(':');
-                                constraint.SourceState = int.Parse(states[0]);
-                                constraint.TargetState = int.Parse(states[1]);
-                            }
-                            else if (paramLine.StartsWith("Biases:"))
-                            {
-                                string[] biases = paramLine.Substring(7).Split(',');
-                                foreach (string bias in biases)
-                                {
-                                    if (string.IsNullOrEmpty(bias))
-                                        continue;
-                                        
-                                    string[] biasParts = bias.Split(':');
-                                    int state = int.Parse(biasParts[0]);
-                                    float value = float.Parse(biasParts[1]);
-                                    
-                                    constraint.StateBiases[state] = value;
-                                }
-                            }
-                        }
-                        
-                        // Adjust index since increment at the end of the loop
-                        i--;
-                        
-                        // Add constraint
-                        AddRegionConstraint(constraint);
-                    }
-                    // Parse local constraint
-                    else if (line.StartsWith("L:"))
-                    {
-                        // Parse position
-                        string[] parts = line.Substring(2).Split(':');
-                        string[] chunkCoords = parts[0].Split(',');
-                        Vector3Int chunkPos = new Vector3Int(
-                            int.Parse(chunkCoords[0]),
-                            int.Parse(chunkCoords[1]),
-                            int.Parse(chunkCoords[2])
-                        );
-                        
-                        string[] cellCoords = parts[1].Split(',');
-                        Vector3Int cellPos = new Vector3Int(
-                            int.Parse(cellCoords[0]),
-                            int.Parse(cellCoords[1]),
-                            int.Parse(cellCoords[2])
-                        );
-                        
-                        // Parse biases
-                        if (++i < lines.Length && lines[i].TrimStart().StartsWith("Biases:"))
-                        {
-                            string paramLine = lines[i].Trim();
-                            string[] biases = paramLine.Substring(7).Split(',');
-                            
-                            foreach (string bias in biases)
-                            {
-                                if (string.IsNullOrEmpty(bias))
-                                    continue;
-                                    
-                                string[] biasParts = bias.Split(':');
-                                int state = int.Parse(biasParts[0]);
-                                float value = float.Parse(biasParts[1]);
-                                
-                                // Add local constraint
-                                AddLocalConstraint(chunkPos, cellPos, state, value);
-                            }
-                        }
-                    }
-                }
-                
-                return true;
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogError($"Error importing constraints: {ex.Message}");
-                return false;
-            }
         }
     }
 }

@@ -14,75 +14,69 @@
 # chunking, and boundary management systems for coherent region transitions.
 # ===================================================================
 */
-/*
- * WFCGenerator.cs
- * -----------------------------
- * Core implementation of the Wave Function Collapse algorithm for 3D terrain generation.
- * 
- * Algorithm Overview:
- * 1. Initialize all cells with all possible states
- * 2. Repeatedly:
- *    a. Find the cell with lowest entropy (fewest possible states)
- *    b. Collapse it to a single state based on weighted probabilities
- *    c. Propagate constraints to neighboring cells
- *    d. Continue until all cells are collapsed or no further progress is possible
- * 
- * This implementation extends the original WFC with:
- * - Hierarchical constraints for terrain features
- * - Chunk-based generation for infinite worlds
- * - Boundary management for seamless transitions
- * - Parallel processing for performance optimization
- *
- */
-using System;
-using System.Collections.Generic;
-using UnityEngine;
-using WFC.Core;
-using WFC.Boundary;
-using System.Linq;
-using Utils;
-using WFC.Configuration;
+ /*
+  * WFCGenerator.cs
+  * -----------------------------
+  * Core implementation of the Wave Function Collapse algorithm for 3D terrain generation.
+  * 
+  * Algorithm Overview:
+  * 1. Initialize all cells with all possible states
+  * 2. Repeatedly:
+  *    a. Find the cell with lowest entropy (fewest possible states)
+  *    b. Collapse it to a single state based on weighted probabilities
+  *    c. Propagate constraints to neighboring cells
+  *    d. Continue until all cells are collapsed or no further progress is possible
+  * 
+  * This implementation extends the original WFC with:
+  * - Hierarchical constraints for terrain features
+  * - Chunk-based generation for infinite worlds
+  * - Boundary management for seamless transitions
+  * - Parallel processing for performance optimization
+  *
+  */using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
+using UnityEngine;
+using WFC.Boundary;
 using WFC.Chunking;
+using WFC.Configuration;
+using WFC.Core;
 using WFC.Processing;
 using WFC.Terrain;
+using Utils;
 
 namespace WFC.Generation
 {
-    public class WFCGenerator : MonoBehaviour, WFC.Boundary.IChunkProvider, WFC.Boundary.IWFCAlgorithm
+    public class WFCGenerator : MonoBehaviour, IChunkProvider, IWFCAlgorithm
     {
         [Header("Configuration")]
-        [Tooltip("Override the global configuration with a specific asset")]
         [SerializeField] private WFCConfiguration configOverride;
 
         [Header("State Settings")]
         [SerializeField] private Material[] stateMaterials;
+        [SerializeField] private TerrainManager terrainManager;
 
         // World data
         private Dictionary<Vector3Int, Chunk> chunks = new Dictionary<Vector3Int, Chunk>();
         private PriorityQueue<PropagationEvent, float> propagationQueue = new PriorityQueue<PropagationEvent, float>();
         private bool[,,] adjacencyRules;
-
         private HierarchicalConstraintSystem hierarchicalConstraints;
-
-        // Boundary manager
         private BoundaryBufferManager boundaryManager;
 
-        // Configurable System
+        // System references
         private TerrainDefinition currentTerrainDefinition;
-        [SerializeField] private TerrainManager terrainManager;
         private TerrainStateRegistry stateRegistry;
-
-        // Cache for config access
         private WFCConfiguration activeConfig;
         private ParallelWFCProcessor parallelProcessor;
-
         private ITerrainGenerator terrainGenerator;
 
-
+        // Performance optimizations
         private int frameSkipCounter = 0;
+        private Dictionary<Vector3Int, Dictionary<int, float>> constraintCache = new Dictionary<Vector3Int, Dictionary<int, float>>();
+        private const int MAX_EVENTS_PER_FRAME = 20;
 
-        // Properties that now use the configuration
+        // Properties
         public int MaxCellStates => activeConfig.World.maxStates;
         public int ChunkSize => activeConfig.World.chunkSize;
         public Vector3Int WorldSize => new Vector3Int(
@@ -91,35 +85,37 @@ namespace WFC.Generation
             activeConfig.World.worldSizeZ
         );
 
-        public Dictionary<Vector3Int, Chunk> GetChunks()
-        {
-            return chunks;
-        }
+        // IChunkProvider implementation
+        public Dictionary<Vector3Int, Chunk> GetChunks() => chunks;
 
-        public void AddPropagationEvent(PropagationEvent evt)
-        {
-            propagationQueue.Enqueue(evt, evt.Priority);
-        }
+        // IWFCAlgorithm implementation
+        public void AddPropagationEvent(PropagationEvent evt) => propagationQueue.Enqueue(evt, evt.Priority);
 
         private void Awake()
         {
+            InitializeComponents();
+            StartCoroutine(DelayedInitialization());
+        }
+
+        private void InitializeComponents()
+        {
+            // Initialize registry and terrain components
             stateRegistry = TerrainStateRegistry.Instance;
             if (TerrainManager.Current == null && terrainManager != null)
             {
                 terrainManager.InitializeTerrainGenerator();
                 currentTerrainDefinition = terrainManager.CurrentTerrain;
-                // Explicitly get terrainGenerator from manager
                 terrainGenerator = terrainManager.TerrainGenerator;
             }
+
             if (stateRegistry == null)
             {
                 Debug.LogError("WFCGenerator: TerrainStateRegistry not found! Creating default instance.");
                 stateRegistry = new TerrainStateRegistry();
             }
 
-            // Get the configuration - use override if specified, otherwise use global config
+            // Get configuration
             activeConfig = configOverride != null ? configOverride : WFCConfigManager.Config;
-
             if (activeConfig == null)
             {
                 Debug.LogError("WFCGenerator: No configuration available. Please assign a WFCConfiguration asset.");
@@ -127,29 +123,14 @@ namespace WFC.Generation
                 return;
             }
 
-            // Validate configuration
             if (!activeConfig.Validate())
-            {
                 Debug.LogWarning("WFCGenerator: Using configuration with validation issues.");
-            }
 
-            StartCoroutine(DelayedInitialization());
-
-            if (terrainGenerator == null)
-            {
-                if (TerrainManager.Current?.CurrentTerrain is MountainValleyTerrainDefinition mountainValley)
-                {
-                    terrainGenerator = new MountainValleyGenerator(mountainValley);
-                }
-                else
-                {
-                    Debug.LogWarning("No terrain generator available - using default constraints");
-                }
-            }
-
+            // Initialize terrain generator if needed
+            if (terrainGenerator == null && TerrainManager.Current?.CurrentTerrain is MountainValleyTerrainDefinition mountainValley)
+                terrainGenerator = new MountainValleyGenerator(mountainValley);
         }
 
-        // Initializes the WFC algorithm and starts the generation process
         private IEnumerator DelayedInitialization()
         {
             int maxRetries = 5;
@@ -174,7 +155,6 @@ namespace WFC.Generation
             Debug.Log("No ChunkManager found after retries, initializing WFC grid at origin");
         }
 
-        // Initializes rules without creating chunks
         private void InitializeRulesOnly()
         {
             // Initialize adjacency rules but don't create chunks
@@ -189,35 +169,27 @@ namespace WFC.Generation
 
         private void Update()
         {
-            // Skip frames for heavy operations
+            // Process every 3rd frame for performance
             frameSkipCounter++;
-            if (frameSkipCounter % 3 != 0) // Only process every 3rd frame
-                return;
+            if (frameSkipCounter % 3 != 0) return;
 
             // Process propagation queue
             ProcessPropagationQueue();
 
             // Process parallel processor events
             if (parallelProcessor != null)
-            {
                 parallelProcessor.ProcessMainThreadEvents();
-            }
 
-
-            // Check if it need to collapse more cells
+            // Check if we need to collapse more cells
             if (propagationQueue.Count == 0)
-            {
                 CollapseNextCell();
-            }
         }
 
         private void ProcessPropagationQueue()
         {
-            // Process a fixed number of events per frame
-            int maxEventsPerFrame = 20;
             int processedEvents = 0;
 
-            while (propagationQueue.Count > 0 && processedEvents < maxEventsPerFrame)
+            while (propagationQueue.Count > 0 && processedEvents < MAX_EVENTS_PER_FRAME)
             {
                 PropagationEvent evt = propagationQueue.Dequeue();
                 ProcessPropagationEvent(evt);
@@ -225,18 +197,14 @@ namespace WFC.Generation
 
                 // Force boundary updates for boundary events
                 if (evt.IsBoundaryEvent && evt.Cell.IsBoundary)
-                {
                     boundaryManager.SynchronizeAllBuffers();
-                }
             }
         }
 
-        // Collapse the next cell in the queue
         private void ProcessPropagationEvent(PropagationEvent evt)
         {
             // Skip if the event is invalid
-            if (evt.Cell == null || evt.Chunk == null)
-                return;
+            if (evt.Cell == null || evt.Chunk == null) return;
 
             Cell cell = evt.Cell;
             Chunk chunk = evt.Chunk;
@@ -245,17 +213,14 @@ namespace WFC.Generation
             ApplyConstraintsToCell(cell, chunk);
 
             // Skip if not collapsed
-            if (!cell.CollapsedState.HasValue)
-                return;
+            if (!cell.CollapsedState.HasValue) return;
 
             // Find neighbors and propagate constraints
             PropagateToNeighbors(cell, chunk);
 
             // Update boundary buffers if needed
             if (cell.IsBoundary && cell.BoundaryDirection.HasValue)
-            {
                 boundaryManager.UpdateBuffersAfterCollapse(cell, chunk);
-            }
         }
 
         /*
@@ -281,8 +246,7 @@ namespace WFC.Generation
         {
             // Find cell position in chunk
             Vector3Int? cellPos = FindCellPosition(cell, chunk);
-            if (!cellPos.HasValue)
-                return;
+            if (!cellPos.HasValue) return;
 
             int state = cell.CollapsedState.Value;
 
@@ -300,34 +264,21 @@ namespace WFC.Generation
                     Cell neighbor = chunk.GetCell(neighborPos.x, neighborPos.y, neighborPos.z);
                     ApplyConstraint(neighbor, state, dir, chunk);
                 }
-                else
-                {
-                    // Handle neighbor in adjacent chunk (through boundary system)
-                }
+                // Neighbors in adjacent chunks are handled by the boundary system
             }
         }
 
-        // Find the position of a cell within a chunk
         private Vector3Int? FindCellPosition(Cell cell, Chunk chunk)
         {
             for (int x = 0; x < chunk.Size; x++)
-            {
                 for (int y = 0; y < chunk.Size; y++)
-                {
                     for (int z = 0; z < chunk.Size; z++)
-                    {
                         if (chunk.GetCell(x, y, z) == cell)
-                        {
                             return new Vector3Int(x, y, z);
-                        }
-                    }
-                }
-            }
 
             return null;
         }
 
-        // Apply constraints to a cell based on its collapsed state
         private bool IsPositionInChunk(Vector3Int pos, int chunkSize)
         {
             return pos.x >= 0 && pos.x < chunkSize &&
@@ -336,59 +287,46 @@ namespace WFC.Generation
         }
 
         /*
-         * ApplyConstraint
-         * -----------------------------
-         * Applies constraints from a collapsed cell to a neighboring cell.
-         * 
-         * This is a key part of the constraint propagation system in WFC:
-         * 1. Start with the full set of possible states for the target cell
-         * 2. Filter out states that are incompatible with the source cell's state
-         * 3. Update the target cell's possible states
-         * 4. If the cell's possible states change, queue a new propagation event
-         * 
-         * The compatibility between states is determined by the adjacency rules
-         * defined in the SetupAdjacencyRules method. These rules define which
-         * states can be placed adjacent to each other in each direction.
-         */
+        * ApplyConstraint
+        * -----------------------------
+        * Applies constraints from a collapsed cell to a neighboring cell.
+        * 
+        * This is a key part of the constraint propagation system in WFC:
+        * 1. Start with the full set of possible states for the target cell
+        * 2. Filter out states that are incompatible with the source cell's state
+        * 3. Update the target cell's possible states
+        * 4. If the cell's possible states change, queue a new propagation event
+        * 
+        * The compatibility between states is determined by the adjacency rules
+        * defined in the SetupAdjacencyRules method. These rules define which
+        * states can be placed adjacent to each other in each direction.
+        */
         private void ApplyConstraint(Cell cell, int constraintState, Direction direction, Chunk chunk)
         {
             // Skip if already collapsed
-            if (cell.CollapsedState.HasValue)
-                return;
+            if (cell.CollapsedState.HasValue) return;
 
             // Store old states
             HashSet<int> oldStates = new HashSet<int>(cell.PossibleStates);
-
-            // Find compatible states
             HashSet<int> compatibleStates = new HashSet<int>();
 
+            // Find compatible states
             foreach (int state in cell.PossibleStates)
-            {
                 if (AreStatesCompatible(state, constraintState, direction))
-                {
                     compatibleStates.Add(state);
-                }
-            }
 
-            // Update possible states
+            // Update possible states if changed
             if (compatibleStates.Count > 0 && !compatibleStates.SetEquals(oldStates))
             {
                 cell.SetPossibleStates(compatibleStates);
 
                 // Create propagation event
                 PropagationEvent evt = new PropagationEvent(
-                    cell,
-                    chunk,
-                    oldStates,
-                    compatibleStates,
-                    cell.IsBoundary
-                );
-
+                    cell, chunk, oldStates, compatibleStates, cell.IsBoundary);
                 AddPropagationEvent(evt);
             }
         }
 
-        // In WFCGenerator.cs - InitializeHierarchicalConstraints method
         private void InitializeHierarchicalConstraints()
         {
             // Create the hierarchical constraint system
@@ -396,16 +334,11 @@ namespace WFC.Generation
 
             // Apply constraints from terrain definition if available
             if (terrainGenerator != null)
-            {
                 terrainGenerator.ApplyConstraints(hierarchicalConstraints, WorldSize, ChunkSize);
-                return;
-            }
-
-            // Fallback to basic constraints if no terrain generator
-            ApplyBasicConstraints(hierarchicalConstraints, WorldSize, ChunkSize);
+            else
+                ApplyBasicConstraints(hierarchicalConstraints, WorldSize, ChunkSize);
         }
 
-        // Fallback constraints method
         private void ApplyBasicConstraints(HierarchicalConstraintSystem system, Vector3Int worldSize, int chunkSize)
         {
             // Simple ground level constraint
@@ -427,7 +360,6 @@ namespace WFC.Generation
 
             system.AddGlobalConstraint(groundConstraint);
         }
-
 
         /*
          * SetupAdjacencyRules
@@ -462,41 +394,32 @@ namespace WFC.Generation
             {
                 // Copy rules from terrain definition
                 var rules = currentTerrain.AdjacencyRules;
-                for (int i = 0; i < MaxCellStates; i++)
-                {
-                    for (int j = 0; j < MaxCellStates; j++)
-                    {
-                        for (int d = 0; d < 6; d++)
-                        {
-                            if (i < rules.GetLength(0) && j < rules.GetLength(1) && d < rules.GetLength(2))
-                            {
-                                adjacencyRules[i, j, d] = rules[i, j, d];
-                            }
-                        }
-                    }
-                }
+                int minI = Math.Min(MaxCellStates, rules.GetLength(0));
+                int minJ = Math.Min(MaxCellStates, rules.GetLength(1));
+                int minD = Math.Min(6, rules.GetLength(2));
+
+                for (int i = 0; i < minI; i++)
+                    for (int j = 0; j < minJ; j++)
+                        for (int d = 0; d < minD; d++)
+                            adjacencyRules[i, j, d] = rules[i, j, d];
+
                 Debug.Log("Loaded adjacency rules from terrain definition");
             }
             else
             {
-                // Fallback to very basic adjacency rules for backward compatibility
+                // Fallback to very basic adjacency rules
                 Debug.LogWarning("No terrain definition found, using default adjacency rules");
 
                 // Air can be adjacent to any state
                 for (int i = 0; i < MaxCellStates; i++)
-                {
                     SetAdjacentAll(0, i, true);
-                }
 
                 // Same state adjacency is always allowed
                 for (int i = 0; i < MaxCellStates; i++)
-                {
                     SetAdjacentAll(i, i, true);
-                }
             }
         }
 
-        // Set adjacency rules for two states in all directions
         private void SetAdjacentAll(int stateA, int stateB, bool canBeAdjacent)
         {
             for (int d = 0; d < 6; d++)
@@ -530,30 +453,27 @@ namespace WFC.Generation
          */
         private void ApplyConstraintsToCell(Cell cell, Chunk chunk)
         {
-            // Skip if constraints are disabled
-            if (!activeConfig.Algorithm.useConstraints || hierarchicalConstraints == null)
+            // Skip if constraints are disabled or cell is already collapsed
+            if (!activeConfig.Algorithm.useConstraints || hierarchicalConstraints == null || cell.CollapsedState.HasValue)
                 return;
 
-            // Skip if cell is already collapsed
-            if (cell.CollapsedState.HasValue)
-                return;
+            // Get cached constraints or calculate new ones
+            Vector3Int cacheKey = new Vector3Int(chunk.Position.x, chunk.Position.y, chunk.Position.z);
+            if (!constraintCache.TryGetValue(cacheKey, out var biases))
+            {
+                var rawBiases = hierarchicalConstraints.CalculateConstraintInfluence(cell, chunk, MaxCellStates);
+                biases = new Dictionary<int, float>();
+
+                foreach (var bias in rawBiases)
+                    biases[bias.Key] = bias.Value * chunk.ConstraintInfluence;
+
+                // Cache for later use
+                constraintCache[cacheKey] = biases;
+            }
 
             // World position for height-based logic
             Vector3 worldPos = CalculateWorldPosition(cell.Position, chunk.Position);
-            float worldHeight = worldPos.y;
-
-            // Get constraint biases for decision making
-            Dictionary<int, float> biases = new Dictionary<int, float>();
-            var rawBiases = hierarchicalConstraints.CalculateConstraintInfluence(cell, chunk, MaxCellStates);
-
-            foreach (var bias in rawBiases)
-            {
-                // Scale the bias by the chunk's LOD constraint influence factor
-                biases[bias.Key] = bias.Value * chunk.ConstraintInfluence;
-            }
-
-            // Apply STRONG height-based constraints to eliminate holes
-            float heightRatio = worldHeight / (WorldSize.y * ChunkSize);
+            float heightRatio = worldPos.y / (WorldSize.y * ChunkSize);
 
             // Force air above certain height
             if (heightRatio > 0.8f)
@@ -566,78 +486,65 @@ namespace WFC.Generation
             if (heightRatio < 0.2f)
             {
                 // Look at biases to decide which solid state
-                if (biases.ContainsKey(4) && biases[4] > 0.3f)
+                if (biases.TryGetValue(4, out float rockBias) && rockBias > 0.3f)
                     cell.Collapse(4); // Rock
-                else if (biases.ContainsKey(3) && biases[3] > 0.3f)
+                else if (biases.TryGetValue(3, out float waterBias) && waterBias > 0.3f)
                     cell.Collapse(3); // Water
                 else
                     cell.Collapse(1); // Default to ground
                 return;
             }
 
-            // Normal processing for middle heights
-
-            // If no significant biases, return without modifying cell
+            // Normal processing for middle heights - if no significant biases, return
             if (!biases.Values.Any(v => Mathf.Abs(v) > 0.01f))
                 return;
 
             // Get current possible states
             HashSet<int> currentStates = new HashSet<int>(cell.PossibleStates);
+            if (currentStates.Count <= 1) return;
 
             // Calculate adjustment probability for each state based on biases
             Dictionary<int, float> stateWeights = new Dictionary<int, float>();
+            float totalWeight = 0;
 
             foreach (int state in currentStates)
             {
-                // Base weight is 1.0
-                float weight = 1.0f;
+                float weight = 1.0f; // Base weight
 
                 // Apply bias adjustment if exists
                 if (biases.TryGetValue(state, out float bias))
-                {
-                    // Positive bias increases weight (more likely)
-                    // Negative bias decreases weight (less likely)
                     weight *= (1.0f + bias);
-                }
 
                 // Ensure weight is positive
                 weight = Mathf.Max(0.01f, weight);
                 stateWeights[state] = weight;
+                totalWeight += weight;
             }
 
-            // If cell has more than one possible state, consider constraint-based collapse
-            if (currentStates.Count > 1)
+            // Calculate collapse threshold based on strongest bias and LOD
+            float maxBias = biases.Values.Max(Mathf.Abs);
+            float collapseThreshold = Mathf.Lerp(0.9f, 0.5f, maxBias * chunk.ConstraintInfluence);
+
+            // Find if we have a highly dominant state
+            foreach (var state in stateWeights.Keys.ToList())
             {
-                // Get total weight
-                float totalWeight = stateWeights.Values.Sum();
+                float normalizedWeight = stateWeights[state] / totalWeight;
 
-                // Calculate collapse threshold based on strongest bias and LOD
-                float maxBias = biases.Values.Max(Mathf.Abs);
-                float collapseThreshold = Mathf.Lerp(0.9f, 0.5f, maxBias * chunk.ConstraintInfluence);
-
-                // Find if have a highly dominant state
-                foreach (var state in stateWeights.Keys.ToList())
+                // If one state is strongly preferred, collapse to it
+                if (normalizedWeight > collapseThreshold)
                 {
-                    float normalizedWeight = stateWeights[state] / totalWeight;
-
-                    // If one state is strongly preferred, collapse to it
-                    if (normalizedWeight > collapseThreshold)
-                    {
-                        cell.Collapse(state);
-                        return; // Cell is now collapsed
-                    }
+                    cell.Collapse(state);
+                    break;
                 }
             }
         }
 
-        // Check if two states are compatible based on adjacency rules
         public bool AreStatesCompatible(int stateA, int stateB, Direction direction)
         {
-            // Check if adjacencyRules is initialized
+            // Initialize rules lazily if needed
             if (adjacencyRules == null)
             {
-                // Initialize rules lazily if needed
-                adjacencyRules = new bool[MaxCellStates, MaxCellStates, 6]; // 6 directions
+                adjacencyRules = new bool[MaxCellStates, MaxCellStates, 6];
                 SetupAdjacencyRules();
             }
 
@@ -671,19 +578,14 @@ namespace WFC.Generation
          */
         private bool CollapseNextCell()
         {
+            // Performance optimization - cache viewer position
+            Vector3 viewerPosition = Camera.main != null ? Camera.main.transform.position : Vector3.zero;
+
             // Find the cell with lowest entropy
             Cell cellToCollapse = null;
             Chunk chunkWithCell = null;
             int lowestEntropy = int.MaxValue;
-            float closestDistance = float.MaxValue;  // Initialize to max value
-
-            // Get viewer position - either from a reference or camera
-            Vector3 viewerPosition = Camera.main != null ?
-                Camera.main.transform.position : Vector3.zero;
-
-            // Option: Use a prioritized area if no camera
-            // Vector3 priorityCenter = new Vector3(worldSize.x * chunkSize / 2, 0, worldSize.z * chunkSize / 2);
-            // Vector3 viewerPosition = priorityCenter;
+            float closestDistance = float.MaxValue;
 
             foreach (var chunkEntry in chunks)
             {
@@ -697,12 +599,9 @@ namespace WFC.Generation
                         {
                             Cell cell = chunk.GetCell(x, y, z);
 
-                            // Skip already collapsed cells
-                            if (cell.CollapsedState.HasValue)
+                            // Skip already collapsed cells or cells with only one state
+                            if (cell.CollapsedState.HasValue || cell.Entropy <= 1)
                                 continue;
-
-                            // Skip cells with only one state (will be collapsed in propagation)
-                            if (cell.Entropy <= 1) continue;
 
                             // Calculate effective entropy based on constraints
                             int effectiveEntropy = CalculateEffectiveEntropy(cell, chunk);
@@ -714,7 +613,7 @@ namespace WFC.Generation
                                 cellToCollapse = cell;
                                 chunkWithCell = chunk;
 
-                                // Recalculate distance for the new candidate
+                                // Calculate distance for the new candidate
                                 Vector3 cellWorldPos = CalculateWorldPosition(cell.Position, chunk.Position);
                                 closestDistance = Vector3.Distance(cellWorldPos, viewerPosition);
                             }
@@ -795,10 +694,12 @@ namespace WFC.Generation
 
                 // Collapse to chosen state
                 cellToCollapse.Collapse(chosenState);
+
+                // Create propagation event
                 PropagationEvent evt = new PropagationEvent(
                     cellToCollapse,
                     chunkWithCell,
-                    new HashSet<int>(cellToCollapse.PossibleStates),
+                    new HashSet<int>(possibleStates),
                     new HashSet<int> { chosenState },
                     cellToCollapse.IsBoundary
                 );
@@ -811,7 +712,6 @@ namespace WFC.Generation
             return false;
         }
 
-        // Helper method to calculate world position of the cell
         private Vector3 CalculateWorldPosition(Vector3Int localPosition, Vector3Int chunkPosition)
         {
             return new Vector3(
@@ -821,58 +721,41 @@ namespace WFC.Generation
             );
         }
 
-        // Helper to calculate effective entropy with constraints
         private int CalculateEffectiveEntropy(Cell cell, Chunk chunk)
         {
             // Get constraint biases
             Dictionary<int, float> biases = hierarchicalConstraints.CalculateConstraintInfluence(
                 cell, chunk, MaxCellStates);
 
-            // Calculate effective entropy based on biases
+            // Base entropy
             int effectiveEntropy = cell.Entropy;
 
             // If have strong biases, reduce effective entropy
             if (biases.Count > 0)
             {
                 float maxBias = biases.Values.Max(Mathf.Abs);
-
-                // Use configuration weights to determine entropy modification
-                float constraintWeight = activeConfig.Algorithm.constraintWeight;
-                float boundaryWeight = activeConfig.Algorithm.boundaryCoherenceWeight;
-
-                // Apply weights to bias
-                float adjustedBias = maxBias * constraintWeight;
+                float adjustedBias = maxBias * activeConfig.Algorithm.constraintWeight;
 
                 // If cell is on boundary, apply boundary weight
                 if (cell.IsBoundary)
-                {
-                    adjustedBias *= boundaryWeight;
-                }
+                    adjustedBias *= activeConfig.Algorithm.boundaryCoherenceWeight;
 
-                // Strong bias reduces effective entropy
-                //if (adjustedBias > 0.7f)
-                //    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.7f);
-                //else if (adjustedBias > 0.3f)
-                //    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.85f);
-                // Find constraint influence by increasing weight for biome constraints
+                // Reduce entropy based on bias strength
                 if (adjustedBias > 0.7f)
-                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.4f); // Stronger reduction
+                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.4f);
                 else if (adjustedBias > 0.4f)
-                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.6f); // Moderate reduction
+                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.6f);
                 else if (adjustedBias > 0.2f)
-                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.8f); // Slight reduction
+                    effectiveEntropy = Mathf.FloorToInt(effectiveEntropy * 0.8f);
             }
 
             return effectiveEntropy;
         }
 
-        // Get the current hierarchical constraint system
-        public HierarchicalConstraintSystem GetHierarchicalConstraintSystem()
-        {
-            return hierarchicalConstraints;
-        }
+        // Get the current hierarchical constraint system (public API)
+        public HierarchicalConstraintSystem GetHierarchicalConstraintSystem() => hierarchicalConstraints;
 
-        // Runtime configuration update method
+        // Runtime configuration update method (public API)
         public void UpdateConfiguration(WFCConfiguration newConfig)
         {
             if (newConfig == null)
@@ -890,19 +773,18 @@ namespace WFC.Generation
             configOverride = newConfig;
             activeConfig = newConfig;
 
+            // Clear constraint cache when configuration changes
+            constraintCache.Clear();
+
             // Handle changes that require regeneration
-            if (oldChunkSize != ChunkSize ||
-                oldMaxStates != MaxCellStates ||
-                oldWorldSize != WorldSize)
+            if (oldChunkSize != ChunkSize || oldMaxStates != MaxCellStates || oldWorldSize != WorldSize)
             {
                 Debug.LogWarning("WFCGenerator: Configuration change requires world regeneration. " +
                                 "Consider reinitializing the world.");
-
-                // Could offer to automatically reinitialize here
             }
         }
 
-        // Generatig Trees
+        // Generate tree models for a chunk (public API)
         public void GenerateTreeModels(Chunk chunk)
         {
             // Skip if not a ground-level chunk
@@ -930,27 +812,25 @@ namespace WFC.Generation
             {
                 for (int z = 0; z < chunk.Size; z++)
                 {
-                    // Detect top surface for each column
+                    // Find top forest cell in column
                     int maxForestY = -1;
-
                     for (int y = chunk.Size - 1; y >= 0; y--)
                     {
                         Cell cell = chunk.GetCell(x, y, z);
-                        if (cell != null && cell.CollapsedState.HasValue && cell.CollapsedState.Value == 6) // Forest state
+                        if (cell?.CollapsedState == 6) // Forest state
                         {
                             maxForestY = y;
                             break;
                         }
                     }
 
-                    // Skip if no forest cell found in this column
+                    // Skip if no forest cell found
                     if (maxForestY < 0) continue;
 
-                    // Place tree with some randomization
-                    float randomValue = UnityEngine.Random.value;
-                    if (randomValue < 0.3f) // Control tree density
+                    // Place tree with randomization
+                    if (UnityEngine.Random.value < 0.3f) // Control density
                     {
-                        // Calculate world position
+                        // Calculate position with slight randomization
                         Vector3 treePos = new Vector3(
                             chunk.Position.x * ChunkSize + x + UnityEngine.Random.Range(-0.3f, 0.3f),
                             chunk.Position.y * ChunkSize + maxForestY + 0.5f, // Offset above ground
@@ -960,7 +840,7 @@ namespace WFC.Generation
                         // Select random tree prefab
                         GameObject treePrefab = treePrefabs[UnityEngine.Random.Range(0, treePrefabs.Length)];
 
-                        // Instantiate and randomize scale/rotation
+                        // Instantiate and randomize
                         GameObject tree = Instantiate(treePrefab, treePos, Quaternion.identity, treeParent.transform);
                         float scale = UnityEngine.Random.Range(0.8f, 1.2f);
                         tree.transform.localScale = Vector3.one * scale;

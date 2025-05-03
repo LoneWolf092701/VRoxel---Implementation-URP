@@ -2,7 +2,6 @@ using UnityEditor;
 using UnityEngine;
 using WFC.Configuration;
 
-// Debug classes for testing
 namespace WFC.Editor
 {
     /// <summary>
@@ -27,10 +26,10 @@ namespace WFC.Editor
         private void OnEnable()
         {
             // Get serialized properties
-            worldProp = serializedObject.FindProperty("world");
-            algorithmProp = serializedObject.FindProperty("algorithm");
-            visualizationProp = serializedObject.FindProperty("visualization");
-            performanceProp = serializedObject.FindProperty("performance");
+            worldProp = serializedObject.FindProperty("World");
+            algorithmProp = serializedObject.FindProperty("Algorithm");
+            visualizationProp = serializedObject.FindProperty("Visualization");
+            performanceProp = serializedObject.FindProperty("Performance");
         }
 
         public override void OnInspectorGUI()
@@ -176,8 +175,7 @@ namespace WFC.Editor
             Handles.color = new Color(0.2f, 0.2f, 0.2f, 0.3f);
             Handles.DrawSolidRectangleWithOutline(rect, new Color(0.2f, 0.2f, 0.2f, 0.3f), Color.gray);
 
-            // Draw X and Z axes
-            Handles.color = Color.white;
+            // Get start position for drawing
             Vector2 start = center - new Vector2(worldSizeX * scale * 0.5f, -worldSizeY * scale * 0.5f);
 
             // Draw grid
@@ -212,6 +210,7 @@ namespace WFC.Editor
             {
                 Handles.DrawLine(points[i], points[i + 1]);
             }
+
             // Draw depth indicator for Z
             if (worldSizeZ > 1)
             {
