@@ -360,10 +360,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 12079610c64d72d42945757e718494b1, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  wfcGenerator: {fileID: 1124905181}
-  chunkManager: {fileID: 1218634540}
-  meshGenerator: {fileID: 1411155122}
-  parallelManager: {fileID: 93430298}
+  wfcGenerator: {fileID: 728563813}
+  chunkManager: {fileID: 1854616039}
+  meshGenerator: {fileID: 1261469066}
+  parallelManager: {fileID: 1999493671}
   performanceMonitor: {fileID: 1408270512}
   enableMonitoring: 1
   logMetricsToConsole: 1
@@ -378,123 +378,139 @@ MonoBehaviour:
   - {x: 8, y: 1, z: 8}
   - {x: 16, y: 1, z: 16}
   - {x: 32, y: 1, z: 32}
-  chunkGenerationResults:
-  - chunkSize: 8
-    processingTime: 2563.4766
-    memoryUsage: 652.20703
-    cellsCollapsedPercent: 100
-    propagationEvents: 1149
-    iterationsRequired: 513
-  - chunkSize: 16
-    processingTime: 9310.547
-    memoryUsage: 3133.3164
-    cellsCollapsedPercent: 29.62963
-    propagationEvents: 2452
-    iterationsRequired: 1000
-  - chunkSize: 32
-    processingTime: 9311.035
-    memoryUsage: 3124.1914
-    cellsCollapsedPercent: 25.925926
-    propagationEvents: 2892
-    iterationsRequired: 1000
-  - chunkSize: 64
-    processingTime: 9311.035
-    memoryUsage: 3043.5195
-    cellsCollapsedPercent: 7.4074073
-    propagationEvents: 2795
-    iterationsRequired: 1000
-  - chunkSize: 8
-    processingTime: 109648.44
-    memoryUsage: 885.125
-    cellsCollapsedPercent: 100
-    propagationEvents: 1141
-    iterationsRequired: 513
-  - chunkSize: 8
-    processingTime: 181303.72
-    memoryUsage: 568.875
-    cellsCollapsedPercent: 100
-    propagationEvents: 1137
-    iterationsRequired: 513
+  chunkGenerationResults: []
   boundaryCoherenceResults:
   - worldSize: {x: 2, y: 1, z: 2}
-    boundaryUpdates: 219
-    bufferSynchronizations: 219
-    conflictsDetected: 5
-    conflictsResolved: 5
-    coherenceScore: 45.454544
+    boundaryUpdates: 990
+    bufferSynchronizations: 990
+    conflictsDetected: 8
+    conflictsResolved: 8
+    coherenceScore: 77.27273
   - worldSize: {x: 2, y: 2, z: 2}
-    boundaryUpdates: 417
-    bufferSynchronizations: 417
-    conflictsDetected: 2
-    conflictsResolved: 2
-    coherenceScore: 89.47369
+    boundaryUpdates: 1922
+    bufferSynchronizations: 1922
+    conflictsDetected: 18
+    conflictsResolved: 18
+    coherenceScore: 79.06977
   - worldSize: {x: 3, y: 3, z: 3}
-    boundaryUpdates: 1481
-    bufferSynchronizations: 1481
-    conflictsDetected: 30
-    conflictsResolved: 30
-    coherenceScore: 70.86614
+    boundaryUpdates: 6529
+    bufferSynchronizations: 6529
+    conflictsDetected: 131
+    conflictsResolved: 131
+    coherenceScore: 67.72727
   - worldSize: {x: 4, y: 4, z: 4}
-    boundaryUpdates: 3431
-    bufferSynchronizations: 3431
-    conflictsDetected: 75
-    conflictsResolved: 75
-    coherenceScore: 73.46278
+    boundaryUpdates: 15787
+    bufferSynchronizations: 15787
+    conflictsDetected: 326
+    conflictsResolved: 326
+    coherenceScore: 70.931175
   meshGenerationResults:
   - chunkSize: 8
-    densityFieldGenerationTime: 3.4179688
+    densityFieldGenerationTime: 10.7421875
     marchingCubesTime: 1.4648438
-    totalMeshTime: 4.8828125
-    vertices: 384
-    triangles: 128
-    memoryUsage: 159.9414
+    totalMeshTime: 12.207031
+    vertices: 504
+    triangles: 168
+    memoryUsage: 27.667969
   - chunkSize: 16
-    densityFieldGenerationTime: 32.714844
-    marchingCubesTime: 2.9296875
-    totalMeshTime: 35.64453
-    vertices: 1536
-    triangles: 512
-    memoryUsage: 161.17188
+    densityFieldGenerationTime: 43.945312
+    marchingCubesTime: 1.4648438
+    totalMeshTime: 45.410156
+    vertices: 1860
+    triangles: 620
+    memoryUsage: 27.765625
   - chunkSize: 32
-    densityFieldGenerationTime: 278.8086
-    marchingCubesTime: 15.136719
-    totalMeshTime: 293.9453
-    vertices: 6498
-    triangles: 2166
-    memoryUsage: 164.7461
+    densityFieldGenerationTime: 338.8672
+    marchingCubesTime: 10.7421875
+    totalMeshTime: 349.60938
+    vertices: 7152
+    triangles: 2384
+    memoryUsage: 25.03125
   - chunkSize: 64
-    densityFieldGenerationTime: 2177.246
-    marchingCubesTime: 115.72266
-    totalMeshTime: 2292.9688
-    vertices: 25530
-    triangles: 8510
-    memoryUsage: 143.8164
-  parallelProcessingResults: []
-  worldSizeScalingResults: []
+    densityFieldGenerationTime: 2927.246
+    marchingCubesTime: 79.58984
+    totalMeshTime: 3006.836
+    vertices: 28230
+    triangles: 9410
+    memoryUsage: 4.2226562
+  parallelProcessingResults:
+  - threadCount: 1
+    processingTime: 679.1992
+    speedupFactor: 1
+    synchronizationOverhead: 0.9765625
+    memoryOverheadPercent: 2.8122833
+    maxConcurrentChunks: 0
+  - threadCount: 2
+    processingTime: 679.1992
+    speedupFactor: 1
+    synchronizationOverhead: 0.9765625
+    memoryOverheadPercent: 2.4495897
+    maxConcurrentChunks: 0
+  - threadCount: 4
+    processingTime: 680.1758
+    speedupFactor: 0.99856424
+    synchronizationOverhead: 0
+    memoryOverheadPercent: 1.6866562
+    maxConcurrentChunks: 0
+  - threadCount: 8
+    processingTime: 680.66406
+    speedupFactor: 0.9978479
+    synchronizationOverhead: 0
+    memoryOverheadPercent: 0.18328202
+    maxConcurrentChunks: 0
+  worldSizeScalingResults:
+  - worldSize: {x: 4, y: 1, z: 4}
+    totalMemoryUsage: 139.2539
+    generationTime: 174.47607
+    fpsImpact: 0.72914195
+    chunksLoaded: 0
+    chunksProcessedPerFrame: 0
+    loadingDistance: 0
+  - worldSize: {x: 8, y: 1, z: 8}
+    totalMemoryUsage: 118.10547
+    generationTime: 617.08936
+    fpsImpact: 0.72914195
+    chunksLoaded: 0
+    chunksProcessedPerFrame: 0
+    loadingDistance: 0
+  - worldSize: {x: 16, y: 1, z: 16}
+    totalMemoryUsage: 118.12891
+    generationTime: 617.08936
+    fpsImpact: 0.72914195
+    chunksLoaded: 0
+    chunksProcessedPerFrame: 0
+    loadingDistance: 0
+  - worldSize: {x: 32, y: 1, z: 32}
+    totalMemoryUsage: 118.14844
+    generationTime: 617.09033
+    fpsImpact: 0.72914195
+    chunksLoaded: 0
+    chunksProcessedPerFrame: 0
+    loadingDistance: 0
   lodPerformanceResults:
   - lodLevel: 0
     distanceRange: 0
-    vertexReductionPercent: 100
-    generationSpeedIncreasePercent: 37.042927
-    memoryReductionPercent: 40.625
+    vertexReductionPercent: 0
+    generationSpeedIncreasePercent: 25.628742
+    memoryReductionPercent: 7.6923075
     visualQualityImpact: 0
   - lodLevel: 1
     distanceRange: 50
     vertexReductionPercent: 0
-    generationSpeedIncreasePercent: 64.20664
-    memoryReductionPercent: 0
+    generationSpeedIncreasePercent: 67.21672
+    memoryReductionPercent: 4.9180326
     visualQualityImpact: 2
   - lodLevel: 2
     distanceRange: 100
-    vertexReductionPercent: 55.882355
-    generationSpeedIncreasePercent: 80.84358
-    memoryReductionPercent: 9.523809
+    vertexReductionPercent: 0
+    generationSpeedIncreasePercent: 84.745766
+    memoryReductionPercent: -21.95122
     visualQualityImpact: 4
   - lodLevel: 3
     distanceRange: 200
-    vertexReductionPercent: 50
-    generationSpeedIncreasePercent: 80.78176
-    memoryReductionPercent: 13.636364
+    vertexReductionPercent: 100
+    generationSpeedIncreasePercent: 84.15493
+    memoryReductionPercent: -22.222221
     visualQualityImpact: 6
 --- !u!1 &480418798
 GameObject:
@@ -578,6 +594,53 @@ MonoBehaviour:
   lookSensitivity: 4
   invertYAxis: 0
   allowXAxisCameraRotation: 1
+--- !u!1 &728563812
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 728563814}
+  - component: {fileID: 728563813}
+  m_Layer: 0
+  m_Name: WFC_TestGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &728563813
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 728563812}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8b54efc3c76410d44bb34c34eaa46314, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  configOverride: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
+  stateMaterials: []
+  terrainManager: {fileID: 226482519}
+--- !u!4 &728563814
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 728563812}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &948878865
 GameObject:
   m_ObjectHideFlags: 0
@@ -843,6 +906,71 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   configAsset: {fileID: 11400000, guid: aaf51bcb0d7d2eb48b1ecc29400aed7b, type: 2}
+--- !u!1 &1261469065
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1261469067}
+  - component: {fileID: 1261469066}
+  m_Layer: 0
+  m_Name: MockMeshGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1261469066
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1261469065}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: efc606c3876443040ae95ff53a0c10b2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  wfcGenerator: {fileID: 728563813}
+  chunkManager: {fileID: 1218634540}
+  performanceMonitor: {fileID: 1408270512}
+  terrainMaterial: {fileID: 2100000, guid: f9086f3ea36bc714383439f31aee5bbf, type: 2}
+  autoUpdate: 0
+  cellSize: 1
+  surfaceLevel: 0.5
+  showDebugInfo: 1
+  enableDetailedLogging: 0
+  showChunkBoundaries: 1
+  showCells: 0
+  showCollapsedCellInfo: 0
+  chunkBoundaryColor: {r: 0, g: 1, b: 0, a: 1}
+  cellColor: {r: 1, g: 0, b: 0, a: 0.3}
+  cellVisualizationDistance: 100
+  useUnityLODSystem: 0
+  lodDistanceThresholds:
+  - 50
+  - 100
+  - 200
+  heightmapController: {fileID: 0}
+--- !u!4 &1261469067
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1261469065}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1314112786
 GameObject:
   m_ObjectHideFlags: 0
@@ -946,9 +1074,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e8d1fdf6662ea6340b44e22506234218, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  chunkManager: {fileID: 1218634540}
-  wfcGenerator: {fileID: 1124905181}
-  meshGenerator: {fileID: 1411155122}
+  chunkManager: {fileID: 0}
+  wfcGenerator: {fileID: 0}
+  meshGenerator: {fileID: 0}
   logFrequency: 60
   enableLogging: 1
   showDetailedTimings: 1
@@ -1380,6 +1508,109 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 47d6f693de2b4b54abb66b6219cc80e6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!1 &1854616038
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1854616040}
+  - component: {fileID: 1854616039}
+  m_Layer: 0
+  m_Name: MockChunkManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1854616039
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1854616038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e3de55c86fae7f54b9a6e5cfc87fb427, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  configOverride: {fileID: 11400000, guid: f6f09eceb8ea2bd498e9444ffc9b6ef2, type: 2}
+  viewer: {fileID: 480418799}
+  wfcGenerator: {fileID: 1124905181}
+  performanceMonitor: {fileID: 1408270512}
+  meshGenerator: {fileID: 1411155122}
+  heightmapController: {fileID: 2122489058}
+  movementHistorySize: 60
+  basePredictionTime: 2
+  enableDebugLogging: 0
+  currentTerrainType: MountainValley
+--- !u!4 &1854616040
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1854616038}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1999493670
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1999493672}
+  - component: {fileID: 1999493671}
+  m_Layer: 0
+  m_Name: MockParallelManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1999493671
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999493670}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 58112a168c4f75f42b9a98a8be604818, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  wfcGenerator: {fileID: 728563813}
+  chunkManager: {fileID: 1218634540}
+  enableParallelProcessing: 1
+  maxThreads: 0
+  showDebugInfo: 0
+--- !u!4 &1999493672
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1999493670}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &2026703227
 GameObject:
   m_ObjectHideFlags: 0
@@ -1486,3 +1717,7 @@ SceneRoots:
   - {fileID: 207340127}
   - {fileID: 266812409}
   - {fileID: 1450287014}
+  - {fileID: 728563814}
+  - {fileID: 1854616040}
+  - {fileID: 1999493672}
+  - {fileID: 1261469067}

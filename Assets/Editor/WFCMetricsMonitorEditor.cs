@@ -14,6 +14,7 @@ using WFC.MarchingCubes;
 using WFC.Performance;
 using WFC.Processing;
 using WFC.Configuration;
+using WFC.Terrain;
 
 [CustomEditor(typeof(WFCMetricsMonitor))]
 public class WFCMetricsMonitorEditor : Editor
@@ -51,6 +52,13 @@ public class WFCMetricsMonitorEditor : Editor
     public override void OnInspectorGUI()
     {
         WFCMetricsMonitor monitor = (WFCMetricsMonitor)target;
+
+        // Cleanup test objects when editor is closed
+        if (Event.current.type == EventType.ExecuteCommand &&
+            Event.current.commandName == "ObjectSelectorClosed")
+        {
+            CleanupTestObjects();
+        }
 
         // Draw default inspector
         DrawDefaultInspector();
@@ -213,6 +221,12 @@ public class WFCMetricsMonitorEditor : Editor
 
         EditorGUILayout.Space(5);
 
+        // Add cleanup button
+        if (GUILayout.Button("Cleanup Test Objects", GUILayout.Height(25)))
+        {
+            CleanupTestObjects();
+        }
+
         // Test control buttons
         EditorGUILayout.BeginHorizontal();
 
@@ -241,45 +255,167 @@ public class WFCMetricsMonitorEditor : Editor
 
     private void ConnectDependencies(WFCMetricsMonitor monitor)
     {
-        Debug.Log("Attempting to connect dependencies");
+        Debug.Log("Attempting to connect dependencies by cloning existing objects");
 
-        // Force create a mock WFCGenerator if needed
-        GameObject mockObj = new GameObject("WFC_TestGenerator");
-        var generator = mockObj.AddComponent<WFCGenerator>();
+        // Clean up any previous test objects before creating new ones
+        CleanupTestObjects();
 
-        // Create other required components
-        var chunkManagerObj = new GameObject("MockChunkManager");
-        var chunkManager = chunkManagerObj.AddComponent<ChunkManager>();
+        // Find existing components
+        WFCGenerator existingGenerator = FindObjectOfType<WFCGenerator>(true);
+        ChunkManager existingChunkManager = FindObjectOfType<ChunkManager>(true);
+        MeshGenerator existingMeshGenerator = FindObjectOfType<MeshGenerator>(true);
+        ParallelWFCManager existingParallelManager = FindObjectOfType<ParallelWFCManager>(true);
+        PerformanceMonitor existingPerformanceMonitor = FindObjectOfType<PerformanceMonitor>(true);
+        GlobalHeightmapController existingHeightMapController = FindObjectOfType<GlobalHeightmapController>(true);
 
-        // Create a mock ParallelWFCManager
-        var parallelObj = new GameObject("MockParallelManager");
-        var parallelManager = parallelObj.AddComponent<ParallelWFCManager>();
-        parallelManager.wfcGenerator = generator; // Connect dependencies
+        WFCGenerator generator = null;
+        ChunkManager chunkManager = null;
+        MeshGenerator meshGen = null;
+        ParallelWFCManager parallelManager = null;
 
-        // Create a MeshGenerator
-        var meshGenObj = new GameObject("MockMeshGenerator");
-        var meshGen = meshGenObj.AddComponent<MeshGenerator>();
-        meshGen.wfcGenerator = generator; // Connect dependencies
+        // Create a test parent object to organize the hierarchy
+        GameObject testContainer = new GameObject("WFC_Test_Container");
+        testContainer.tag = "EditorOnly";
 
-        // Connect all components
+        // 1. Clone WFCGenerator or create new if not found
+        if (existingGenerator != null)
+        {
+            GameObject testGeneratorObj = Instantiate(existingGenerator.gameObject);
+            testGeneratorObj.name = "Test_WFCGenerator";
+            testGeneratorObj.transform.parent = testContainer.transform;
+            testGeneratorObj.tag = "EditorOnly";
+            generator = testGeneratorObj.GetComponent<WFCGenerator>();
+            Debug.Log("Cloned existing WFCGenerator");
+        }
+        else
+        {
+            GameObject testGeneratorObj = new GameObject("Test_WFCGenerator");
+            testGeneratorObj.transform.parent = testContainer.transform;
+            testGeneratorObj.tag = "EditorOnly";
+            generator = testGeneratorObj.AddComponent<WFCGenerator>();
+            Debug.Log("Created new WFCGenerator (no existing one found)");
+        }
+
+        // 2. Clone ChunkManager or create new if not found
+        if (existingChunkManager != null)
+        {
+            GameObject testChunkManagerObj = Instantiate(existingChunkManager.gameObject);
+            testChunkManagerObj.name = "Test_ChunkManager";
+            testChunkManagerObj.transform.parent = testContainer.transform;
+            testChunkManagerObj.tag = "EditorOnly";
+            chunkManager = testChunkManagerObj.GetComponent<ChunkManager>();
+            Debug.Log("Cloned existing ChunkManager");
+        }
+        else
+        {
+            GameObject testChunkManagerObj = new GameObject("Test_ChunkManager");
+            testChunkManagerObj.transform.parent = testContainer.transform;
+            testChunkManagerObj.tag = "EditorOnly";
+            chunkManager = testChunkManagerObj.AddComponent<ChunkManager>();
+            Debug.Log("Created new ChunkManager (no existing one found)");
+        }
+
+        // 3. Clone MeshGenerator or create new if not found
+        if (existingMeshGenerator != null)
+        {
+            GameObject testMeshGenObj = Instantiate(existingMeshGenerator.gameObject);
+            testMeshGenObj.name = "Test_MeshGenerator";
+            testMeshGenObj.transform.parent = testContainer.transform;
+            testMeshGenObj.tag = "EditorOnly";
+            meshGen = testMeshGenObj.GetComponent<MeshGenerator>();
+            Debug.Log("Cloned existing MeshGenerator");
+        }
+        else
+        {
+            GameObject testMeshGenObj = new GameObject("Test_MeshGenerator");
+            testMeshGenObj.transform.parent = testContainer.transform;
+            testMeshGenObj.tag = "EditorOnly";
+            meshGen = testMeshGenObj.AddComponent<MeshGenerator>();
+            Debug.Log("Created new MeshGenerator (no existing one found)");
+        }
+
+        // 4. Clone ParallelWFCManager or create new if not found
+        if (existingParallelManager != null)
+        {
+            GameObject testParallelObj = Instantiate(existingParallelManager.gameObject);
+            testParallelObj.name = "Test_ParallelWFCManager";
+            testParallelObj.transform.parent = testContainer.transform;
+            testParallelObj.tag = "EditorOnly";
+            parallelManager = testParallelObj.GetComponent<ParallelWFCManager>();
+            Debug.Log("Cloned existing ParallelWFCManager");
+        }
+        else
+        {
+            GameObject testParallelObj = new GameObject("Test_ParallelWFCManager");
+            testParallelObj.transform.parent = testContainer.transform;
+            testParallelObj.tag = "EditorOnly";
+            parallelManager = testParallelObj.AddComponent<ParallelWFCManager>();
+            Debug.Log("Created new ParallelWFCManager (no existing one found)");
+        }
+
+        // Reconnect dependencies among cloned objects
+        if (parallelManager != null)
+            parallelManager.wfcGenerator = generator;
+
+        if (meshGen != null)
+            meshGen.wfcGenerator = generator;
+
+        if (chunkManager != null)
+        {
+            // Set camera as viewer if available
+            if (Camera.main != null)
+                chunkManager.viewer = Camera.main.transform;
+
+            var viewerField = chunkManager.GetType().GetField("wfcGenerator",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (viewerField != null)
+                viewerField.SetValue(chunkManager, generator);
+        }
+
+        // Connect all components to the monitor
         SetField(monitor, "wfcGenerator", generator);
         SetField(monitor, "chunkManager", chunkManager);
         SetField(monitor, "meshGenerator", meshGen);
         SetField(monitor, "parallelManager", parallelManager);
 
         // Initialize WFCGenerator
-        var initMethod = generator.GetType().GetMethod("InitializeRulesOnly",
-            System.Reflection.BindingFlags.NonPublic |
-            System.Reflection.BindingFlags.Instance);
+        if (generator != null)
+        {
+            var initMethod = generator.GetType().GetMethod("InitializeRulesOnly",
+                System.Reflection.BindingFlags.NonPublic |
+                System.Reflection.BindingFlags.Instance);
 
-        if (initMethod != null)
-            initMethod.Invoke(generator, null);
+            if (initMethod != null)
+                initMethod.Invoke(generator, null);
+        }
 
-        // Initialize test fields
+        // Initialize test fields in the monitor
         monitor.InitializeDefaultAdjacencyRules();
         monitor.InitializeInternalAdjacencyRules();
 
-        Debug.Log("Dependencies connected!");
+        Debug.Log("Test dependencies connected and initialized!");
+    }
+
+    private void CleanupTestObjects()
+    {
+        // Find existing test objects by tag
+        GameObject[] testObjects = GameObject.FindGameObjectsWithTag("EditorOnly");
+        foreach (var obj in testObjects)
+        {
+            if (obj.name.StartsWith("Test_") || obj.name == "WFC_Test_Container")
+            {
+                DestroyImmediate(obj);
+            }
+        }
+
+        // Extra check for test container
+        GameObject testContainer = GameObject.Find("WFC_Test_Container");
+        if (testContainer != null)
+        {
+            DestroyImmediate(testContainer);
+        }
+
+        Debug.Log("Cleaned up existing test objects");
     }
 
     private void SetField(object obj, string fieldName, object value)
@@ -426,13 +562,17 @@ public class WFCMetricsMonitorEditor : Editor
         activeCoroutines.Clear();
 
         // Set the isTestRunning field to false
-        var field = monitor.GetType().GetField("isTestRunning", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var field = monitor.GetType().GetField("isTestRunning",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
         if (field != null)
             field.SetValue(monitor, false);
 
         isRunningTests = false;
         currentTestStatus = "Tests cancelled by user.";
+
+        // Clean up test objects when cancelling
+        CleanupTestObjects();
     }
 
     private void ExportAllResults(WFCMetricsMonitor monitor)
