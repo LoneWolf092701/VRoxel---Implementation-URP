@@ -523,7 +523,7 @@ namespace WFC.MarchingCubes
                         int neighborY = dy > 0 ? 0 : size;
                         int neighborZ = dz > 0 ? 0 : size;
 
-                        // CRITICAL FIX: Calculate average including all 8 chunks that meet at this corner
+                        // Calculate average including all 8 chunks that meet at this corner
                         float cornerSum = densityField[cornerX, cornerY, cornerZ];
                         int cornerCount = 1;
 
@@ -531,7 +531,6 @@ namespace WFC.MarchingCubes
                         cornerCount++;
 
                         // Try to find the other 6 chunks that share this corner
-                        // (This additional code is crucial for corner consistency)
                         for (int edx = -1; edx <= 1; edx += 2)
                         {
                             for (int edy = -1; edy <= 1; edy += 2)
@@ -584,7 +583,7 @@ namespace WFC.MarchingCubes
                                     float distance = Mathf.Sqrt(x * x + y * y + z * z);
                                     if (distance > blendRadius) continue;
 
-                                    // CRITICAL FIX: Use non-linear falloff
+                                    // Use non-linear falloff
                                     float blendFactor = 1.0f - Mathf.Pow(distance / blendRadius, 1.5f);
 
                                     // Apply blended value
@@ -915,14 +914,14 @@ namespace WFC.MarchingCubes
             {
                 for (int z = 0; z < commonDepth; z++)
                 {
-                    // CRITICAL FIX: Use identical values exactly at the boundary
+                    // Use identical values exactly at the boundary
                     float averageDensity = (densityField1[index1, y, z] + densityField2[index2, y, z]) / 2.0f;
 
                     // Set both fields to the same value at the boundary
                     densityField1[index1, y, z] = averageDensity;
                     densityField2[index2, y, z] = averageDensity;
 
-                    // CRITICAL FIX: Apply gradient over multiple cells inward with non-linear falloff
+                    // Apply gradient over multiple cells inward with non-linear falloff
                     for (int i = 1; i <= gradientWidth; i++)
                     {
                         // Apply smoothing inward for field 1
