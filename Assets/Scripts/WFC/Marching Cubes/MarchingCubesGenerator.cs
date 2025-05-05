@@ -149,6 +149,11 @@ namespace WFC.MarchingCubes
          * - lodLevel: Level of detail (0=highest, higher=simplified)
          * 
          * Returns: Generated Unity Mesh object
+         * 
+         * The edgeTable and triangleTable contain precalculated data for all 256 possible
+         * Bourke, P. (1994) 'Polygonising a scalar field', [online] 
+         * Available at: https://paulbourke.net/geometry/polygonise/
+         * cube configurations, determined by which of the 8 corners are inside/outside the surface.
          */
         public Mesh GenerateMesh(float[,,] densityField, int lodLevel = 0)
         {
