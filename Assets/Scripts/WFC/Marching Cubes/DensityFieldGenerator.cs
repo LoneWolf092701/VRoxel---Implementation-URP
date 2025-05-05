@@ -907,7 +907,7 @@ namespace WFC.MarchingCubes
                 return;
             }
 
-            int gradientWidth = 8; // Increased from implicit 3 -> 8
+            int gradientWidth = 8; // Increased from 3 -> 8!!!
 
             // Perform smoothing only on the common area
             for (int y = 0; y < commonHeight; y++)
